@@ -1,0 +1,25 @@
+/* Resetting styles from boilerplate for a full-viewport app layout */
+#root {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  max-width: none;
+  /* Removed: margin: 0 auto; text-align: center; */
+}
+
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+.main-content {
+  flex-grow: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* Remove boilerplate styles for logos, spin, etc. */
+.logo { display: none; }
+.card { display: none; }
+.read-the-docs { display: none; }
