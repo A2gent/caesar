@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import type { Session } from './api';
 
 interface NavItem {
   id: string;
   label: string;
   path: string;
-  subItems?: NavItem[];
 }
 
 interface SidebarProps {
@@ -14,32 +14,24 @@ interface SidebarProps {
   onSelectSession: (sessionId: string) => void;
   onCreateSession: () => void;
   onDeleteSession: (sessionId: string) => void;
+  currentPage?: 'chat' | 'jobs';
 }
 
 const navItems: NavItem[] = [
-  { id: 'mind', label: 'My mind', path: '/mind' },
-  { id: 'projects', label: 'Projects', path: '/projects' },
-  {
-    id: 'agent',
-    label: 'Agent',
-    path: '/agent',
-    subItems: [
-      { id: 'persona', label: 'Persona', path: '/agent/persona' },
-      { id: 'thoughts', label: 'Thoughts', path: '/agent/thoughts' },
-      { id: 'jobs', label: 'Recurring jobs', path: '/agent/jobs' },
-      { id: 'datasources', label: 'Datasources', path: '/agent/datasources' },
-    ],
-  },
+  { id: 'jobs', label: 'Recurring jobs', path: '/agent/jobs' },
 ];
 
-const Sidebar: React.FC<SidebarProps> = ({ 
+function Sidebar({ 
   sessions, 
   currentSessionId, 
   onSelectSession, 
   onCreateSession,
-  onDeleteSession 
-}) => {
+  onDeleteSession,
+  currentPage = 'chat'
+}: SidebarProps) {
   const [expandedItem, setExpandedItem] = useState<string | null>('sessions');
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const toggleExpand = (itemId: string) => {
     setExpandedItem(expandedItem === itemId ? null : itemId);
@@ -69,43 +61,18 @@ const Sidebar: React.FC<SidebarProps> = ({
     return date.toLocaleDateString();
   };
 
-  const renderNavItems = (items: NavItem[], isSub?: boolean) => {
-    return (
-      <ul style={{ listStyle: 'none', paddingLeft: isSub ? '20px' : '0', margin: '0' }}>
-        {items.map(item => (
-          <li key={item.id} style={{ marginBottom: '2px' }}>
-            <div
-              style={{
-                cursor: 'pointer',
-                fontWeight: item.subItems ? 'bold' : 'normal',
-                padding: '8px 5px',
-                borderRadius: '4px',
-                backgroundColor: isSub ? '#3a3a3a' : 'inherit',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-              onClick={() => item.subItems ? toggleExpand(item.id) : console.log(`Navigating to ${item.path}`)}
-            >
-              {item.label}
-              {item.subItems && (
-                <span style={{ marginLeft: '10px', transition: 'transform 0.2s', fontSize: '12px' }}>
-                  {expandedItem === item.id ? '▼' : '▶'}
-                </span>
-              )}
-            </div>
-            {item.subItems && expandedItem === item.id && (
-              renderNavItems(item.subItems, true)
-            )}
-          </li>
-        ))}
-      </ul>
-    );
+  const handleSessionClick = (sessionId: string) => {
+    onSelectSession(sessionId);
+    if (currentPage !== 'chat') {
+      navigate('/chat');
+    }
   };
 
   return (
     <div className="sidebar">
-      <h2 className="sidebar-title">A2gent</h2>
+      <Link to="/" className="sidebar-title-link">
+        <h2 className="sidebar-title">A2gent</h2>
+      </Link>
       
       {/* Sessions Section */}
       <div className="sidebar-section">
@@ -139,11 +106,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               sessions.map(session => (
                 <li 
                   key={session.id} 
-                  className={`session-item ${currentSessionId === session.id ? 'active' : ''}`}
+                  className={`session-item ${currentSessionId === session.id && currentPage === 'chat' ? 'active' : ''}`}
                 >
                   <div 
                     className="session-item-content"
-                    onClick={() => onSelectSession(session.id)}
+                    onClick={() => handleSessionClick(session.id)}
                   >
                     <span className="session-item-title">{formatSessionTitle(session)}</span>
                     <span className="session-item-meta">
@@ -173,11 +140,22 @@ const Sidebar: React.FC<SidebarProps> = ({
       {/* Navigation Section */}
       <div className="sidebar-section">
         <nav>
-          {renderNavItems(navItems)}
+          <ul className="nav-list" style={{ listStyle: 'none', padding: '0', margin: '0' }}>
+            {navItems.map(item => (
+              <li key={item.id} className="nav-item">
+                <Link 
+                  to={item.path}
+                  className={`nav-link ${location.pathname.startsWith(item.path) ? 'active' : ''}`}
+                >
+                  {item.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
         </nav>
       </div>
     </div>
   );
-};
+}
 
 export default Sidebar;

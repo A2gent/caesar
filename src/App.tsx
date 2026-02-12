@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
+import JobsList from './JobsList';
+import JobEdit from './JobEdit';
 import type { Session, Message } from './api';
 import { 
   listSessions, 
@@ -12,7 +15,8 @@ import {
 } from './api';
 import './App.css';
 
-function App() {
+// ChatView component
+function ChatView() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -47,6 +51,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
+    // Note: navigation to /chat is handled by Sidebar when needed
   }, []);
 
   const handleCreateSession = useCallback(async () => {
@@ -136,13 +141,14 @@ function App() {
   };
 
   return (
-    <div className="app-container">
+    <>
       <Sidebar 
         sessions={sessions}
         currentSessionId={currentSession?.id}
         onSelectSession={handleSelectSession}
         onCreateSession={handleCreateSession}
         onDeleteSession={handleDeleteSession}
+        currentPage="chat"
       />
       <div className="main-content">
         <div className="top-bar">
@@ -196,7 +202,109 @@ function App() {
         
         <ChatInput onSend={handleSendMessage} disabled={isLoading} />
       </div>
-    </div>
+    </>
+  );
+}
+
+// JobsView component
+function JobsView() {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  const loadSessions = async () => {
+    try {
+      const data = await listSessions();
+      setSessions(data);
+    } catch (err) {
+      console.error('Failed to load sessions:', err);
+    }
+  };
+
+  const handleSelectSession = async (_sessionId: string) => {
+    // Navigate to chat view with this session
+    navigate('/chat');
+  };
+
+  const handleCreateSession = async () => {
+    try {
+      await createSession({ agent_id: 'build' });
+      await loadSessions();
+      navigate('/chat');
+    } catch (err) {
+      console.error('Failed to create session:', err);
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      await deleteSession(sessionId);
+      await loadSessions();
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+    }
+  };
+
+  return (
+    <>
+      <Sidebar 
+        sessions={sessions}
+        currentSessionId={undefined}
+        onSelectSession={handleSelectSession}
+        onCreateSession={handleCreateSession}
+        onDeleteSession={handleDeleteSession}
+        currentPage="jobs"
+      />
+      <div className="main-content jobs-page">
+        <Routes>
+          <Route path="/" element={<JobsListWrapper />} />
+          <Route path="/new" element={<JobEditWrapper />} />
+          <Route path="/edit/:jobId" element={<JobEditWrapper />} />
+        </Routes>
+      </div>
+    </>
+  );
+}
+
+function JobsListWrapper() {
+  const navigate = useNavigate();
+  
+  return (
+    <JobsList 
+      onCreateJob={() => navigate('/agent/jobs/new')}
+      onEditJob={(jobId) => navigate(`/agent/jobs/edit/${jobId}`)}
+    />
+  );
+}
+
+function JobEditWrapper() {
+  const navigate = useNavigate();
+  const { jobId } = useParams();
+  
+  return (
+    <JobEdit 
+      jobId={jobId}
+      onSave={() => navigate('/agent/jobs')}
+      onCancel={() => navigate('/agent/jobs')}
+    />
+  );
+}
+
+// Main App component
+function App() {
+  return (
+    <Router>
+      <div className="app-container">
+        <Routes>
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/chat/*" element={<ChatView />} />
+          <Route path="/agent/jobs/*" element={<JobsView />} />
+        </Routes>
+      </div>
+    </Router>
   );
 }
 

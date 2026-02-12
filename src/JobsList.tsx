@@ -1,0 +1,170 @@
+import { useState, useEffect, useCallback } from 'react';
+import { listJobs, deleteJob, runJobNow, type RecurringJob } from './api';
+
+interface JobsListProps {
+  onCreateJob: () => void;
+  onEditJob: (jobId: string) => void;
+}
+
+function JobsList({ onCreateJob, onEditJob }: JobsListProps) {
+  const [jobs, setJobs] = useState<RecurringJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadJobs = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await listJobs();
+      setJobs(data);
+    } catch (err) {
+      console.error('Failed to load jobs:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load jobs');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadJobs();
+    // Refresh jobs every 30 seconds
+    const interval = setInterval(loadJobs, 30000);
+    return () => clearInterval(interval);
+  }, [loadJobs]);
+
+  const handleDeleteJob = async (jobId: string, jobName: string) => {
+    if (!confirm(`Delete job "${jobName}"?`)) return;
+    
+    try {
+      await deleteJob(jobId);
+      await loadJobs();
+    } catch (err) {
+      console.error('Failed to delete job:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete job');
+    }
+  };
+
+  const handleRunNow = async (jobId: string) => {
+    try {
+      await runJobNow(jobId);
+      alert('Job started. Check executions for results.');
+    } catch (err) {
+      console.error('Failed to run job:', err);
+      setError(err instanceof Error ? err.message : 'Failed to run job');
+    }
+  };
+
+  const formatTimeAgo = (dateString?: string) => {
+    if (!dateString) return 'Never';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  const formatNextRun = (dateString?: string) => {
+    if (!dateString) return 'Not scheduled';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+
+    if (diffMs < 0) return 'Overdue';
+    if (diffMins < 60) return `in ${diffMins}m`;
+    if (diffHours < 24) return `in ${diffHours}h`;
+    return date.toLocaleDateString();
+  };
+
+  if (loading) {
+    return <div className="jobs-loading">Loading jobs...</div>;
+  }
+
+  return (
+    <div className="jobs-list-container">
+      <div className="jobs-header">
+        <h2>Recurring Jobs</h2>
+        <button onClick={onCreateJob} className="btn btn-primary">
+          + New Job
+        </button>
+      </div>
+
+      {error && (
+        <div className="error-banner">
+          {error}
+          <button onClick={() => setError(null)} className="error-dismiss">×</button>
+        </div>
+      )}
+
+      {jobs.length === 0 ? (
+        <div className="jobs-empty">
+          <p>No recurring jobs yet.</p>
+          <p>Create a job to schedule automated agent tasks.</p>
+          <button onClick={onCreateJob} className="btn btn-primary">
+            Create Your First Job
+          </button>
+        </div>
+      ) : (
+        <div className="jobs-list">
+          {jobs.map(job => (
+            <div key={job.id} className={`job-card ${!job.enabled ? 'job-disabled' : ''}`}>
+              <div className="job-card-header">
+                <h3 className="job-name">{job.name}</h3>
+                <div className="job-status">
+                  <span className={`status-badge ${job.enabled ? 'status-enabled' : 'status-disabled'}`}>
+                    {job.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="job-details">
+                <div className="job-schedule">
+                  <span className="label">Schedule:</span>
+                  <span className="value">{job.schedule_human}</span>
+                </div>
+                <div className="job-cron">
+                  <code>{job.schedule_cron}</code>
+                </div>
+              </div>
+
+              <div className="job-stats">
+                <div className="stat">
+                  <span className="stat-label">Last run:</span>
+                  <span className="stat-value">{formatTimeAgo(job.last_run_at)}</span>
+                </div>
+                <div className="stat">
+                  <span className="stat-label">Next run:</span>
+                  <span className={`stat-value ${job.next_run_at && new Date(job.next_run_at) < new Date() ? 'overdue' : ''}`}>
+                    {formatNextRun(job.next_run_at)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="job-actions">
+                <button onClick={() => onEditJob(job.id)} className="btn btn-secondary">
+                  Edit
+                </button>
+                <button onClick={() => handleRunNow(job.id)} className="btn btn-secondary" disabled={!job.enabled}>
+                  Run Now
+                </button>
+                <button onClick={() => handleDeleteJob(job.id, job.name)} className="btn btn-danger">
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default JobsList;

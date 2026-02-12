@@ -120,3 +120,118 @@ export async function healthCheck(): Promise<boolean> {
     return false;
   }
 }
+
+// --- Recurring Jobs API ---
+
+export interface RecurringJob {
+  id: string;
+  name: string;
+  schedule_human: string;
+  schedule_cron: string;
+  task_prompt: string;
+  enabled: boolean;
+  last_run_at?: string;
+  next_run_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobExecution {
+  id: string;
+  job_id: string;
+  session_id?: string;
+  status: 'running' | 'success' | 'failed';
+  output?: string;
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+}
+
+export interface CreateJobRequest {
+  name: string;
+  schedule_text: string;
+  task_prompt: string;
+  enabled: boolean;
+}
+
+export interface UpdateJobRequest {
+  name?: string;
+  schedule_text?: string;
+  task_prompt?: string;
+  enabled?: boolean;
+}
+
+export async function listJobs(): Promise<RecurringJob[]> {
+  const response = await fetch(`${API_BASE_URL}/jobs`);
+  if (!response.ok) {
+    throw new Error(`Failed to list jobs: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function getJob(jobId: string): Promise<RecurringJob> {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to get job: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function createJob(request: CreateJobRequest): Promise<RecurringJob> {
+  const response = await fetch(`${API_BASE_URL}/jobs`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `Failed to create job: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function updateJob(jobId: string, request: UpdateJobRequest): Promise<RecurringJob> {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `Failed to update job: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function deleteJob(jobId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete job: ${response.statusText}`);
+  }
+}
+
+export async function runJobNow(jobId: string): Promise<JobExecution> {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/run`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `Failed to run job: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function listJobExecutions(jobId: string, limit?: number): Promise<JobExecution[]> {
+  const query = limit ? `?limit=${limit}` : '';
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/executions${query}`);
+  if (!response.ok) {
+    throw new Error(`Failed to list job executions: ${response.statusText}`);
+  }
+  return response.json();
+}
