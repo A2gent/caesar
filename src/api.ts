@@ -1,6 +1,38 @@
 // API client for aagent HTTP server
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://jetson-orin:8080';
+const API_BASE_URL_STORAGE_KEY = 'a2gent.api_base_url';
+const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
+function normalizeApiBaseUrl(url: string): string {
+  return url.trim().replace(/\/$/, '');
+}
+
+export function getApiBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return normalizeApiBaseUrl(DEFAULT_API_BASE_URL);
+  }
+
+  const stored = window.localStorage.getItem(API_BASE_URL_STORAGE_KEY);
+  if (stored && stored.trim() !== '') {
+    return normalizeApiBaseUrl(stored);
+  }
+
+  return normalizeApiBaseUrl(DEFAULT_API_BASE_URL);
+}
+
+export function setApiBaseUrl(url: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const normalized = normalizeApiBaseUrl(url);
+  if (normalized === '') {
+    window.localStorage.removeItem(API_BASE_URL_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, normalized);
+}
 
 // Types matching the Go server responses
 export interface Session {
@@ -56,9 +88,40 @@ export interface CreateSessionResponse {
   created_at: string;
 }
 
+export interface SettingsResponse {
+  settings: Record<string, string>;
+}
+
+export type IntegrationProvider = 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'webhook';
+export type IntegrationMode = 'notify_only' | 'duplex';
+
+export interface Integration {
+  id: string;
+  provider: IntegrationProvider;
+  name: string;
+  mode: IntegrationMode;
+  enabled: boolean;
+  config: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationRequest {
+  provider: IntegrationProvider;
+  name: string;
+  mode: IntegrationMode;
+  enabled: boolean;
+  config: Record<string, string>;
+}
+
+export interface IntegrationTestResponse {
+  success: boolean;
+  message: string;
+}
+
 // API client functions
 export async function listSessions(): Promise<Session[]> {
-  const response = await fetch(`${API_BASE_URL}/sessions`);
+  const response = await fetch(`${getApiBaseUrl()}/sessions`);
   if (!response.ok) {
     throw new Error(`Failed to list sessions: ${response.statusText}`);
   }
@@ -66,7 +129,7 @@ export async function listSessions(): Promise<Session[]> {
 }
 
 export async function getSession(sessionId: string): Promise<Session> {
-  const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`);
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}`);
   if (!response.ok) {
     throw new Error(`Failed to get session: ${response.statusText}`);
   }
@@ -74,7 +137,7 @@ export async function getSession(sessionId: string): Promise<Session> {
 }
 
 export async function createSession(request: CreateSessionRequest = {}): Promise<CreateSessionResponse> {
-  const response = await fetch(`${API_BASE_URL}/sessions`, {
+  const response = await fetch(`${getApiBaseUrl()}/sessions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -89,7 +152,7 @@ export async function createSession(request: CreateSessionRequest = {}): Promise
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}`, {
     method: 'DELETE',
   });
   if (!response.ok) {
@@ -98,7 +161,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 export async function sendMessage(sessionId: string, message: string): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/chat`, {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -114,7 +177,7 @@ export async function sendMessage(sessionId: string, message: string): Promise<C
 
 export async function healthCheck(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetch(`${getApiBaseUrl()}/health`);
     return response.ok;
   } catch {
     return false;
@@ -162,7 +225,7 @@ export interface UpdateJobRequest {
 }
 
 export async function listJobs(): Promise<RecurringJob[]> {
-  const response = await fetch(`${API_BASE_URL}/jobs`);
+  const response = await fetch(`${getApiBaseUrl()}/jobs`);
   if (!response.ok) {
     throw new Error(`Failed to list jobs: ${response.statusText}`);
   }
@@ -170,7 +233,7 @@ export async function listJobs(): Promise<RecurringJob[]> {
 }
 
 export async function getJob(jobId: string): Promise<RecurringJob> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}`);
   if (!response.ok) {
     throw new Error(`Failed to get job: ${response.statusText}`);
   }
@@ -178,7 +241,7 @@ export async function getJob(jobId: string): Promise<RecurringJob> {
 }
 
 export async function createJob(request: CreateJobRequest): Promise<RecurringJob> {
-  const response = await fetch(`${API_BASE_URL}/jobs`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -193,7 +256,7 @@ export async function createJob(request: CreateJobRequest): Promise<RecurringJob
 }
 
 export async function updateJob(jobId: string, request: UpdateJobRequest): Promise<RecurringJob> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -208,7 +271,7 @@ export async function updateJob(jobId: string, request: UpdateJobRequest): Promi
 }
 
 export async function deleteJob(jobId: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}`, {
     method: 'DELETE',
   });
   if (!response.ok) {
@@ -217,7 +280,7 @@ export async function deleteJob(jobId: string): Promise<void> {
 }
 
 export async function runJobNow(jobId: string): Promise<JobExecution> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/run`, {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/run`, {
     method: 'POST',
   });
   if (!response.ok) {
@@ -229,7 +292,7 @@ export async function runJobNow(jobId: string): Promise<JobExecution> {
 
 export async function listJobExecutions(jobId: string, limit?: number): Promise<JobExecution[]> {
   const query = limit ? `?limit=${limit}` : '';
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/executions${query}`);
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/executions${query}`);
   if (!response.ok) {
     throw new Error(`Failed to list job executions: ${response.statusText}`);
   }
@@ -237,9 +300,96 @@ export async function listJobExecutions(jobId: string, limit?: number): Promise<
 }
 
 export async function listJobSessions(jobId: string): Promise<Session[]> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/sessions`);
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/sessions`);
   if (!response.ok) {
     throw new Error(`Failed to list job sessions: ${response.statusText}`);
   }
   return response.json();
+}
+
+// --- Settings API ---
+
+export async function getSettings(): Promise<Record<string, string>> {
+  const response = await fetch(`${getApiBaseUrl()}/settings`);
+  if (!response.ok) {
+    throw new Error(`Failed to get settings: ${response.statusText}`);
+  }
+  const data: SettingsResponse = await response.json();
+  return data.settings || {};
+}
+
+export async function updateSettings(settings: Record<string, string>): Promise<Record<string, string>> {
+  const response = await fetch(`${getApiBaseUrl()}/settings`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ settings }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `Failed to update settings: ${response.statusText}`);
+  }
+  const data: SettingsResponse = await response.json();
+  return data.settings || {};
+}
+
+// --- Integrations API ---
+
+export async function listIntegrations(): Promise<Integration[]> {
+  const response = await fetch(`${getApiBaseUrl()}/integrations`);
+  if (!response.ok) {
+    throw new Error(`Failed to list integrations: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function createIntegration(payload: IntegrationRequest): Promise<Integration> {
+  const response = await fetch(`${getApiBaseUrl()}/integrations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `Failed to create integration: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function updateIntegration(integrationId: string, payload: IntegrationRequest): Promise<Integration> {
+  const response = await fetch(`${getApiBaseUrl()}/integrations/${integrationId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `Failed to update integration: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function deleteIntegration(integrationId: string): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/integrations/${integrationId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete integration: ${response.statusText}`);
+  }
+}
+
+export async function testIntegration(integrationId: string): Promise<IntegrationTestResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/integrations/${integrationId}/test`, {
+    method: 'POST',
+  });
+  const data: IntegrationTestResponse = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || `Failed to test integration: ${response.statusText}`);
+  }
+  return data;
 }

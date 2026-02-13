@@ -70,9 +70,9 @@ function SessionsList({ onSelectSession, onCreateSession }: SessionsListProps) {
   }
 
   return (
-    <div className="sessions-list-container">
-      <div className="sessions-header">
-        <h2>Sessions</h2>
+    <div className="page-shell">
+      <div className="page-header">
+        <h1>Sessions</h1>
         <button onClick={onCreateSession} className="btn btn-primary">
           + New Session
         </button>
@@ -85,45 +85,48 @@ function SessionsList({ onSelectSession, onCreateSession }: SessionsListProps) {
         </div>
       )}
 
-      {sessions.length === 0 ? (
-        <div className="sessions-empty">
-          <p>No sessions yet.</p>
-          <p>Start a new conversation to begin.</p>
-          <button onClick={onCreateSession} className="btn btn-primary">
-            Create Your First Session
-          </button>
-        </div>
-      ) : (
-        <div className="sessions-list">
-          {sessions.map(session => (
-            <div 
-              key={session.id} 
-              className="session-card"
-              onClick={() => onSelectSession(session.id)}
-            >
-              <div className="session-card-header">
-                <h3 className="session-name">{formatSessionTitle(session)}</h3>
-                <button 
-                  className="session-delete-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteSession(session.id);
-                  }}
-                  title="Delete session"
-                >
-                  ×
-                </button>
+      <div className="page-content sessions-list-container">
+        {sessions.length === 0 ? (
+          <div className="sessions-empty">
+            <p>No sessions yet.</p>
+            <p>Start a new conversation to begin.</p>
+            <button onClick={onCreateSession} className="btn btn-primary">
+              Create Your First Session
+            </button>
+          </div>
+        ) : (
+          <div className="sessions-list">
+            {sessions.map(session => (
+              <div 
+                key={session.id} 
+                className="session-card"
+                onClick={() => onSelectSession(session.id)}
+              >
+                <div className="session-card-header">
+                  <h3 className="session-name">{formatSessionTitle(session)}</h3>
+                  <button 
+                    className="session-delete-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteSession(session.id);
+                    }}
+                    title="Delete session"
+                    aria-label={`Delete ${formatSessionTitle(session)}`}
+                  >
+                    Delete
+                  </button>
+                </div>
+                <div className="session-meta">
+                  <span className={`status-badge status-${session.status}`}>
+                    {session.status}
+                  </span>
+                  <span className="session-date">{formatDate(session.updated_at)}</span>
+                </div>
               </div>
-              <div className="session-meta">
-                <span className={`status-badge status-${session.status}`}>
-                  {session.status}
-                </span>
-                <span className="session-date">{formatDate(session.updated_at)}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

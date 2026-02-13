@@ -6,17 +6,23 @@ interface NavItem {
   path: string;
 }
 
+interface SidebarProps {
+  onNavigate?: () => void;
+}
+
 const navItems: NavItem[] = [
   { id: 'sessions', label: 'Sessions', path: '/sessions' },
   { id: 'jobs', label: 'Recurring jobs', path: '/agent/jobs' },
+  { id: 'settings', label: 'Settings', path: '/settings' },
+  { id: 'integrations', label: 'Integrations', path: '/integrations' },
 ];
 
-function Sidebar() {
+function Sidebar({ onNavigate }: SidebarProps) {
   const location = useLocation();
 
   return (
     <div className="sidebar">
-      <Link to="/" className="sidebar-title-link">
+      <Link to="/" className="sidebar-title-link" onClick={onNavigate}>
         <h2 className="sidebar-title">A2gent</h2>
       </Link>
 
@@ -27,6 +33,7 @@ function Sidebar() {
               <Link
                 to={item.path}
                 className={`nav-link ${location.pathname.startsWith(item.path) ? 'active' : ''}`}
+                onClick={onNavigate}
               >
                 {item.label}
               </Link>

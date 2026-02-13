@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import { 
@@ -10,20 +10,15 @@ import {
   type Message 
 } from './api';
 
-interface ChatViewProps {
-  currentSessionId?: string;
-  onSessionChange: (sessionId: string | undefined) => void;
-}
-
-function ChatView({ currentSessionId, onSessionChange }: ChatViewProps) {
+function ChatView() {
+  const navigate = useNavigate();
   const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
   const [session, setSession] = useState<Session | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Use URL param if provided, otherwise use prop
-  const activeSessionId = urlSessionId || currentSessionId;
+  const activeSessionId = urlSessionId;
 
   useEffect(() => {
     if (activeSessionId) {
@@ -41,7 +36,6 @@ function ChatView({ currentSessionId, onSessionChange }: ChatViewProps) {
       const data = await getSession(id);
       setSession(data);
       setMessages(data.messages || []);
-      onSessionChange(id);
     } catch (err) {
       console.error('Failed to load session:', err);
       setError(err instanceof Error ? err.message : 'Failed to load session');
@@ -50,46 +44,38 @@ function ChatView({ currentSessionId, onSessionChange }: ChatViewProps) {
     }
   };
 
-  const handleCreateSession = async (initialMessage?: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const response = await createSession({ 
-        agent_id: 'build', 
-        task: initialMessage 
-      });
-      
-      if (initialMessage) {
-        // Get the full session with initial messages
-        const newSession = await getSession(response.id);
-        setSession(newSession);
-        setMessages(newSession.messages || []);
-        onSessionChange(response.id);
-      } else {
-        setSession({
-          id: response.id,
-          agent_id: response.agent_id,
-          title: '',
-          status: response.status,
-          created_at: response.created_at,
-          updated_at: response.created_at,
-          messages: []
-        });
-        setMessages([]);
-        onSessionChange(response.id);
-      }
-    } catch (err) {
-      console.error('Failed to create session:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create session');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleSendMessage = async (message: string) => {
     if (!session) {
-      // Create a new session with this message
-      await handleCreateSession(message);
+      // Create a new session, then send the first message to trigger an agent response.
+      let createdSessionId: string | null = null;
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const created = await createSession({ agent_id: 'build' });
+        createdSessionId = created.id;
+
+        const response = await sendMessage(created.id, message);
+        const newSession = await getSession(created.id);
+
+        setSession(newSession);
+        setMessages(response.messages);
+      } catch (err) {
+        console.error('Failed to create session and send first message:', err);
+        setError(err instanceof Error ? err.message : 'Failed to send message');
+
+        if (createdSessionId) {
+          try {
+            const createdSession = await getSession(createdSessionId);
+            setSession(createdSession);
+            setMessages(createdSession.messages || []);
+          } catch {
+            // Keep the original error visible; no-op for fallback load failure.
+          }
+        }
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -122,6 +108,16 @@ function ChatView({ currentSessionId, onSessionChange }: ChatViewProps) {
   return (
     <>
       <div className="top-bar">
+        <div className="top-bar-left">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate('/sessions')}
+          >
+            Back to Sessions
+          </button>
+        </div>
+
         <div className="session-info">
           {session ? (
             <>

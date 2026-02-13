@@ -86,9 +86,9 @@ function JobsList() {
   }
 
   return (
-    <div className="jobs-list-container">
-      <div className="jobs-header">
-        <h2>Recurring Jobs</h2>
+    <div className="page-shell">
+      <div className="page-header">
+        <h1>Recurring Jobs</h1>
         <button onClick={() => navigate('/agent/jobs/new')} className="btn btn-primary">
           + New Job
         </button>
@@ -101,65 +101,67 @@ function JobsList() {
         </div>
       )}
 
-      {jobs.length === 0 ? (
-        <div className="jobs-empty">
-          <p>No recurring jobs yet.</p>
-          <p>Create a job to schedule automated agent tasks.</p>
-          <button onClick={() => navigate('/agent/jobs/new')} className="btn btn-primary">
-            Create Your First Job
-          </button>
-        </div>
-      ) : (
-        <div className="jobs-list">
-          {jobs.map(job => (
-            <div key={job.id} className={`job-card ${!job.enabled ? 'job-disabled' : ''}`}>
-              <div className="job-card-header">
-                <h3 className="job-name">{job.name}</h3>
-                <div className="job-status">
-                  <span className={`status-badge ${job.enabled ? 'status-enabled' : 'status-disabled'}`}>
-                    {job.enabled ? 'Enabled' : 'Disabled'}
-                  </span>
+      <div className="page-content jobs-list-container">
+        {jobs.length === 0 ? (
+          <div className="jobs-empty">
+            <p>No recurring jobs yet.</p>
+            <p>Create a job to schedule automated agent tasks.</p>
+            <button onClick={() => navigate('/agent/jobs/new')} className="btn btn-primary">
+              Create Your First Job
+            </button>
+          </div>
+        ) : (
+          <div className="jobs-list">
+            {jobs.map(job => (
+              <div key={job.id} className={`job-card ${!job.enabled ? 'job-disabled' : ''}`}>
+                <div className="job-card-header">
+                  <h3 className="job-name">{job.name}</h3>
+                  <div className="job-status">
+                    <span className={`status-badge ${job.enabled ? 'status-enabled' : 'status-disabled'}`}>
+                      {job.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="job-details">
-                <div className="job-schedule">
-                  <span className="label">Schedule:</span>
-                  <span className="value">{job.schedule_human}</span>
+                <div className="job-details">
+                  <div className="job-schedule">
+                    <span className="label">Schedule:</span>
+                    <span className="value">{job.schedule_human}</span>
+                  </div>
+                  <div className="job-cron">
+                    <code>{job.schedule_cron}</code>
+                  </div>
                 </div>
-                <div className="job-cron">
-                  <code>{job.schedule_cron}</code>
-                </div>
-              </div>
 
-              <div className="job-stats">
-                <div className="stat">
-                  <span className="stat-label">Last run:</span>
-                  <span className="stat-value">{formatTimeAgo(job.last_run_at)}</span>
+                <div className="job-stats">
+                  <div className="stat">
+                    <span className="stat-label">Last run:</span>
+                    <span className="stat-value">{formatTimeAgo(job.last_run_at)}</span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-label">Next run:</span>
+                    <span className={`stat-value ${job.next_run_at && new Date(job.next_run_at) < new Date() ? 'overdue' : ''}`}>
+                      {formatNextRun(job.next_run_at)}
+                    </span>
+                  </div>
                 </div>
-                <div className="stat">
-                  <span className="stat-label">Next run:</span>
-                  <span className={`stat-value ${job.next_run_at && new Date(job.next_run_at) < new Date() ? 'overdue' : ''}`}>
-                    {formatNextRun(job.next_run_at)}
-                  </span>
-                </div>
-              </div>
 
-              <div className="job-actions">
-                <button onClick={() => navigate(`/agent/jobs/${job.id}`)} className="btn btn-secondary">
-                  View
-                </button>
-                <button onClick={() => handleRunNow(job.id)} className="btn btn-secondary" disabled={!job.enabled}>
-                  Run Now
-                </button>
-                <button onClick={() => handleDeleteJob(job.id, job.name)} className="btn btn-danger">
-                  Delete
-                </button>
+                <div className="job-actions">
+                  <button onClick={() => navigate(`/agent/jobs/${job.id}`)} className="btn btn-secondary">
+                    View
+                  </button>
+                  <button onClick={() => handleRunNow(job.id)} className="btn btn-secondary" disabled={!job.enabled}>
+                    Run Now
+                  </button>
+                  <button onClick={() => handleDeleteJob(job.id, job.name)} className="btn btn-danger">
+                    Delete
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
