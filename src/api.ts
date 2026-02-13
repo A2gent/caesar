@@ -7,6 +7,31 @@ function normalizeApiBaseUrl(url: string): string {
   return url.trim().replace(/\/$/, '');
 }
 
+async function buildApiError(response: Response, fallback: string): Promise<Error> {
+  const statusDetail = `${response.status} ${response.statusText}`.trim();
+  let body = '';
+  try {
+    body = await response.text();
+  } catch {
+    body = '';
+  }
+
+  if (body) {
+    try {
+      const parsed = JSON.parse(body) as { error?: string; message?: string };
+      const message = parsed.error || parsed.message;
+      if (message && message.trim() !== '') {
+        return new Error(message);
+      }
+    } catch {
+      // Ignore parse errors and use body fallback.
+    }
+    return new Error(`${fallback}: ${body}`);
+  }
+
+  return new Error(`${fallback}: ${statusDetail}`);
+}
+
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') {
     return normalizeApiBaseUrl(DEFAULT_API_BASE_URL);
@@ -39,6 +64,9 @@ export interface Session {
   id: string;
   agent_id: string;
   parent_id?: string;
+  project_id?: string;
+  provider?: string;
+  model?: string;
   title: string;
   status: string;
   created_at: string;
@@ -76,23 +104,105 @@ export interface ChatResponse {
   };
 }
 
+export type ChatStreamEvent =
+  | { type: 'status'; status: string }
+  | { type: 'assistant_delta'; delta: string }
+  | { type: 'done'; content: string; messages: Message[]; status: string; usage?: { input_tokens: number; output_tokens: number } }
+  | { type: 'error'; error: string; status?: string };
+
 export interface CreateSessionRequest {
   agent_id?: string;
   task?: string;
+  provider?: string;
+  model?: string;
+  project_id?: string;
 }
 
 export interface CreateSessionResponse {
   id: string;
   agent_id: string;
+  project_id?: string;
+  provider?: string;
+  model?: string;
   status: string;
   created_at: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  folders: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  folders: string[];
+}
+
+export interface UpdateProjectRequest {
+  name?: string;
+  folders?: string[];
 }
 
 export interface SettingsResponse {
   settings: Record<string, string>;
 }
 
-export type IntegrationProvider = 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'webhook';
+export interface MindConfigResponse {
+  root_folder: string;
+}
+
+export interface MindTreeEntry {
+  name: string;
+  path: string;
+  type: 'directory' | 'file';
+  has_child?: boolean;
+}
+
+export interface MindTreeResponse {
+  root_folder: string;
+  path: string;
+  entries: MindTreeEntry[];
+}
+
+export interface MindFileResponse {
+  root_folder: string;
+  path: string;
+  content: string;
+}
+
+export interface ElevenLabsVoice {
+  voice_id: string;
+  name: string;
+  preview_url?: string;
+}
+
+export type LLMProviderType = 'kimi' | 'lmstudio' | 'anthropic';
+
+export interface ProviderConfig {
+  type: LLMProviderType;
+  display_name: string;
+  default_url: string;
+  requires_key: boolean;
+  default_model: string;
+  context_window: number;
+  is_active: boolean;
+  configured: boolean;
+  has_api_key: boolean;
+  base_url: string;
+  model: string;
+}
+
+export interface UpdateProviderRequest {
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+  active?: boolean;
+}
+
+export type IntegrationProvider = 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'webhook' | 'google_calendar' | 'elevenlabs';
 export type IntegrationMode = 'notify_only' | 'duplex';
 
 export interface Integration {
@@ -145,8 +255,7 @@ export async function createSession(request: CreateSessionRequest = {}): Promise
     body: JSON.stringify(request),
   });
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || `Failed to create session: ${response.statusText}`);
+    throw await buildApiError(response, 'Failed to create session');
   }
   return response.json();
 }
@@ -169,10 +278,132 @@ export async function sendMessage(sessionId: string, message: string): Promise<C
     body: JSON.stringify({ message }),
   });
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || `Failed to send message: ${response.statusText}`);
+    throw await buildApiError(response, 'Failed to send message');
   }
   return response.json();
+}
+
+export async function updateSessionProject(sessionId: string, projectId?: string): Promise<Session> {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/project`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ project_id: projectId ?? null }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to update session project');
+  }
+  return response.json();
+}
+
+export async function listProjects(): Promise<Project[]> {
+  const response = await fetch(`${getApiBaseUrl()}/projects`);
+  if (!response.ok) {
+    throw new Error(`Failed to list projects: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function getProject(projectId: string): Promise<Project> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to get project: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function createProject(request: CreateProjectRequest): Promise<Project> {
+  const response = await fetch(`${getApiBaseUrl()}/projects`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to create project');
+  }
+  return response.json();
+}
+
+export async function updateProject(projectId: string, request: UpdateProjectRequest): Promise<Project> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to update project');
+  }
+  return response.json();
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete project: ${response.statusText}`);
+  }
+}
+
+export async function* sendMessageStream(sessionId: string, message: string): AsyncGenerator<ChatStreamEvent, void, unknown> {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message }),
+  });
+
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to send message');
+  }
+
+  if (!response.body) {
+    throw new Error('Streaming response body is unavailable');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      let event: ChatStreamEvent;
+      try {
+        event = JSON.parse(trimmed) as ChatStreamEvent;
+      } catch {
+        continue;
+      }
+      yield event;
+    }
+  }
+
+  const tail = buffer.trim();
+  if (tail) {
+    try {
+      yield JSON.parse(tail) as ChatStreamEvent;
+    } catch {
+      // Ignore malformed tail chunks.
+    }
+  }
 }
 
 export async function healthCheck(): Promise<boolean> {
@@ -332,6 +563,118 @@ export async function updateSettings(settings: Record<string, string>): Promise<
   }
   const data: SettingsResponse = await response.json();
   return data.settings || {};
+}
+
+// --- My Mind API ---
+
+export async function getMindConfig(): Promise<MindConfigResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/mind/config`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load My Mind configuration');
+  }
+  return response.json();
+}
+
+export async function updateMindConfig(rootFolder: string): Promise<MindConfigResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/mind/config`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ root_folder: rootFolder }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to update My Mind configuration');
+  }
+  return response.json();
+}
+
+export async function browseMindDirectories(path: string): Promise<MindTreeResponse> {
+  const query = path.trim() === '' ? '' : `?path=${encodeURIComponent(path)}`;
+  const response = await fetch(`${getApiBaseUrl()}/mind/browse${query}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to browse directories');
+  }
+  return response.json();
+}
+
+export async function listMindTree(path = ''): Promise<MindTreeResponse> {
+  const query = path.trim() === '' ? '' : `?path=${encodeURIComponent(path)}`;
+  const response = await fetch(`${getApiBaseUrl()}/mind/tree${query}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to list My Mind tree');
+  }
+  return response.json();
+}
+
+export async function getMindFile(path: string): Promise<MindFileResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/mind/file?path=${encodeURIComponent(path)}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load markdown file');
+  }
+  return response.json();
+}
+
+export async function listSpeechVoices(): Promise<ElevenLabsVoice[]> {
+  const response = await fetch(`${getApiBaseUrl()}/speech/voices`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load speech voices');
+  }
+  return response.json();
+}
+
+export async function synthesizeCompletionAudio(text: string): Promise<Blob> {
+  const response = await fetch(`${getApiBaseUrl()}/speech/completion`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to synthesize completion audio');
+  }
+  return response.blob();
+}
+
+// --- Provider API ---
+
+export async function listProviders(): Promise<ProviderConfig[]> {
+  const response = await fetch(`${getApiBaseUrl()}/providers`);
+  if (!response.ok) {
+    throw new Error(`Failed to list providers: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function updateProvider(providerType: LLMProviderType, payload: UpdateProviderRequest): Promise<ProviderConfig[]> {
+  const response = await fetch(`${getApiBaseUrl()}/providers/${providerType}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `Failed to update provider: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function setActiveProvider(providerType: LLMProviderType): Promise<ProviderConfig[]> {
+  const response = await fetch(`${getApiBaseUrl()}/providers/active`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ provider: providerType }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || `Failed to set active provider: ${response.statusText}`);
+  }
+  return response.json();
 }
 
 // --- Integrations API ---

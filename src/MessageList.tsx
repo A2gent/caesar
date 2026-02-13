@@ -1,13 +1,16 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useContext, useEffect, useMemo, useRef } from 'react';
 import type { Message, ToolCall, ToolResult } from './api';
+import { AudioPlaybackContext } from './audioPlayback';
 
 interface MessageListProps {
   messages: Message[];
   isLoading: boolean;
+  sessionId: string | null;
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages, isLoading }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId }) => {
   const endRef = useRef<HTMLDivElement>(null);
+  const audioPlayback = useContext(AudioPlaybackContext);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,13 +51,48 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading }) => {
   };
 
   const formatContent = (content: string) => {
-    // Simple markdown-like formatting
-    return content.split('\n').map((line, i) => (
+    const lines = content.split('\n');
+    return lines.map((line, i) => (
       <React.Fragment key={i}>
         {line}
-        {i < content.split('\n').length - 1 && <br />}
+        {i < lines.length - 1 && <br />}
       </React.Fragment>
     ));
+  };
+
+  const highlightedAssistantIndex = useMemo(() => {
+    const active = audioPlayback.state;
+    if (!active.text || !active.sessionId || !sessionId || active.sessionId !== sessionId) {
+      return -1;
+    }
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role === 'assistant' && message.content === active.text) {
+        return i;
+      }
+    }
+    return -1;
+  }, [audioPlayback.state, messages, sessionId]);
+
+  const renderMessageContent = (message: Message, index: number) => {
+    const isHighlightedAssistantMessage = index === highlightedAssistantIndex && message.role === 'assistant';
+    if (!isHighlightedAssistantMessage) {
+      return formatContent(message.content);
+    }
+
+    const highlightedChars = Math.max(0, Math.min(message.content.length, audioPlayback.state.charIndex));
+    if (highlightedChars <= 0) {
+      return formatContent(message.content);
+    }
+
+    const spoken = message.content.slice(0, highlightedChars);
+    const remaining = message.content.slice(highlightedChars);
+    return (
+      <>
+        <span className="message-spoken-text">{formatContent(spoken)}</span>
+        {formatContent(remaining)}
+      </>
+    );
   };
 
   return (
@@ -72,7 +110,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading }) => {
           
           {message.content && (
             <div className="message-content">
-              {formatContent(message.content)}
+              {renderMessageContent(message, index)}
             </div>
           )}
           

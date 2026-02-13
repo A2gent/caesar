@@ -14,8 +14,8 @@ function SettingsView() {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await getSettings();
-      setSettings(data);
+      const settingsData = await getSettings();
+      setSettings(settingsData);
     } catch (err) {
       console.error('Failed to load settings:', err);
       setError(err instanceof Error ? err.message : 'Failed to load settings');

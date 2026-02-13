@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { listSpeechVoices, type ElevenLabsVoice } from './api';
 
 interface SettingsPanelProps {
   settings: Record<string, string>;
@@ -12,27 +14,38 @@ interface CustomRow {
   value: string;
 }
 
-const PRESET_KEYS = [
-  'ELEVENLABS_API_KEY',
+type CompletionAudioMode = 'off' | 'system' | 'elevenlabs';
+type CompletionAudioContent = 'status' | 'final_response';
+
+const ELEVENLABS_API_KEY = 'ELEVENLABS_API_KEY';
+const ELEVENLABS_VOICE_ID = 'ELEVENLABS_VOICE_ID';
+const ELEVENLABS_SPEED = 'ELEVENLABS_SPEED';
+const COMPLETION_AUDIO_MODE = 'AAGENT_COMPLETION_AUDIO_MODE';
+const COMPLETION_AUDIO_CONTENT = 'AAGENT_COMPLETION_AUDIO_CONTENT';
+const SPEECH_ENABLED_KEY = 'AAGENT_SPEECH_ENABLED';
+const ELEVENLABS_SPEED_OPTIONS = ['0.5', '0.8', '1.0', '1.5', '2.0'] as const;
+
+const MANAGED_KEYS = [
+  ELEVENLABS_API_KEY,
+  ELEVENLABS_VOICE_ID,
+  ELEVENLABS_SPEED,
+  COMPLETION_AUDIO_MODE,
+  COMPLETION_AUDIO_CONTENT,
+  SPEECH_ENABLED_KEY,
   'SAG_VOICE_ID',
-  'KIMI_API_KEY',
-  'ANTHROPIC_API_KEY',
-  'AAGENT_SPEECH_ENABLED',
   'AAGENT_SAY_VOICE',
 ] as const;
 
-const labels: Record<string, string> = {
-  ELEVENLABS_API_KEY: '11 Labs API key',
-  SAG_VOICE_ID: 'SAG voice id',
-  KIMI_API_KEY: 'Kimi API key',
-  ANTHROPIC_API_KEY: 'Anthropic API key',
-  AAGENT_SPEECH_ENABLED: 'Speak completion aloud',
-  AAGENT_SAY_VOICE: 'macOS say voice',
-};
+const HIDDEN_CUSTOM_KEYS = new Set<string>([...MANAGED_KEYS]);
+const REMOVED_ENV_KEYS = new Set<string>(['KIMI_API_KEY', 'ANTHROPIC_API_KEY']);
 
 function isSecretKey(key: string): boolean {
   const upper = key.toUpperCase();
   return upper.includes('KEY') || upper.includes('TOKEN') || upper.includes('SECRET') || upper.includes('PASSWORD');
+}
+
+function shouldShowCustomKey(key: string): boolean {
+  return !HIDDEN_CUSTOM_KEYS.has(key) && !REMOVED_ENV_KEYS.has(key);
 }
 
 function isTruthySetting(value: string): boolean {
@@ -40,43 +53,155 @@ function isTruthySetting(value: string): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSave }) => {
-  const [presetValues, setPresetValues] = useState<Record<string, string>>(() => {
-    const values: Record<string, string> = {};
-    for (const key of PRESET_KEYS) {
-      values[key] = settings[key] || '';
-    }
-    return values;
-  });
+function parseCompletionAudioMode(settings: Record<string, string>): CompletionAudioMode {
+  const mode = (settings[COMPLETION_AUDIO_MODE] || '').trim().toLowerCase();
+  if (mode === 'off' || mode === 'system' || mode === 'elevenlabs') {
+    return mode;
+  }
+  return isTruthySetting(settings[SPEECH_ENABLED_KEY] || '') ? 'system' : 'off';
+}
 
+function parseCompletionAudioContent(settings: Record<string, string>): CompletionAudioContent {
+  const content = (settings[COMPLETION_AUDIO_CONTENT] || '').trim().toLowerCase();
+  if (content === 'status' || content === 'final_response') {
+    return content;
+  }
+  return 'status';
+}
+
+function speedToOptionIndex(speed: string): number {
+  const parsed = Number.parseFloat(speed);
+  if (!Number.isFinite(parsed)) {
+    return ELEVENLABS_SPEED_OPTIONS.indexOf('1.0');
+  }
+
+  let closestIndex = 0;
+  let minDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < ELEVENLABS_SPEED_OPTIONS.length; i += 1) {
+    const optionValue = Number.parseFloat(ELEVENLABS_SPEED_OPTIONS[i]);
+    const distance = Math.abs(optionValue - parsed);
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestIndex = i;
+    }
+  }
+  return closestIndex;
+}
+
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSave }) => {
   const [customRows, setCustomRows] = useState<CustomRow[]>(() => {
     const rows: CustomRow[] = [];
     for (const [key, value] of Object.entries(settings)) {
-      if (!PRESET_KEYS.includes(key as (typeof PRESET_KEYS)[number])) {
+      if (shouldShowCustomKey(key)) {
         rows.push({ id: crypto.randomUUID(), key, value });
       }
     }
     return rows;
   });
 
+  const [completionAudioMode, setCompletionAudioMode] = useState<CompletionAudioMode>(() => parseCompletionAudioMode(settings));
+  const [completionAudioContent, setCompletionAudioContent] = useState<CompletionAudioContent>(() => parseCompletionAudioContent(settings));
+  const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState(settings[ELEVENLABS_VOICE_ID] || '');
+  const [elevenLabsSpeed, setElevenLabsSpeed] = useState(settings[ELEVENLABS_SPEED] || '1.0');
+  const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
+  const [voicesError, setVoicesError] = useState<string | null>(null);
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [hasAttemptedVoiceLoad, setHasAttemptedVoiceLoad] = useState(false);
+
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    const values: Record<string, string> = {};
-    for (const key of PRESET_KEYS) {
-      values[key] = settings[key] || '';
-    }
-    setPresetValues(values);
-
     const rows: CustomRow[] = [];
     for (const [key, value] of Object.entries(settings)) {
-      if (!PRESET_KEYS.includes(key as (typeof PRESET_KEYS)[number])) {
+      if (shouldShowCustomKey(key)) {
         rows.push({ id: crypto.randomUUID(), key, value });
       }
     }
     setCustomRows(rows);
+
+    setCompletionAudioMode(parseCompletionAudioMode(settings));
+    setCompletionAudioContent(parseCompletionAudioContent(settings));
+    setElevenLabsVoiceId(settings[ELEVENLABS_VOICE_ID] || '');
+    setElevenLabsSpeed(settings[ELEVENLABS_SPEED] || '1.0');
   }, [settings]);
+
+  const loadVoices = async () => {
+    setVoicesError(null);
+
+    setIsLoadingVoices(true);
+    try {
+      const loadedVoices = await listSpeechVoices();
+      const nextVoices = loadedVoices.slice().sort((a, b) => a.name.localeCompare(b.name));
+      setVoices(nextVoices);
+      setHasAttemptedVoiceLoad(true);
+
+      if (nextVoices.length === 0) {
+        setVoicesError('No voices found for this ElevenLabs account.');
+        return;
+      }
+
+      const hasCurrentVoice = nextVoices.some((voice) => voice.voice_id === elevenLabsVoiceId);
+      if (!hasCurrentVoice) {
+        setElevenLabsVoiceId(nextVoices[0].voice_id);
+      }
+    } catch (error) {
+      setVoices([]);
+      setHasAttemptedVoiceLoad(true);
+      setVoicesError(error instanceof Error ? error.message : 'Failed to load voices');
+    } finally {
+      setIsLoadingVoices(false);
+    }
+  };
+
+  useEffect(() => {
+    if (completionAudioMode !== 'elevenlabs') {
+      return;
+    }
+    if (voices.length > 0 || isLoadingVoices || hasAttemptedVoiceLoad) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      loadVoices();
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [completionAudioMode, voices.length, isLoadingVoices, hasAttemptedVoiceLoad]);
+
+  const handlePlayPreview = async (voice: ElevenLabsVoice | undefined) => {
+    if (!voice || !voice.preview_url) {
+      setVoicesError('Preview is unavailable for the selected voice.');
+      return;
+    }
+
+    setVoicesError(null);
+    try {
+      if (audioElement) {
+        audioElement.pause();
+      }
+      const nextAudio = new Audio(voice.preview_url);
+      setAudioElement(nextAudio);
+      setPlayingVoiceId(voice.voice_id);
+      nextAudio.onended = () => setPlayingVoiceId(null);
+      await nextAudio.play();
+    } catch (error) {
+      setPlayingVoiceId(null);
+      setVoicesError(error instanceof Error ? error.message : 'Failed to play voice preview');
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioElement) {
+        audioElement.pause();
+      }
+    };
+  }, [audioElement]);
 
   const canSave = useMemo(() => {
     return !isSaving;
@@ -100,21 +225,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
 
     const payload: Record<string, string> = {};
 
-    for (const key of PRESET_KEYS) {
-      if (key === 'AAGENT_SPEECH_ENABLED') {
-        payload[key] = isTruthySetting(presetValues[key] || '') ? 'true' : 'false';
-        continue;
-      }
+    payload[COMPLETION_AUDIO_MODE] = completionAudioMode;
+    payload[COMPLETION_AUDIO_CONTENT] = completionAudioContent;
+    payload[SPEECH_ENABLED_KEY] = completionAudioMode === 'off' ? 'false' : 'true';
 
-      const value = (presetValues[key] || '').trim();
-      if (value !== '') {
-        payload[key] = value;
-      }
+    const voiceId = elevenLabsVoiceId.trim();
+    if (voiceId !== '') {
+      payload[ELEVENLABS_VOICE_ID] = voiceId;
     }
+    const speed = ELEVENLABS_SPEED_OPTIONS[speedToOptionIndex(elevenLabsSpeed)];
+    payload[ELEVENLABS_SPEED] = speed;
 
     for (const row of customRows) {
       const key = row.key.trim();
-      if (!key) {
+      if (!key || REMOVED_ENV_KEYS.has(key)) {
         continue;
       }
       payload[key] = row.value.trim();
@@ -122,6 +246,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
 
     try {
       await onSave(payload);
+      if (completionAudioMode === 'elevenlabs') {
+        setHasAttemptedVoiceLoad(false);
+        await loadVoices();
+      }
       setSaveSuccess('Settings saved and synced to backend.');
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Failed to save settings');
@@ -130,36 +258,125 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
 
   return (
     <div className="settings-panel">
-      <h2>Agent environment</h2>
-      <p className="settings-help">
-        Secrets are stored in backend SQLite and synced into backend environment variables for agent/tool commands.
-      </p>
+      <div className="settings-audio-panel">
+        <h2>Completion audio</h2>
+        <p className="settings-help">
+          Choose where completion speech comes from. Web app playback uses your current browser/device audio output.
+        </p>
 
-      <div className="settings-group">
-        {PRESET_KEYS.map((key) => (
-          <label key={key} className="settings-field">
-            <span>{labels[key]}</span>
-            {key === 'AAGENT_SPEECH_ENABLED' ? (
-              <input
-                type="checkbox"
-                checked={isTruthySetting(presetValues[key] || '')}
-                onChange={(e) => setPresetValues((prev) => ({ ...prev, [key]: e.target.checked ? 'true' : 'false' }))}
-              />
-            ) : (
-              <input
-                type={isSecretKey(key) ? 'password' : 'text'}
-                value={presetValues[key] || ''}
-                onChange={(e) => setPresetValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                placeholder={key}
-                autoComplete="off"
-              />
-            )}
+        <div className="audio-mode-options">
+          <label className="audio-mode-option">
+            <input
+              type="radio"
+              name="completion-audio-mode"
+              value="off"
+              checked={completionAudioMode === 'off'}
+              onChange={() => setCompletionAudioMode('off')}
+            />
+            <span>Off</span>
           </label>
-        ))}
+          <label className="audio-mode-option">
+            <input
+              type="radio"
+              name="completion-audio-mode"
+              value="system"
+              checked={completionAudioMode === 'system'}
+              onChange={() => setCompletionAudioMode('system')}
+            />
+            <span>System voice</span>
+          </label>
+          <label className="audio-mode-option">
+            <input
+              type="radio"
+              name="completion-audio-mode"
+              value="elevenlabs"
+              checked={completionAudioMode === 'elevenlabs'}
+              onChange={() => setCompletionAudioMode('elevenlabs')}
+            />
+            <span>ElevenLabs</span>
+          </label>
+        </div>
+
+        <div className="settings-group">
+          <label className="settings-field">
+            <span>When a session finishes</span>
+            <select
+              value={completionAudioContent}
+              onChange={(e) => setCompletionAudioContent(e.target.value as CompletionAudioContent)}
+            >
+              <option value="status">Announce session status changes</option>
+              <option value="final_response">Speak final agent response</option>
+            </select>
+          </label>
+
+          <label className="settings-field">
+            <span>Voice</span>
+            <div className="elevenlabs-voice-row">
+              <select
+                value={elevenLabsVoiceId}
+                onChange={(e) => setElevenLabsVoiceId(e.target.value)}
+              >
+                {voices.length === 0 ? (
+                  <option value="">
+                    {isLoadingVoices ? 'Loading voices...' : 'API key required in Integrations'}
+                  </option>
+                ) : (
+                  voices.map((voice) => (
+                    <option key={voice.voice_id} value={voice.voice_id}>
+                      {voice.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <button
+                type="button"
+                onClick={() => handlePlayPreview(voices.find((voice) => voice.voice_id === elevenLabsVoiceId))}
+                className="elevenlabs-preview-btn"
+                disabled={!elevenLabsVoiceId || voices.length === 0}
+                title="Play selected voice preview"
+                aria-label="Play selected voice preview"
+              >
+                {playingVoiceId === elevenLabsVoiceId ? '...' : '▶'}
+              </button>
+            </div>
+          </label>
+
+          <label className="settings-field">
+            <span>Voice speed</span>
+            <div className="elevenlabs-speed-control">
+              <input
+                className="elevenlabs-speed-slider"
+                type="range"
+                min="0"
+                max={String(ELEVENLABS_SPEED_OPTIONS.length - 1)}
+                step="1"
+                value={String(speedToOptionIndex(elevenLabsSpeed))}
+                onChange={(e) => {
+                  const nextIndex = Number.parseInt(e.target.value, 10);
+                  setElevenLabsSpeed(ELEVENLABS_SPEED_OPTIONS[nextIndex] || ELEVENLABS_SPEED_OPTIONS[0]);
+                }}
+              />
+              <div className="settings-help">Selected: {ELEVENLABS_SPEED_OPTIONS[speedToOptionIndex(elevenLabsSpeed)]}x</div>
+            </div>
+          </label>
+        </div>
+
+        {completionAudioMode === 'elevenlabs' && !isLoadingVoices && voices.length === 0 && (
+          <p className="settings-help">
+            ElevenLabs API key is configured in <Link to="/integrations">Integrations</Link>. Add an enabled ElevenLabs integration to load voices.
+          </p>
+        )}
+
+        {voicesError && <div className="settings-error">{voicesError}</div>}
       </div>
 
+      <h2>Environment variables</h2>
+      <p className="settings-help">
+        Values are stored in backend SQLite and synced into backend environment variables for agent/tool commands.
+      </p>
+
       <div className="settings-custom-header">
-        <h3>Custom secrets/tokens</h3>
+        <h3>Environment variables</h3>
         <button type="button" onClick={addRow} className="settings-add-btn">Add</button>
       </div>
 

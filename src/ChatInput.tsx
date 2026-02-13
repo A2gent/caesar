@@ -3,6 +3,8 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 interface ChatInputProps {
   onSend?: (message: string) => void;
   disabled?: boolean;
+  autoFocus?: boolean;
+  actionControls?: React.ReactNode;
 }
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -38,7 +40,7 @@ const isVoiceShortcut = (event: { altKey: boolean; shiftKey: boolean; metaKey: b
   return event.altKey && !event.shiftKey && !event.ctrlKey;
 };
 
-const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false }) => {
+const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false, autoFocus = false, actionControls }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const shouldRestartRef = useRef(false);
@@ -242,6 +244,14 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false }) => {
     }
   }, [value, interimTranscript]);
 
+  useEffect(() => {
+    if (!autoFocus || disabled) {
+      return;
+    }
+
+    textareaRef.current?.focus();
+  }, [autoFocus, disabled]);
+
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(event.target.value);
     setInterimTranscript('');
@@ -358,6 +368,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false }) => {
             <span>Listening...</span>
           </div>
         )}
+        {actionControls}
         {showVoiceSettings && (
           <>
             <label className="voice-settings-inline">

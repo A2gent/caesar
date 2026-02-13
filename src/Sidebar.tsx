@@ -12,9 +12,11 @@ interface SidebarProps {
 
 const navItems: NavItem[] = [
   { id: 'sessions', label: 'Sessions', path: '/sessions' },
+  { id: 'my-mind', label: 'My Mind', path: '/my-mind' },
   { id: 'jobs', label: 'Recurring jobs', path: '/agent/jobs' },
   { id: 'settings', label: 'Settings', path: '/settings' },
   { id: 'integrations', label: 'Integrations', path: '/integrations' },
+  { id: 'providers', label: 'LLM providers', path: '/providers' },
 ];
 
 function Sidebar({ onNavigate }: SidebarProps) {
