@@ -23,7 +23,11 @@ const ELEVENLABS_SPEED = 'ELEVENLABS_SPEED';
 const COMPLETION_AUDIO_MODE = 'AAGENT_COMPLETION_AUDIO_MODE';
 const COMPLETION_AUDIO_CONTENT = 'AAGENT_COMPLETION_AUDIO_CONTENT';
 const SPEECH_ENABLED_KEY = 'AAGENT_SPEECH_ENABLED';
+const CONTEXT_COMPACTION_TRIGGER_PERCENT = 'AAGENT_CONTEXT_COMPACTION_TRIGGER_PERCENT';
+const CONTEXT_COMPACTION_PROMPT = 'AAGENT_CONTEXT_COMPACTION_PROMPT';
 const ELEVENLABS_SPEED_OPTIONS = ['0.5', '0.8', '1.0', '1.5', '2.0'] as const;
+const DEFAULT_COMPACTION_TRIGGER = '80';
+const DEFAULT_COMPACTION_PROMPT = 'Create a concise continuation summary preserving goals, progress, constraints, and next actions.';
 
 const MANAGED_KEYS = [
   ELEVENLABS_API_KEY,
@@ -32,12 +36,14 @@ const MANAGED_KEYS = [
   COMPLETION_AUDIO_MODE,
   COMPLETION_AUDIO_CONTENT,
   SPEECH_ENABLED_KEY,
+  CONTEXT_COMPACTION_TRIGGER_PERCENT,
+  CONTEXT_COMPACTION_PROMPT,
   'SAG_VOICE_ID',
   'AAGENT_SAY_VOICE',
 ] as const;
 
 const HIDDEN_CUSTOM_KEYS = new Set<string>([...MANAGED_KEYS]);
-const REMOVED_ENV_KEYS = new Set<string>(['KIMI_API_KEY', 'ANTHROPIC_API_KEY']);
+const REMOVED_ENV_KEYS = new Set<string>(['KIMI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY']);
 
 function isSecretKey(key: string): boolean {
   const upper = key.toUpperCase();
@@ -103,6 +109,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
   const [completionAudioContent, setCompletionAudioContent] = useState<CompletionAudioContent>(() => parseCompletionAudioContent(settings));
   const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState(settings[ELEVENLABS_VOICE_ID] || '');
   const [elevenLabsSpeed, setElevenLabsSpeed] = useState(settings[ELEVENLABS_SPEED] || '1.0');
+  const [compactionTriggerPercent, setCompactionTriggerPercent] = useState(settings[CONTEXT_COMPACTION_TRIGGER_PERCENT] || DEFAULT_COMPACTION_TRIGGER);
+  const [compactionPrompt, setCompactionPrompt] = useState(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
   const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [voicesError, setVoicesError] = useState<string | null>(null);
@@ -126,6 +134,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
     setCompletionAudioContent(parseCompletionAudioContent(settings));
     setElevenLabsVoiceId(settings[ELEVENLABS_VOICE_ID] || '');
     setElevenLabsSpeed(settings[ELEVENLABS_SPEED] || '1.0');
+    setCompactionTriggerPercent(settings[CONTEXT_COMPACTION_TRIGGER_PERCENT] || DEFAULT_COMPACTION_TRIGGER);
+    setCompactionPrompt(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
   }, [settings]);
 
   const loadVoices = async () => {
@@ -229,6 +239,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
     payload[COMPLETION_AUDIO_CONTENT] = completionAudioContent;
     payload[SPEECH_ENABLED_KEY] = completionAudioMode === 'off' ? 'false' : 'true';
 
+    const compactionTrigger = Number.parseFloat(compactionTriggerPercent.trim());
+    if (!Number.isFinite(compactionTrigger) || compactionTrigger <= 0 || compactionTrigger > 100) {
+      setSaveError('Context compaction trigger must be a number between 0 and 100.');
+      return;
+    }
+    payload[CONTEXT_COMPACTION_TRIGGER_PERCENT] = String(compactionTrigger);
+
+    const trimmedCompactionPrompt = compactionPrompt.trim();
+    if (trimmedCompactionPrompt === '') {
+      setSaveError('Context compaction prompt is required.');
+      return;
+    }
+    payload[CONTEXT_COMPACTION_PROMPT] = trimmedCompactionPrompt;
+
     const voiceId = elevenLabsVoiceId.trim();
     if (voiceId !== '') {
       payload[ELEVENLABS_VOICE_ID] = voiceId;
@@ -257,8 +281,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
   };
 
   return (
-    <div className="settings-panel">
-      <div className="settings-audio-panel">
+    <>
+      <div className="settings-panel settings-audio-panel">
         <h2>Completion audio</h2>
         <p className="settings-help">
           Choose where completion speech comes from. Web app playback uses your current browser/device audio output.
@@ -370,45 +394,81 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
         {voicesError && <div className="settings-error">{voicesError}</div>}
       </div>
 
-      <h2>Environment variables</h2>
-      <p className="settings-help">
-        Values are stored in backend SQLite and synced into backend environment variables for agent/tool commands.
-      </p>
-
-      <div className="settings-custom-header">
-        <h3>Environment variables</h3>
-        <button type="button" onClick={addRow} className="settings-add-btn">Add</button>
+      <div className="settings-panel">
+        <h2>Context compaction</h2>
+        <p className="settings-help">
+          Automatically compact conversation context when usage is high, then continue from a fresh context window.
+        </p>
+        <div className="settings-group">
+          <label className="settings-field">
+            <span>Trigger at context usage (%)</span>
+            <div className="compaction-slider-wrap">
+              <input
+                className="compaction-slider"
+                type="range"
+                min="1"
+                max="100"
+                step="0.5"
+                value={compactionTriggerPercent}
+                onChange={(e) => setCompactionTriggerPercent(e.target.value)}
+              />
+              <div className="compaction-slider-value">{Number.parseFloat(compactionTriggerPercent || '0').toFixed(1)}%</div>
+            </div>
+          </label>
+          <label className="settings-field">
+            <span>Compaction prompt</span>
+            <textarea
+              className="compaction-prompt"
+              value={compactionPrompt}
+              onChange={(e) => setCompactionPrompt(e.target.value)}
+              placeholder="How the model should summarize before resetting context"
+              rows={6}
+            />
+          </label>
+        </div>
       </div>
 
-      <div className="settings-custom-list">
-        {customRows.map((row) => (
-          <div key={row.id} className="settings-custom-row">
-            <input
-              type="text"
-              value={row.key}
-              onChange={(e) => updateRow(row.id, 'key', e.target.value)}
-              placeholder="ENV_VAR_NAME"
-              autoComplete="off"
-            />
-            <input
-              type={isSecretKey(row.key) ? 'password' : 'text'}
-              value={row.value}
-              onChange={(e) => updateRow(row.id, 'value', e.target.value)}
-              placeholder="value"
-              autoComplete="off"
-            />
-            <button type="button" onClick={() => removeRow(row.id)} className="settings-remove-btn">Remove</button>
-          </div>
-        ))}
+      <div className="settings-panel">
+        <h2>Environment variables</h2>
+        <p className="settings-help">
+          Values are stored in backend SQLite and synced into backend environment variables for agent/tool commands.
+        </p>
+
+        <div className="settings-custom-header">
+          <h3>Environment variables</h3>
+          <button type="button" onClick={addRow} className="settings-add-btn">Add</button>
+        </div>
+
+        <div className="settings-custom-list">
+          {customRows.map((row) => (
+            <div key={row.id} className="settings-custom-row">
+              <input
+                type="text"
+                value={row.key}
+                onChange={(e) => updateRow(row.id, 'key', e.target.value)}
+                placeholder="ENV_VAR_NAME"
+                autoComplete="off"
+              />
+              <input
+                type={isSecretKey(row.key) ? 'password' : 'text'}
+                value={row.value}
+                onChange={(e) => updateRow(row.id, 'value', e.target.value)}
+                placeholder="value"
+                autoComplete="off"
+              />
+              <button type="button" onClick={() => removeRow(row.id)} className="settings-remove-btn">Remove</button>
+            </div>
+          ))}
+        </div>
+
+        {saveError && <div className="settings-error">{saveError}</div>}
+        {saveSuccess && <div className="settings-success">{saveSuccess}</div>}
+
+        <button type="button" onClick={handleSave} className="settings-save-btn" disabled={!canSave}>
+          {isSaving ? 'Saving...' : 'Save settings'}
+        </button>
       </div>
-
-      {saveError && <div className="settings-error">{saveError}</div>}
-      {saveSuccess && <div className="settings-success">{saveSuccess}</div>}
-
-      <button type="button" onClick={handleSave} className="settings-save-btn" disabled={!canSave}>
-        {isSaving ? 'Saving...' : 'Save settings'}
-      </button>
-    </div>
+    </>
   );
 };
 

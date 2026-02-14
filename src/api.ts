@@ -69,16 +69,19 @@ export interface Session {
   model?: string;
   title: string;
   status: string;
+  total_tokens?: number;
+  run_duration_seconds?: number;
   created_at: string;
   updated_at: string;
   messages?: Message[];
 }
 
 export interface Message {
-  role: 'user' | 'assistant' | 'tool';
+  role: 'user' | 'assistant' | 'tool' | 'system';
   content: string;
   tool_calls?: ToolCall[];
   tool_results?: ToolResult[];
+  metadata?: Record<string, unknown>;
   timestamp: string;
 }
 
@@ -179,7 +182,7 @@ export interface ElevenLabsVoice {
   preview_url?: string;
 }
 
-export type LLMProviderType = 'kimi' | 'lmstudio' | 'anthropic';
+export type LLMProviderType = 'fallback_chain' | 'kimi' | 'openrouter' | 'lmstudio' | 'anthropic';
 
 export interface ProviderConfig {
   type: LLMProviderType;
@@ -193,13 +196,30 @@ export interface ProviderConfig {
   has_api_key: boolean;
   base_url: string;
   model: string;
+  fallback_chain?: LLMProviderType[];
 }
 
 export interface UpdateProviderRequest {
   api_key?: string;
   base_url?: string;
   model?: string;
+  fallback_chain?: LLMProviderType[];
   active?: boolean;
+}
+
+export interface ProviderModelsResponse {
+  models: string[];
+}
+
+function normalizeLMStudioBaseUrl(raw?: string): string {
+  if (!raw) return '';
+  let base = raw.trim().replace(/\/+$/, '');
+  if (base.endsWith('/models')) {
+    base = base.slice(0, -'/models'.length);
+  } else if (base.endsWith('/chat/completions')) {
+    base = base.slice(0, -'/chat/completions'.length);
+  }
+  return base;
 }
 
 export type IntegrationProvider = 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'webhook' | 'google_calendar' | 'elevenlabs';
@@ -506,7 +526,7 @@ export async function deleteJob(jobId: string): Promise<void> {
     method: 'DELETE',
   });
   if (!response.ok) {
-    throw new Error(`Failed to delete job: ${response.statusText}`);
+    throw await buildApiError(response, 'Failed to delete job');
   }
 }
 
@@ -615,6 +635,20 @@ export async function getMindFile(path: string): Promise<MindFileResponse> {
   return response.json();
 }
 
+export async function saveMindFile(path: string, content: string): Promise<MindFileResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/mind/file`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path, content }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to save markdown file');
+  }
+  return response.json();
+}
+
 export async function listSpeechVoices(): Promise<ElevenLabsVoice[]> {
   const response = await fetch(`${getApiBaseUrl()}/speech/voices`);
   if (!response.ok) {
@@ -675,6 +709,48 @@ export async function setActiveProvider(providerType: LLMProviderType): Promise<
     throw new Error(error.error || `Failed to set active provider: ${response.statusText}`);
   }
   return response.json();
+}
+
+export async function listLMStudioModels(baseURL?: string): Promise<string[]> {
+  const url = new URL(`${getApiBaseUrl()}/providers/lmstudio/models`);
+  const normalizedBaseURL = normalizeLMStudioBaseUrl(baseURL);
+  if (normalizedBaseURL) {
+    url.searchParams.set('base_url', normalizedBaseURL);
+  }
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    // Backward compatibility: if backend doesn't yet expose /providers/lmstudio/models,
+    // query LM Studio directly from the browser.
+    if (response.status === 404 && normalizedBaseURL) {
+      const directResponse = await fetch(`${normalizedBaseURL}/models`);
+      if (!directResponse.ok) {
+        throw await buildApiError(directResponse, 'Failed to load LM Studio models');
+      }
+      const directData = await directResponse.json() as { data?: Array<{ id?: string }> };
+      return (directData.data || [])
+        .map((item) => (item.id || '').trim())
+        .filter((id) => id !== '');
+    }
+    throw await buildApiError(response, 'Failed to load LM Studio models');
+  }
+  const data: ProviderModelsResponse = await response.json();
+  return data.models || [];
+}
+
+export async function listKimiModels(baseURL?: string): Promise<string[]> {
+  const url = new URL(`${getApiBaseUrl()}/providers/kimi/models`);
+  const normalizedBaseURL = normalizeLMStudioBaseUrl(baseURL);
+  if (normalizedBaseURL) {
+    url.searchParams.set('base_url', normalizedBaseURL);
+  }
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load Kimi models');
+  }
+  const data: ProviderModelsResponse = await response.json();
+  return data.models || [];
 }
 
 // --- Integrations API ---

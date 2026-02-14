@@ -230,6 +230,40 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
     return `Session ${session.id.substring(0, 8)}`;
   };
 
+  const formatStatusLabel = (status: string) => {
+    const normalized = status.trim();
+    if (normalized.length === 0) {
+      return 'Unknown';
+    }
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
+
+  const formatTokenCount = (tokens: number) => {
+    return `${new Intl.NumberFormat('en-US', {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(tokens)} tok`;
+  };
+
+  const formatDurationSeconds = (seconds: number) => {
+    const total = Math.max(0, Math.floor(seconds));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+
+    if (days > 0) {
+      return `${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    }
+    return `${secs}s`;
+  };
+
   if (loading) {
     return <div className="sessions-loading">Loading sessions...</div>;
   }
@@ -264,13 +298,23 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
       onDragEnd={handleSessionDragEnd}
     >
       <div className="session-card-row">
-        <h3 className="session-name">{formatSessionTitle(session)}</h3>
+        <div className="session-name-wrap">
+          <span
+            className={`session-status-dot status-${session.status}`}
+            title={`Status: ${formatStatusLabel(session.status)}`}
+            aria-label={`Status: ${formatStatusLabel(session.status)}`}
+          />
+          <h3 className="session-name">{formatSessionTitle(session)}</h3>
+        </div>
         <div className="session-row-right">
           <div className="session-meta">
-            <span className={`status-badge status-${session.status}`}>
-              {session.status}
-            </span>
             {session.provider ? <span className="session-provider-chip">{session.provider}</span> : null}
+            <span
+              className="session-token-count"
+              title={`Ran for ${formatDurationSeconds(session.run_duration_seconds ?? 0)}`}
+            >
+              {formatTokenCount(session.total_tokens ?? 0)}
+            </span>
             <span className="session-date">{formatDate(session.updated_at)}</span>
           </div>
           <div className="session-actions">

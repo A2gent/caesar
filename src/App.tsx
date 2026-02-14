@@ -12,8 +12,10 @@ import ProviderEditView from './ProviderEditView';
 import ProvidersView from './ProvidersView';
 import SettingsView from './SettingsView';
 import MyMindView from './MyMindView';
+import ThinkingView from './ThinkingView';
 import { getSession, getSettings, listSessions, synthesizeCompletionAudio, type Message, type Session } from './api';
 import { AudioPlaybackContext, defaultAudioPlaybackState, type AudioPlaybackState } from './audioPlayback';
+import { THINKING_PROJECT_ID } from './thinking';
 import './App.css';
 
 const MOBILE_BREAKPOINT = 900;
@@ -491,6 +493,9 @@ function AppLayout() {
           }
 
           const previous = previousSessionSignatureRef.current.get(session.id);
+          if (session.project_id === THINKING_PROJECT_ID) {
+            continue;
+          }
           const isTerminal = isTerminalSessionStatus(session.status);
           const isNewTerminalSession = !previous && isTerminal;
           const isTransitionToTerminal = !!previous && previous !== signature && isTerminal;
@@ -707,6 +712,7 @@ function AppLayout() {
           <Route path="/agent/jobs/:jobId" element={<JobDetail />} />
           <Route path="/integrations" element={<IntegrationsView />} />
           <Route path="/my-mind" element={<MyMindView />} />
+          <Route path="/thinking" element={<ThinkingView />} />
           <Route path="/providers" element={<ProvidersView />} />
           <Route path="/providers/:providerType" element={<ProviderEditView />} />
           <Route path="/settings" element={<SettingsView />} />

@@ -98,10 +98,21 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
   return (
     <div className="message-list">
       {messages.map((message, index) => (
-        <div key={index} className={`message message-${message.role}`}>
+        <div
+          key={index}
+          className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}`}
+        >
           <div className="message-header">
             <span className="message-role">
-              {message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Agent' : 'Tool'}
+              {isCompactionMessage(message)
+                ? 'Compaction'
+                : message.role === 'user'
+                  ? 'You'
+                  : message.role === 'assistant'
+                    ? 'Agent'
+                    : message.role === 'tool'
+                      ? 'Tool'
+                      : 'System'}
             </span>
             <span className="message-time">
               {new Date(message.timestamp).toLocaleTimeString()}
@@ -136,3 +147,13 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
 };
 
 export default MessageList;
+  const isCompactionMessage = (message: Message): boolean => {
+    const marker = message.metadata?.context_compaction;
+    if (typeof marker === 'boolean') {
+      return marker;
+    }
+    if (typeof marker === 'string') {
+      return marker.trim().toLowerCase() === 'true';
+    }
+    return false;
+  };

@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listJobs, deleteJob, runJobNow, type RecurringJob } from './api';
+import { deleteJob, getSettings, listJobs, runJobNow, type RecurringJob } from './api';
+import { THINKING_JOB_ID_SETTING_KEY } from './thinking';
 
 function JobsList() {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<RecurringJob[]>([]);
+  const [thinkingJobID, setThinkingJobID] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -12,8 +14,9 @@ function JobsList() {
     try {
       setLoading(true);
       setError(null);
-      const data = await listJobs();
+      const [data, settings] = await Promise.all([listJobs(), getSettings()]);
       setJobs(data);
+      setThinkingJobID((settings[THINKING_JOB_ID_SETTING_KEY] || '').trim());
     } catch (err) {
       console.error('Failed to load jobs:', err);
       setError(err instanceof Error ? err.message : 'Failed to load jobs');
@@ -30,6 +33,10 @@ function JobsList() {
   }, [loadJobs]);
 
   const handleDeleteJob = async (jobId: string, jobName: string) => {
+    if (jobId === thinkingJobID) {
+      navigate('/thinking');
+      return;
+    }
     if (!confirm(`Delete job "${jobName}"?`)) return;
     
     try {
@@ -37,7 +44,12 @@ function JobsList() {
       await loadJobs();
     } catch (err) {
       console.error('Failed to delete job:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete job');
+      const message = err instanceof Error ? err.message : 'Failed to delete job';
+      if (message.toLowerCase().includes('thinking')) {
+        navigate('/thinking');
+        return;
+      }
+      setError(message);
     }
   };
 
@@ -153,9 +165,15 @@ function JobsList() {
                   <button onClick={() => handleRunNow(job.id)} className="btn btn-secondary" disabled={!job.enabled}>
                     Run Now
                   </button>
-                  <button onClick={() => handleDeleteJob(job.id, job.name)} className="btn btn-danger">
-                    Delete
-                  </button>
+                  {job.id === thinkingJobID ? (
+                    <button onClick={() => navigate('/thinking')} className="btn btn-secondary">
+                      Manage in Thinking
+                    </button>
+                  ) : (
+                    <button onClick={() => handleDeleteJob(job.id, job.name)} className="btn btn-danger">
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

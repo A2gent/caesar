@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getJob, listJobSessions, runJobNow, deleteJob, type RecurringJob, type Session } from './api';
+import { deleteJob, getJob, getSettings, listJobSessions, runJobNow, type RecurringJob, type Session } from './api';
+import { THINKING_JOB_ID_SETTING_KEY } from './thinking';
 
 function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [job, setJob] = useState<RecurringJob | null>(null);
+  const [thinkingJobID, setThinkingJobID] = useState('');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +26,10 @@ function JobDetail() {
         getJob(id),
         listJobSessions(id)
       ]);
+      const settings = await getSettings();
       setJob(jobData);
       setSessions(sessionsData);
+      setThinkingJobID((settings[THINKING_JOB_ID_SETTING_KEY] || '').trim());
     } catch (err) {
       console.error('Failed to load job:', err);
       setError(err instanceof Error ? err.message : 'Failed to load job');
@@ -47,6 +51,10 @@ function JobDetail() {
 
   const handleDelete = async () => {
     if (!jobId || !job) return;
+    if (jobId === thinkingJobID) {
+      navigate('/thinking');
+      return;
+    }
     if (!confirm(`Delete job "${job.name}"?`)) return;
     
     try {
@@ -54,7 +62,12 @@ function JobDetail() {
       navigate('/agent/jobs');
     } catch (err) {
       console.error('Failed to delete job:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete job');
+      const message = err instanceof Error ? err.message : 'Failed to delete job';
+      if (message.toLowerCase().includes('thinking')) {
+        navigate('/thinking');
+        return;
+      }
+      setError(message);
     }
   };
 
@@ -87,6 +100,8 @@ function JobDetail() {
     return <div className="job-detail-error">Job not found</div>;
   }
 
+  const isThinkingJob = job.id === thinkingJobID;
+
   return (
     <div className="job-detail-container">
       <div className="job-detail-header">
@@ -110,9 +125,15 @@ function JobDetail() {
           >
             Run Now
           </button>
-          <button onClick={handleDelete} className="btn btn-danger">
-            Delete
-          </button>
+          {isThinkingJob ? (
+            <button onClick={() => navigate('/thinking')} className="btn btn-secondary">
+              Manage in Thinking
+            </button>
+          ) : (
+            <button onClick={handleDelete} className="btn btn-danger">
+              Delete
+            </button>
+          )}
         </div>
       </div>
 

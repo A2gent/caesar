@@ -2,6 +2,23 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listProviders, setActiveProvider, type LLMProviderType, type ProviderConfig } from './api';
 
+function formatChainNode(type: LLMProviderType): string {
+  switch (type) {
+    case 'lmstudio':
+      return 'LM Studio';
+    case 'anthropic':
+      return 'Anthropic';
+	case 'openrouter':
+		return 'OpenRouter';
+	case 'kimi':
+		return 'Kimi';
+	case 'fallback_chain':
+		return 'Fallback';
+    default:
+      return type;
+  }
+}
+
 function ProvidersView() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,6 +61,10 @@ function ProvidersView() {
     return <div className="sessions-loading">Loading providers...</div>;
   }
 
+  const aggregate = providers.find((provider) => provider.type === 'fallback_chain') || null;
+  const regularProviders = providers.filter((provider) => provider.type !== 'fallback_chain');
+  const orderedProviders = aggregate ? [aggregate, ...regularProviders] : regularProviders;
+
   return (
     <div className="page-shell">
       <div className="page-header">
@@ -58,7 +79,7 @@ function ProvidersView() {
       )}
 
       <div className="page-content page-content-narrow provider-list-view">
-        {providers.map((provider) => (
+        {orderedProviders.map((provider) => (
           <div key={provider.type} className={`provider-list-item ${provider.is_active ? 'active' : ''}`}>
             <div className="provider-list-main">
               <h3>{provider.display_name}</h3>
@@ -69,6 +90,19 @@ function ProvidersView() {
                 {provider.is_active ? <span className="status-badge status-running">Active</span> : null}
                 {provider.model ? <span className="session-provider-chip">{provider.model}</span> : null}
               </div>
+              {provider.type === 'fallback_chain' ? (
+                <div className="provider-chain-visual" aria-label="Fallback chain nodes">
+                  {(provider.fallback_chain || []).map((node, index) => (
+                    <span key={`${node}-${index}`} className="provider-chain-item-wrap">
+                      <span className="provider-chain-node">{formatChainNode(node)}</span>
+                      {index < (provider.fallback_chain || []).length - 1 ? <span className="provider-chain-arrow">→</span> : null}
+                    </span>
+                  ))}
+                  {(provider.fallback_chain || []).length === 0 ? (
+                    <span className="provider-chain-empty">No nodes configured yet</span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="provider-list-actions">
