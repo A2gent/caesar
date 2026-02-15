@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchSpeechClip, type Message, type ToolCall, type ToolResult } from './api';
+import { buildImageAssetUrl, type Message, type ToolCall, type ToolResult } from './api';
 import { IntegrationProviderIcon, integrationProviderForToolName, integrationProviderLabel } from './integrationMeta';
 import { renderMarkdownToHtml } from './markdown';
 import { buildOpenInMyMindUrl, extractToolFilePath, isSupportedFileTool } from './myMindNavigation';
+import { readImagePreviewEvent, readWebAppNotification } from './toolResultEvents';
+import { toolIconForName } from './toolIcons';
+import { emitWebAppNotification } from './webappNotifications';
 
 interface MessageListProps {
   messages: Message[];
@@ -11,83 +14,81 @@ interface MessageListProps {
   sessionId: string | null;
 }
 
-const audioClipMarker = /A2_AUDIO_CLIP_ID:([a-zA-Z0-9-]+)/;
-
 const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId }) => {
   const endRef = useRef<HTMLDivElement>(null);
-  const playedClipIdsRef = useRef<Set<string>>(new Set());
-  const playbackQueueRef = useRef(Promise.resolve());
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const emittedNotificationIDsRef = useRef<Set<string>>(new Set());
+  const hasBaselineHydratedRef = useRef(false);
+
+  const resolveImageUrl = (result: ToolResult | undefined): string => {
+    if (!result) {
+      return '';
+    }
+    const imageEvent = readImagePreviewEvent(result);
+    if (!imageEvent) {
+      return '';
+    }
+    if (imageEvent.imageUrl !== '') {
+      return imageEvent.imageUrl;
+    }
+    return buildImageAssetUrl(imageEvent.imagePath);
+  };
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
-    playedClipIdsRef.current.clear();
-    playbackQueueRef.current = Promise.resolve();
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current = null;
-    }
+    emittedNotificationIDsRef.current.clear();
+    hasBaselineHydratedRef.current = false;
   }, [sessionId]);
 
   useEffect(() => {
-    const pendingClipIDs: string[] = [];
+    if (!hasBaselineHydratedRef.current) {
+      for (const message of messages) {
+        const toolResults = message.tool_results ?? [];
+        for (const result of toolResults) {
+          if (result.is_error) {
+            continue;
+          }
+          const notification = readWebAppNotification(result);
+          if (notification) {
+            const notificationID = `${message.timestamp}:${result.tool_call_id}`;
+            emittedNotificationIDsRef.current.add(notificationID);
+          }
+        }
+      }
+      hasBaselineHydratedRef.current = true;
+      return;
+    }
+
     for (const message of messages) {
       const toolResults = message.tool_results ?? [];
       for (const result of toolResults) {
         if (result.is_error) {
           continue;
         }
-        const match = audioClipMarker.exec(result.content || '');
-        if (!match || !match[1]) {
-          continue;
-        }
-        const clipID = match[1].trim();
-        if (clipID === '' || playedClipIdsRef.current.has(clipID)) {
-          continue;
-        }
-        playedClipIdsRef.current.add(clipID);
-        pendingClipIDs.push(clipID);
-      }
-    }
 
-    for (const clipID of pendingClipIDs) {
-      playbackQueueRef.current = playbackQueueRef.current
-        .catch(() => undefined)
-        .then(async () => {
-          const blob = await fetchSpeechClip(clipID);
-          const objectURL = URL.createObjectURL(blob);
-          const audio = new Audio(objectURL);
-          currentAudioRef.current = audio;
-          try {
-            await audio.play();
-            await new Promise<void>((resolve) => {
-              audio.onended = () => resolve();
-              audio.onerror = () => resolve();
+        const notification = readWebAppNotification(result);
+        if (notification) {
+          const notificationID = `${message.timestamp}:${result.tool_call_id}`;
+          if (!emittedNotificationIDsRef.current.has(notificationID)) {
+            emittedNotificationIDsRef.current.add(notificationID);
+            emitWebAppNotification({
+              id: notificationID,
+              title: notification.title || 'Agent notification',
+              message: notification.message,
+              level: notification.level,
+              createdAt: message.timestamp,
+              sessionId: sessionId || '',
+              imageUrl: notification.imageUrl || (notification.imagePath ? buildImageAssetUrl(notification.imagePath) : ''),
+              audioClipId: notification.audioClipId,
+              autoPlayAudio: notification.autoPlayAudio,
             });
-          } finally {
-            URL.revokeObjectURL(objectURL);
-            if (currentAudioRef.current === audio) {
-              currentAudioRef.current = null;
-            }
           }
-        })
-        .catch((error) => {
-          console.error('Failed to play tool-generated speech clip:', error);
-        });
+        }
+      }
     }
   }, [messages]);
-
-  useEffect(() => {
-    return () => {
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-        currentAudioRef.current = null;
-      }
-    };
-  }, []);
 
   const renderMessageContent = (message: Message) => {
     const html = renderMarkdownToHtml(message.content);
@@ -97,6 +98,8 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
   const renderToolExecutionCard = (toolCall: ToolCall, result: ToolResult | undefined, timestamp: string, key: string) => {
     const provider = integrationProviderForToolName(toolCall.name);
     const filePath = isSupportedFileTool(toolCall.name) ? extractToolFilePath(toolCall.input) : null;
+    const imageUrl = resolveImageUrl(result);
+    const toolIcon = toolIconForName(toolCall.name);
     return (
       <details key={key} className={`message message-tool tool-execution-card tool-card-collapsed${result?.is_error ? ' tool-execution-card-error' : ''}`}>
         <summary className="tool-card-summary">
@@ -108,7 +111,10 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 <span>{integrationProviderLabel(provider)}</span>
               </span>
             ) : null}
-            <span className="tool-name">{toolCall.name}</span>
+            <span className="tool-name tool-name-with-icon">
+              <span className="tool-icon" aria-hidden="true">{toolIcon}</span>
+              <span>{toolCall.name}</span>
+            </span>
             {filePath ? (
               <>
                 <span className="tool-inline-separator">·</span>
@@ -141,12 +147,19 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
             </div>
             <pre className="tool-result-content">{result?.content || 'Waiting for result...'}</pre>
           </div>
+          {imageUrl ? (
+            <div className="tool-execution-block">
+              <div className="tool-execution-label">Preview</div>
+              <img className="tool-result-image" src={imageUrl} alt="Tool-generated image" loading="lazy" />
+            </div>
+          ) : null}
         </div>
       </details>
     );
   };
 
   const renderStandaloneToolResultCard = (result: ToolResult, timestamp: string, key: string) => {
+    const imageUrl = resolveImageUrl(result);
     return (
       <details key={key} className={`message message-tool tool-execution-card tool-card-collapsed${result.is_error ? ' tool-execution-card-error' : ''}`}>
         <summary className="tool-card-summary">
@@ -163,6 +176,12 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
             </div>
             <pre className="tool-result-content">{result.content}</pre>
           </div>
+          {imageUrl ? (
+            <div className="tool-execution-block">
+              <div className="tool-execution-label">Preview</div>
+              <img className="tool-result-image" src={imageUrl} alt="Tool-generated image" loading="lazy" />
+            </div>
+          ) : null}
         </div>
       </details>
     );

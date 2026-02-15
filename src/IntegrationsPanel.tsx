@@ -445,7 +445,7 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
             Choose an integration type, then fill in the credentials and options.
           </p>
           <p className="settings-help">
-            For agent-triggered speech, add an enabled ElevenLabs integration, then set default voice and speed in Tools.
+            For agent-triggered speech, add an enabled ElevenLabs integration, then set default voice and speed in Tools under Integration-backed skills.
           </p>
 
           {(['input', 'output', 'bidirectional'] as const).map((flow) => (

@@ -47,6 +47,14 @@ export function getApiBaseUrl(): string {
   return normalizeApiBaseUrl(DEFAULT_API_BASE_URL);
 }
 
+export function buildImageAssetUrl(path: string): string {
+  const normalized = path.trim();
+  if (normalized === '') {
+    return '';
+  }
+  return `${getApiBaseUrl()}/assets/images?path=${encodeURIComponent(normalized)}`;
+}
+
 export function setApiBaseUrl(url: string): void {
   if (typeof window === 'undefined') {
     return;
@@ -159,6 +167,7 @@ export interface ToolResult {
   tool_call_id: string;
   content: string;
   is_error: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ChatResponse {

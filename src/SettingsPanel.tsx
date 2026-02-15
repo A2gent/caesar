@@ -8,6 +8,7 @@ import {
   BUILTIN_TOOLS_BLOCK_TYPE,
   EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE,
   INTEGRATION_SKILLS_BLOCK_TYPE,
+  MCP_SERVERS_BLOCK_TYPE,
   buildAgentSystemPromptAppend,
   parseInstructionBlocksSetting,
   type InstructionBlock,
@@ -36,6 +37,7 @@ const MANAGED_INSTRUCTION_BLOCK_TYPES: InstructionBlockType[] = [
   BUILTIN_TOOLS_BLOCK_TYPE,
   INTEGRATION_SKILLS_BLOCK_TYPE,
   EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE,
+  MCP_SERVERS_BLOCK_TYPE,
 ];
 
 function isManagedInstructionBlockType(type: InstructionBlockType): boolean {
@@ -55,6 +57,8 @@ function normalizeInstructionBlockForSettings(block: InstructionBlock): Instruct
               ? INTEGRATION_SKILLS_BLOCK_TYPE
               : block.type === EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE
                 ? EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE
+                : block.type === MCP_SERVERS_BLOCK_TYPE
+                  ? MCP_SERVERS_BLOCK_TYPE
                 : 'text'
     ) as InstructionBlockType,
     value: block.value.trim(),
@@ -365,6 +369,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
               linkTo: '/skills',
               enabledTitle: 'Enable external markdown skills context in system prompt',
               enabledAriaLabel: 'Enable external markdown skills block',
+            },
+            [MCP_SERVERS_BLOCK_TYPE]: {
+              label: 'MCP servers',
+              linkTo: '/mcp',
+              enabledTitle: 'Enable MCP servers context in system prompt',
+              enabledAriaLabel: 'Enable MCP servers block',
             },
           }}
         />

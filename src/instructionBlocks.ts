@@ -4,7 +4,8 @@ export type InstructionBlockType =
   | 'project_agents_md'
   | 'builtin_tools'
   | 'integration_skills'
-  | 'external_markdown_skills';
+  | 'external_markdown_skills'
+  | 'mcp_servers';
 
 export interface InstructionBlock {
   type: InstructionBlockType;
@@ -17,6 +18,7 @@ export const AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY = 'AAGENT_SYSTEM_PROMPT_APPE
 export const BUILTIN_TOOLS_BLOCK_TYPE: InstructionBlockType = 'builtin_tools';
 export const INTEGRATION_SKILLS_BLOCK_TYPE: InstructionBlockType = 'integration_skills';
 export const EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE: InstructionBlockType = 'external_markdown_skills';
+export const MCP_SERVERS_BLOCK_TYPE: InstructionBlockType = 'mcp_servers';
 
 function normalizeBlockType(value: string): InstructionBlockType {
   if (value === 'file') {
@@ -34,6 +36,9 @@ function normalizeBlockType(value: string): InstructionBlockType {
   if (value === EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE) {
     return EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE;
   }
+  if (value === MCP_SERVERS_BLOCK_TYPE) {
+    return MCP_SERVERS_BLOCK_TYPE;
+  }
   return 'text';
 }
 
@@ -48,6 +53,7 @@ export function normalizeInstructionBlocks(blocks: InstructionBlock[]): Instruct
       && type !== BUILTIN_TOOLS_BLOCK_TYPE
       && type !== INTEGRATION_SKILLS_BLOCK_TYPE
       && type !== EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE
+      && type !== MCP_SERVERS_BLOCK_TYPE
       && value === ''
     ) {
       continue;
@@ -119,6 +125,7 @@ export function buildAgentSystemPromptAppend(blocks: InstructionBlock[]): string
       block.type === BUILTIN_TOOLS_BLOCK_TYPE
       || block.type === INTEGRATION_SKILLS_BLOCK_TYPE
       || block.type === EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE
+      || block.type === MCP_SERVERS_BLOCK_TYPE
     ) {
       return;
     }
