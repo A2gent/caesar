@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   browseSkillDirectories,
   discoverSkills,
@@ -7,6 +8,7 @@ import {
   type SkillFile,
   updateSettings,
 } from './api';
+import { buildOpenInMyMindUrl } from './myMindNavigation';
 import { SKILLS_FOLDER_KEY } from './skills';
 
 function getParentPath(path: string): string {
@@ -218,7 +220,15 @@ function SkillsView() {
                           <h3>{skill.name}</h3>
                           <span className="skill-badge skill-badge-external">Folder</span>
                         </div>
-                        <div className="skill-card-meta">{skill.relative_path}</div>
+                        <div className="skill-card-meta">
+                          <Link
+                            to={buildOpenInMyMindUrl(skill.path)}
+                            className="skill-card-meta-link"
+                            title={`Open ${skill.path} in My Mind`}
+                          >
+                            {skill.relative_path}
+                          </Link>
+                        </div>
                       </div>
                     ))}
                   </div>

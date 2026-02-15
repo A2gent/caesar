@@ -2820,6 +2820,16 @@ body.mind-resizing * {
   padding: 0;
 }
 
+.tool-folder-picker-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tool-folder-picker-row input {
+  flex: 1;
+}
+
 .settings-field input:focus,
 .settings-custom-row input:focus,
 .settings-field select:focus,
@@ -3054,6 +3064,17 @@ body.mind-resizing * {
   color: #95a1b2;
   font-size: 12px;
   word-break: break-word;
+}
+
+.skill-card-meta-link {
+  color: #9ab3ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
+}
+
+.skill-card-meta-link:hover {
+  color: #bdd0ff;
 }
 
 .skill-tool-list {
