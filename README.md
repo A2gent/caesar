@@ -1,7 +1,11 @@
-# A² Brute web application
-
-React + TypeScript frontend for the [A² Brute terminal agent](https://github.com/A2gent/aagent). 
+# A² Brute personal AI agent web-app
+> Et tu, Brute?
+ 
 A modern, responsive web interface for managing AI agent sessions, jobs, tools, and knowledge base.
+
+Main use-case is having personal knowledge base (Obsidian-style second brain) used by the persistent, self-improving AI agent.
+
+Uses [A² Brute terminal agent](https://github.com/A2gent/aagent) as a backend.
 
 <img width="1318" height="787" alt="A2gent Web App Screenshot" src="https://github.com/user-attachments/assets/eba3d49b-f1b3-4e53-be00-e2bb9411a27f" />
 
