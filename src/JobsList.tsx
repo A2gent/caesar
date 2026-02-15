@@ -124,8 +124,10 @@ function JobsList() {
           </div>
         ) : (
           <div className="jobs-list">
-            {jobs.map(job => (
-              <div key={job.id} className={`job-card ${!job.enabled ? 'job-disabled' : ''}`}>
+            {jobs.map((job) => {
+              const isThinkingJob = job.id === thinkingJobID;
+              return (
+                <div key={job.id} className={`job-card ${!job.enabled ? 'job-disabled' : ''}`}>
                 <div className="job-card-header">
                   <div className="job-header-main">
                     <h3 className="job-name">{job.name}</h3>
@@ -166,13 +168,25 @@ function JobsList() {
                 </div>
 
                 <div className="job-actions">
-                  <button onClick={() => navigate(`/agent/jobs/${job.id}`)} className="btn btn-secondary">
-                    View
-                  </button>
-                  <button onClick={() => handleRunNow(job.id)} className="btn btn-secondary" disabled={!job.enabled}>
+                  {isThinkingJob ? null : (
+                    <button onClick={() => navigate(`/agent/jobs/${job.id}`)} className="btn btn-secondary">
+                      View
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (isThinkingJob) {
+                        navigate('/thinking');
+                        return;
+                      }
+                      void handleRunNow(job.id);
+                    }}
+                    className="btn btn-secondary"
+                    disabled={!isThinkingJob && !job.enabled}
+                  >
                     Run Now
                   </button>
-                  {job.id === thinkingJobID ? (
+                  {isThinkingJob ? (
                     <button onClick={() => navigate('/thinking')} className="btn btn-secondary">
                       Manage in Thinking
                     </button>
@@ -182,8 +196,9 @@ function JobsList() {
                     </button>
                   )}
                 </div>
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

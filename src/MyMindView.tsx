@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   browseMindDirectories,
   createProject,
   createSession,
+  deleteMindFile,
   getSettings,
   getMindConfig,
   getMindFile,
@@ -12,16 +13,37 @@ import {
   listProjects,
   listProviders,
   saveMindFile,
-  sendMessage,
   type LLMProviderType,
   type MindTreeEntry,
   type ProviderConfig,
+  updateSettings,
   updateMindConfig,
   updateProject,
 } from './api';
-import { THINKING_FILE_PATH_SETTING_KEY } from './thinking';
+import {
+  AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
+  AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
+  buildAgentSystemPromptAppend,
+  parseInstructionBlocksSetting,
+  serializeInstructionBlocksSetting,
+  type InstructionBlock,
+} from './instructionBlocks';
 
 type MarkdownMode = 'preview' | 'source';
+
+const DEFAULT_TREE_PANEL_WIDTH = 360;
+const MIN_TREE_PANEL_WIDTH = 240;
+const MAX_TREE_PANEL_WIDTH = 720;
+const TREE_PANEL_WIDTH_STORAGE_KEY = 'a2gent.mind.tree.width';
+
+function readStoredTreePanelWidth(): number {
+  const rawWidth = localStorage.getItem(TREE_PANEL_WIDTH_STORAGE_KEY);
+  const parsed = rawWidth ? Number.parseInt(rawWidth, 10) : Number.NaN;
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_TREE_PANEL_WIDTH;
+  }
+  return Math.min(MAX_TREE_PANEL_WIDTH, Math.max(MIN_TREE_PANEL_WIDTH, parsed));
+}
 
 function isExternalLink(href: string): boolean {
   return /^(https?:|mailto:|tel:)/i.test(href);
@@ -303,6 +325,7 @@ function MyMindView() {
   const [savedFileContent, setSavedFileContent] = useState('');
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [isSavingFile, setIsSavingFile] = useState(false);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
   const [markdownMode, setMarkdownMode] = useState<MarkdownMode>('preview');
   const [pendingAnchor, setPendingAnchor] = useState('');
 
@@ -313,7 +336,13 @@ function MyMindView() {
   const [sessionContextMessage, setSessionContextMessage] = useState('');
   const [sessionTargetLabel, setSessionTargetLabel] = useState('');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
-  const [thinkingFileConfigured, setThinkingFileConfigured] = useState(false);
+  const [agentInstructionFilePaths, setAgentInstructionFilePaths] = useState<Set<string>>(new Set());
+  const [isAddingAgentInstructionFile, setIsAddingAgentInstructionFile] = useState(false);
+  const [isFileActionsMenuOpen, setIsFileActionsMenuOpen] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [treePanelWidth, setTreePanelWidth] = useState(readStoredTreePanelWidth);
+  const treeResizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const fileActionsMenuRef = useRef<HTMLDivElement | null>(null);
 
   const loadTree = useCallback(async (path: string) => {
     setLoadingDirs((prev) => new Set(prev).add(path));
@@ -382,16 +411,88 @@ function MyMindView() {
     void loadProviders();
   }, []);
 
+  const refreshInstructionFlags = useCallback(async () => {
+    try {
+      const settings = await getSettings();
+      const configuredAgentInstructionBlocks = parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '');
+      const configuredAgentInstructionFiles = new Set(
+        configuredAgentInstructionBlocks
+          .filter((block) => block.type === 'file' && block.value.trim() !== '')
+          .map((block) => block.value.trim()),
+      );
+      setAgentInstructionFilePaths(configuredAgentInstructionFiles);
+    } catch (loadError) {
+      console.error('Failed to load instruction settings in My Mind:', loadError);
+    }
+  }, []);
+
   useEffect(() => {
-    const loadThinkingSettings = async () => {
-      try {
-        const settings = await getSettings();
-        setThinkingFileConfigured((settings[THINKING_FILE_PATH_SETTING_KEY] || '').trim() !== '');
-      } catch (loadError) {
-        console.error('Failed to load Thinking settings in My Mind:', loadError);
+    void refreshInstructionFlags();
+  }, [refreshInstructionFlags]);
+
+  useEffect(() => {
+    localStorage.setItem(TREE_PANEL_WIDTH_STORAGE_KEY, String(treePanelWidth));
+  }, [treePanelWidth]);
+
+  useEffect(() => {
+    setIsFileActionsMenuOpen(false);
+  }, [selectedFilePath]);
+
+  useEffect(() => {
+    if (!isFileActionsMenuOpen) {
+      return;
+    }
+
+    const handleDocumentPointerDown = (event: PointerEvent) => {
+      if (!fileActionsMenuRef.current) {
+        return;
+      }
+      if (event.target instanceof Node && !fileActionsMenuRef.current.contains(event.target)) {
+        setIsFileActionsMenuOpen(false);
       }
     };
-    void loadThinkingSettings();
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsFileActionsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handleDocumentPointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isFileActionsMenuOpen]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!treeResizeStartRef.current) {
+        return;
+      }
+
+      const deltaX = event.clientX - treeResizeStartRef.current.startX;
+      const nextWidth = treeResizeStartRef.current.startWidth + deltaX;
+      const boundedWidth = Math.min(MAX_TREE_PANEL_WIDTH, Math.max(MIN_TREE_PANEL_WIDTH, nextWidth));
+      setTreePanelWidth(Math.round(boundedWidth));
+    };
+
+    const handlePointerUp = () => {
+      treeResizeStartRef.current = null;
+      document.body.classList.remove('mind-resizing');
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      document.body.classList.remove('mind-resizing');
+      document.body.style.userSelect = '';
+    };
   }, []);
 
   const loadBrowse = useCallback(async (path: string) => {
@@ -455,6 +556,7 @@ function MyMindView() {
     setSelectedFilePath(path);
     setIsLoadingFile(true);
     setError(null);
+    setSuccess(null);
     try {
       const response = await getMindFile(path);
       setSelectedFileContent(response.content || '');
@@ -473,6 +575,7 @@ function MyMindView() {
       return;
     }
     setError(null);
+    setSuccess(null);
     setIsSavingFile(true);
     try {
       const response = await saveMindFile(selectedFilePath, selectedFileContent);
@@ -484,6 +587,38 @@ function MyMindView() {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save markdown file');
     } finally {
       setIsSavingFile(false);
+    }
+  };
+
+  const deleteCurrentFile = async () => {
+    if (selectedFilePath.trim() === '') {
+      return;
+    }
+
+    const deletePath = selectedFilePath;
+    const confirmMessage = hasUnsavedChanges
+      ? `Delete "${deletePath}"? Unsaved changes will be lost.`
+      : `Delete "${deletePath}"?`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setIsDeletingFile(true);
+    try {
+      await deleteMindFile(deletePath);
+      const parentPath = dirname(deletePath);
+      setSelectedFilePath('');
+      setSelectedFileContent('');
+      setSavedFileContent('');
+      setMarkdownMode('preview');
+      await loadTree(parentPath);
+      setSuccess(`Deleted ${deletePath}.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete markdown file');
+    } finally {
+      setIsDeletingFile(false);
     }
   };
 
@@ -506,6 +641,7 @@ function MyMindView() {
     }
 
     setError(null);
+    setSuccess(null);
     setIsSavingFile(true);
     try {
       await saveMindFile(normalizedPath, '');
@@ -592,6 +728,7 @@ function MyMindView() {
     }
 
     setError(null);
+    setSuccess(null);
     setIsCreatingSession(true);
 
     try {
@@ -601,9 +738,10 @@ function MyMindView() {
         provider: selectedProvider || undefined,
         project_id: projectId,
       });
-      await sendMessage(created.id, message);
       closeSessionDialog();
-      navigate(`/chat/${created.id}`);
+      navigate(`/chat/${created.id}`, {
+        state: { initialMessage: message },
+      });
     } catch (createError) {
       console.error('Failed to create session from My Mind:', createError);
       setError(createError instanceof Error ? createError.message : 'Failed to create session from My Mind');
@@ -614,6 +752,67 @@ function MyMindView() {
 
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
   const hasUnsavedChanges = selectedFilePath !== '' && selectedFileContent !== savedFileContent;
+  const selectedFilePathNormalized = selectedFilePath.trim();
+  const selectedFileAbsolutePath = rootFolder.trim() !== '' && selectedFilePathNormalized !== ''
+    ? joinMindAbsolutePath(rootFolder, selectedFilePathNormalized)
+    : '';
+  const isSelectedFileAgentInstruction = selectedFilePathNormalized !== ''
+    && (
+      agentInstructionFilePaths.has(selectedFilePathNormalized)
+      || (selectedFileAbsolutePath !== '' && agentInstructionFilePaths.has(selectedFileAbsolutePath))
+    );
+
+  const addSelectedFileToAgentInstructions = async () => {
+    if (selectedFilePathNormalized === '') {
+      return;
+    }
+    if (rootFolder.trim() === '') {
+      setError('Configure My Mind root folder first.');
+      return;
+    }
+
+    const absolutePath = selectedFileAbsolutePath;
+    if (isSelectedFileAgentInstruction) {
+      setIsFileActionsMenuOpen(false);
+      setSuccess('File is already in Agent Instructions.');
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setIsFileActionsMenuOpen(false);
+    setIsAddingAgentInstructionFile(true);
+
+    try {
+      const currentSettings = await getSettings();
+      const existingBlocks = parseInstructionBlocksSetting(currentSettings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '');
+      const nextBlocks: InstructionBlock[] = [
+        ...existingBlocks,
+        { type: 'file', value: absolutePath, enabled: true },
+      ];
+
+      const nextSettings = {
+        ...currentSettings,
+        [AGENT_INSTRUCTION_BLOCKS_SETTING_KEY]: serializeInstructionBlocksSetting(nextBlocks),
+        [AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY]: buildAgentSystemPromptAppend(nextBlocks),
+      };
+      await updateSettings(nextSettings);
+      await refreshInstructionFlags();
+      setSuccess(`Added ${absolutePath} to Agent Instructions.`);
+    } catch (addError) {
+      setError(addError instanceof Error ? addError.message : 'Failed to add file to Agent Instructions');
+    } finally {
+      setIsAddingAgentInstructionFile(false);
+    }
+  };
+
+  const addSelectedFileToRecurringJob = () => {
+    if (selectedFileAbsolutePath.trim() === '') {
+      return;
+    }
+    setIsFileActionsMenuOpen(false);
+    navigate(`/agent/jobs/new?prefillInstructionFile=${encodeURIComponent(selectedFileAbsolutePath)}`);
+  };
 
   useEffect(() => {
     if (!pendingAnchor || isLoadingFile || markdownMode !== 'preview') {
@@ -736,6 +935,16 @@ function MyMindView() {
     );
   };
 
+  const handleStartTreeResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    treeResizeStartRef.current = {
+      startX: event.clientX,
+      startWidth: treePanelWidth,
+    };
+    document.body.classList.add('mind-resizing');
+    document.body.style.userSelect = 'none';
+  };
+
   if (isLoadingConfig) {
     return (
       <div className="page-shell">
@@ -751,14 +960,33 @@ function MyMindView() {
 
   return (
     <div className="page-shell">
-      <div className="page-header">
+      <div className="page-header mind-page-header">
         <h1>My Mind</h1>
+        {rootFolder !== '' ? (
+          <div className="mind-header-controls">
+            <div className="mind-root-path">Root: {rootFolder}</div>
+            <div className="mind-toolbar-actions">
+              <button type="button" className="settings-add-btn" onClick={() => void createNewFile()} disabled={isSavingFile}>
+                New file
+              </button>
+              <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+                Change root folder
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {error ? (
         <div className="error-banner">
           {error}
           <button type="button" className="error-dismiss" onClick={() => setError(null)}>×</button>
+        </div>
+      ) : null}
+      {success ? (
+        <div className="success-banner">
+          {success}
+          <button type="button" className="error-dismiss" onClick={() => setSuccess(null)}>×</button>
         </div>
       ) : null}
 
@@ -772,20 +1000,22 @@ function MyMindView() {
           </div>
         ) : (
           <>
-            <div className="mind-toolbar">
-              <div className="mind-root-path">Root: {rootFolder}</div>
-              <div className="mind-toolbar-actions">
-                <button type="button" className="settings-add-btn" onClick={() => void createNewFile()} disabled={isSavingFile}>
-                  New file
-                </button>
-                <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
-                  Change root folder
-                </button>
-              </div>
-            </div>
-
-            <div className="mind-layout">
+            <div
+              className="mind-layout"
+              style={
+                {
+                  '--mind-tree-width': `${treePanelWidth}px`,
+                } as CSSProperties
+              }
+            >
               <div className="mind-tree-panel">{renderTree('')}</div>
+              <div
+                className="mind-tree-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize My Mind file tree panel"
+                onPointerDown={handleStartTreeResize}
+              />
               <div className="mind-viewer-panel">
                 <div className="mind-viewer-header">
                   <div className="mind-viewer-path">{selectedFilePath || 'Select a markdown file from the tree'}</div>
@@ -800,40 +1030,78 @@ function MyMindView() {
                         💭 Session
                       </button>
                     ) : null}
-                    {selectedFilePath && !thinkingFileConfigured ? (
+                    {selectedFilePath ? (
+                      <div className="mind-file-actions-menu" ref={fileActionsMenuRef}>
+                        <button
+                          type="button"
+                          className="mind-file-actions-trigger"
+                          onClick={() => setIsFileActionsMenuOpen((prev) => !prev)}
+                          title="Use this file..."
+                          aria-haspopup="menu"
+                          aria-expanded={isFileActionsMenuOpen}
+                        >
+                          ⋯
+                        </button>
+                        {isFileActionsMenuOpen ? (
+                          <div className="mind-file-actions-dropdown" role="menu">
+                            <button
+                              type="button"
+                              className="mind-file-actions-item"
+                              onClick={() => void addSelectedFileToAgentInstructions()}
+                              disabled={isAddingAgentInstructionFile || isSelectedFileAgentInstruction}
+                              title="Add this file as a global Agent Instructions file block"
+                            >
+                              {isAddingAgentInstructionFile
+                                ? 'Adding...'
+                                : isSelectedFileAgentInstruction
+                                  ? 'In Agent Instructions'
+                                  : 'Use for Agent Instructions'}
+                            </button>
+                            <button
+                              type="button"
+                              className="mind-file-actions-item"
+                              onClick={addSelectedFileToRecurringJob}
+                              title="Create a recurring job prefilled to use this file"
+                            >
+                              Use in Recurring Job
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {selectedFilePath && hasUnsavedChanges ? (
                       <button
                         type="button"
-                        className="mind-thinking-btn"
-                        onClick={() => navigate(`/thinking?prefillFile=${encodeURIComponent(selectedFilePath)}`)}
-                        title="Use this file for Thinking instructions"
+                        className="settings-save-btn"
+                        onClick={() => void saveCurrentFile()}
+                        disabled={isLoadingFile || isSavingFile || isDeletingFile}
+                        title="Save changes"
                       >
-                        Use for Thinking
+                        {isSavingFile ? 'Saving...' : 'Save'}
+                      </button>
+                    ) : null}
+                    {selectedFilePath ? (
+                      <button
+                        type="button"
+                        className="mind-delete-file-btn"
+                        onClick={() => void deleteCurrentFile()}
+                        disabled={isLoadingFile || isSavingFile || isDeletingFile}
+                        title="Delete this file"
+                      >
+                        {isDeletingFile ? 'Deleting...' : 'Delete'}
                       </button>
                     ) : null}
                     <button
                       type="button"
-                      className="settings-save-btn"
-                      onClick={() => void saveCurrentFile()}
-                      disabled={!selectedFilePath || !hasUnsavedChanges || isLoadingFile || isSavingFile}
-                      title={hasUnsavedChanges ? 'Save changes' : 'No changes to save'}
+                      className={`mind-mode-toggle ${markdownMode === 'source' ? 'source' : 'preview'}`}
+                      onClick={() => setMarkdownMode((prev) => (prev === 'preview' ? 'source' : 'preview'))}
+                      disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
+                      title={markdownMode === 'preview' ? 'Switch to source view' : 'Switch to preview mode'}
                     >
-                      {isSavingFile ? 'Saving...' : 'Save'}
-                    </button>
-                    <button
-                      type="button"
-                      className={`mind-mode-btn ${markdownMode === 'preview' ? 'active' : ''}`}
-                      onClick={() => setMarkdownMode('preview')}
-                      disabled={!selectedFilePath}
-                    >
-                      Preview
-                    </button>
-                    <button
-                      type="button"
-                      className={`mind-mode-btn ${markdownMode === 'source' ? 'active' : ''}`}
-                      onClick={() => setMarkdownMode('source')}
-                      disabled={!selectedFilePath}
-                    >
-                      Source
+                      <span className="mind-mode-toggle-label">{markdownMode === 'preview' ? 'Preview' : 'Source'}</span>
+                      <span className="mind-mode-toggle-switch" aria-hidden="true">
+                        <span className="mind-mode-toggle-thumb" />
+                      </span>
                     </button>
                   </div>
                 </div>

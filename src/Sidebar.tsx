@@ -14,13 +14,14 @@ interface SidebarProps {
 }
 
 const navItems: NavItem[] = [
-  { id: 'sessions', label: 'Sessions', path: '/sessions' },
-  { id: 'my-mind', label: 'My Mind', path: '/my-mind' },
-  { id: 'thinking', label: 'Thinking', path: '/thinking' },
-  { id: 'jobs', label: 'Recurring jobs', path: '/agent/jobs' },
-  { id: 'settings', label: 'Settings', path: '/settings' },
-  { id: 'integrations', label: 'Integrations', path: '/integrations' },
-  { id: 'providers', label: 'LLM providers', path: '/providers' },
+  { id: 'sessions', label: '💬 Sessions', path: '/sessions' },
+  { id: 'my-mind', label: '🧠 My Mind', path: '/my-mind' },
+  { id: 'thinking', label: '🤔 Thinking', path: '/thinking' },
+  { id: 'jobs', label: '🗓️ Recurring jobs', path: '/agent/jobs' },
+  { id: 'skills', label: '🧰 Skills', path: '/skills' },
+  { id: 'settings', label: '⚙️ Settings', path: '/settings' },
+  { id: 'integrations', label: '🔌 Integrations', path: '/integrations' },
+  { id: 'providers', label: '🤖 LLM providers', path: '/providers' },
 ];
 
 function Sidebar({ title, onTitleChange, onNavigate }: SidebarProps) {

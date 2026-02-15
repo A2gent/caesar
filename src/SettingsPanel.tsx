@@ -1,6 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listSpeechVoices, type ElevenLabsVoice } from './api';
+import { estimateInstructionPrompt, type SystemPromptSnapshot } from './api';
+import InstructionBlocksEditor from './InstructionBlocksEditor';
+import {
+  AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
+  AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
+  BUILTIN_TOOLS_BLOCK_TYPE,
+  EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE,
+  INTEGRATION_SKILLS_BLOCK_TYPE,
+  buildAgentSystemPromptAppend,
+  parseInstructionBlocksSetting,
+  type InstructionBlock,
+  type InstructionBlockType,
+} from './instructionBlocks';
+import { SKILLS_MANAGED_SETTING_KEYS } from './skills';
 
 interface SettingsPanelProps {
   settings: Record<string, string>;
@@ -14,30 +27,45 @@ interface CustomRow {
   value: string;
 }
 
-type CompletionAudioMode = 'off' | 'system' | 'elevenlabs';
-type CompletionAudioContent = 'status' | 'final_response';
-
-const ELEVENLABS_API_KEY = 'ELEVENLABS_API_KEY';
-const ELEVENLABS_VOICE_ID = 'ELEVENLABS_VOICE_ID';
-const ELEVENLABS_SPEED = 'ELEVENLABS_SPEED';
-const COMPLETION_AUDIO_MODE = 'AAGENT_COMPLETION_AUDIO_MODE';
-const COMPLETION_AUDIO_CONTENT = 'AAGENT_COMPLETION_AUDIO_CONTENT';
-const SPEECH_ENABLED_KEY = 'AAGENT_SPEECH_ENABLED';
 const CONTEXT_COMPACTION_TRIGGER_PERCENT = 'AAGENT_CONTEXT_COMPACTION_TRIGGER_PERCENT';
 const CONTEXT_COMPACTION_PROMPT = 'AAGENT_CONTEXT_COMPACTION_PROMPT';
-const ELEVENLABS_SPEED_OPTIONS = ['0.5', '0.8', '1.0', '1.5', '2.0'] as const;
 const DEFAULT_COMPACTION_TRIGGER = '80';
 const DEFAULT_COMPACTION_PROMPT = 'Create a concise continuation summary preserving goals, progress, constraints, and next actions.';
 
+function splitAgentInstructionBlocks(blocks: InstructionBlock[]): {
+  builtInToolsEnabled: boolean;
+  integrationSkillsEnabled: boolean;
+  externalMarkdownSkillsEnabled: boolean;
+  customBlocks: InstructionBlock[];
+} {
+  let builtInToolsEnabled = true;
+  let integrationSkillsEnabled = true;
+  let externalMarkdownSkillsEnabled = true;
+  const customBlocks: InstructionBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === BUILTIN_TOOLS_BLOCK_TYPE) {
+      builtInToolsEnabled = block.enabled !== false;
+      continue;
+    }
+    if (block.type === INTEGRATION_SKILLS_BLOCK_TYPE) {
+      integrationSkillsEnabled = block.enabled !== false;
+      continue;
+    }
+    if (block.type === EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE) {
+      externalMarkdownSkillsEnabled = block.enabled !== false;
+      continue;
+    }
+    customBlocks.push(block);
+  }
+  return { builtInToolsEnabled, integrationSkillsEnabled, externalMarkdownSkillsEnabled, customBlocks };
+}
+
 const MANAGED_KEYS = [
-  ELEVENLABS_API_KEY,
-  ELEVENLABS_VOICE_ID,
-  ELEVENLABS_SPEED,
-  COMPLETION_AUDIO_MODE,
-  COMPLETION_AUDIO_CONTENT,
-  SPEECH_ENABLED_KEY,
+  ...SKILLS_MANAGED_SETTING_KEYS,
   CONTEXT_COMPACTION_TRIGGER_PERCENT,
   CONTEXT_COMPACTION_PROMPT,
+  AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
+  AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
   'SAG_VOICE_ID',
   'AAGENT_SAY_VOICE',
 ] as const;
@@ -60,46 +88,6 @@ function shouldShowCustomKey(key: string): boolean {
   return !HIDDEN_CUSTOM_KEYS.has(key) && !REMOVED_ENV_KEYS.has(key);
 }
 
-function isTruthySetting(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
-}
-
-function parseCompletionAudioMode(settings: Record<string, string>): CompletionAudioMode {
-  const mode = (settings[COMPLETION_AUDIO_MODE] || '').trim().toLowerCase();
-  if (mode === 'off' || mode === 'system' || mode === 'elevenlabs') {
-    return mode;
-  }
-  return isTruthySetting(settings[SPEECH_ENABLED_KEY] || '') ? 'system' : 'off';
-}
-
-function parseCompletionAudioContent(settings: Record<string, string>): CompletionAudioContent {
-  const content = (settings[COMPLETION_AUDIO_CONTENT] || '').trim().toLowerCase();
-  if (content === 'status' || content === 'final_response') {
-    return content;
-  }
-  return 'status';
-}
-
-function speedToOptionIndex(speed: string): number {
-  const parsed = Number.parseFloat(speed);
-  if (!Number.isFinite(parsed)) {
-    return ELEVENLABS_SPEED_OPTIONS.indexOf('1.0');
-  }
-
-  let closestIndex = 0;
-  let minDistance = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < ELEVENLABS_SPEED_OPTIONS.length; i += 1) {
-    const optionValue = Number.parseFloat(ELEVENLABS_SPEED_OPTIONS[i]);
-    const distance = Math.abs(optionValue - parsed);
-    if (distance < minDistance) {
-      minDistance = distance;
-      closestIndex = i;
-    }
-  }
-  return closestIndex;
-}
-
 function normalizeCompactionTriggerPercent(value: string): string {
   const parsed = Number.parseFloat(value.trim());
   if (!Number.isFinite(parsed)) {
@@ -109,6 +97,14 @@ function normalizeCompactionTriggerPercent(value: string): string {
   const clamped = Math.max(5, Math.min(100, parsed));
   const snapped = Math.round(clamped / 5) * 5;
   return String(Math.max(5, Math.min(100, snapped)));
+}
+
+function getEstimatedTokensLabel(tokens: number | null | undefined): string {
+  return `${tokens ?? 0} tokens`;
+}
+
+function getApproxEstimatedTokensLabel(tokens: number | null | undefined): string {
+  return `~${tokens ?? 0} tokens`;
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSave }) => {
@@ -122,23 +118,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
     return rows;
   });
 
-  const [completionAudioMode, setCompletionAudioMode] = useState<CompletionAudioMode>(() => parseCompletionAudioMode(settings));
-  const [completionAudioContent, setCompletionAudioContent] = useState<CompletionAudioContent>(() => parseCompletionAudioContent(settings));
-  const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState(settings[ELEVENLABS_VOICE_ID] || '');
-  const [elevenLabsSpeed, setElevenLabsSpeed] = useState(settings[ELEVENLABS_SPEED] || '1.0');
   const [compactionTriggerPercent, setCompactionTriggerPercent] = useState(
     normalizeCompactionTriggerPercent(settings[CONTEXT_COMPACTION_TRIGGER_PERCENT] || DEFAULT_COMPACTION_TRIGGER),
   );
   const [compactionPrompt, setCompactionPrompt] = useState(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
-  const [voices, setVoices] = useState<ElevenLabsVoice[]>([]);
-  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
-  const [voicesError, setVoicesError] = useState<string | null>(null);
-  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
-  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
-  const [hasAttemptedVoiceLoad, setHasAttemptedVoiceLoad] = useState(false);
+  const [agentInstructionBlocks, setAgentInstructionBlocks] = useState<InstructionBlock[]>(
+    splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')).customBlocks,
+  );
+  const [builtInToolsEnabled, setBuiltInToolsEnabled] = useState<boolean>(
+    splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')).builtInToolsEnabled,
+  );
+  const [integrationSkillsEnabled, setIntegrationSkillsEnabled] = useState<boolean>(
+    splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')).integrationSkillsEnabled,
+  );
+  const [externalMarkdownSkillsEnabled, setExternalMarkdownSkillsEnabled] = useState<boolean>(
+    splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')).externalMarkdownSkillsEnabled,
+  );
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [instructionEstimate, setInstructionEstimate] = useState<SystemPromptSnapshot | null>(null);
+  const [instructionEstimateError, setInstructionEstimateError] = useState<string | null>(null);
+  const [isEstimatingInstructions, setIsEstimatingInstructions] = useState(false);
 
   useEffect(() => {
     const rows: CustomRow[] = [];
@@ -149,12 +150,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
     }
     setCustomRows(rows);
 
-    setCompletionAudioMode(parseCompletionAudioMode(settings));
-    setCompletionAudioContent(parseCompletionAudioContent(settings));
-    setElevenLabsVoiceId(settings[ELEVENLABS_VOICE_ID] || '');
-    setElevenLabsSpeed(settings[ELEVENLABS_SPEED] || '1.0');
     setCompactionTriggerPercent(normalizeCompactionTriggerPercent(settings[CONTEXT_COMPACTION_TRIGGER_PERCENT] || DEFAULT_COMPACTION_TRIGGER));
     setCompactionPrompt(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
+    const splitBlocks = splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || ''));
+    setAgentInstructionBlocks(splitBlocks.customBlocks);
+    setBuiltInToolsEnabled(splitBlocks.builtInToolsEnabled);
+    setIntegrationSkillsEnabled(splitBlocks.integrationSkillsEnabled);
+    setExternalMarkdownSkillsEnabled(splitBlocks.externalMarkdownSkillsEnabled);
   }, [settings]);
 
   const compactionTriggerValue = Number.parseFloat(compactionTriggerPercent);
@@ -162,84 +164,110 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
     ? Math.max(5, Math.min(100, compactionTriggerValue))
     : Number.parseFloat(DEFAULT_COMPACTION_TRIGGER);
 
-  const loadVoices = async () => {
-    setVoicesError(null);
+  const canSave = useMemo(() => {
+    return !isSaving;
+  }, [isSaving]);
 
-    setIsLoadingVoices(true);
-    try {
-      const loadedVoices = await listSpeechVoices();
-      const nextVoices = loadedVoices.slice().sort((a, b) => a.name.localeCompare(b.name));
-      setVoices(nextVoices);
-      setHasAttemptedVoiceLoad(true);
+  const estimatedBlocks = instructionEstimate?.blocks || [];
+  const builtInToolsEstimatedTokens = estimatedBlocks.find((block) => block.type === BUILTIN_TOOLS_BLOCK_TYPE)?.estimated_tokens ?? 0;
+  const integrationSkillsEstimatedTokens = estimatedBlocks.find((block) => block.type === INTEGRATION_SKILLS_BLOCK_TYPE)?.estimated_tokens ?? 0;
+  const externalMarkdownSkillsEstimatedTokens = estimatedBlocks.find((block) => block.type === EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE)?.estimated_tokens ?? 0;
 
-      if (nextVoices.length === 0) {
-        setVoicesError('No voices found for this ElevenLabs account.');
-        return;
+  const customEstimatedBlocks = useMemo(() => {
+    return estimatedBlocks.filter((block) => (
+      block.type !== BUILTIN_TOOLS_BLOCK_TYPE
+      && block.type !== INTEGRATION_SKILLS_BLOCK_TYPE
+      && block.type !== EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE
+    ));
+  }, [estimatedBlocks]);
+
+  const customBlockEstimatedTokens = useMemo(() => {
+    const perBlockTokens: Array<number | null> = [];
+    let estimateIndex = 0;
+    for (const block of agentInstructionBlocks) {
+      const isIncludedInPrompt = block.enabled !== false && (block.type === 'project_agents_md' || block.value.trim() !== '');
+      if (!isIncludedInPrompt) {
+        perBlockTokens.push(0);
+        continue;
       }
-
-      const hasCurrentVoice = nextVoices.some((voice) => voice.voice_id === elevenLabsVoiceId);
-      if (!hasCurrentVoice) {
-        setElevenLabsVoiceId(nextVoices[0].voice_id);
-      }
-    } catch (error) {
-      setVoices([]);
-      setHasAttemptedVoiceLoad(true);
-      setVoicesError(error instanceof Error ? error.message : 'Failed to load voices');
-    } finally {
-      setIsLoadingVoices(false);
+      perBlockTokens.push(customEstimatedBlocks[estimateIndex]?.estimated_tokens ?? 0);
+      estimateIndex += 1;
     }
+    return perBlockTokens;
+  }, [agentInstructionBlocks, customEstimatedBlocks]);
+
+  const customBlockEstimatedTokenLabels = useMemo(() => {
+    return agentInstructionBlocks.map((block, index) => {
+      const tokens = customBlockEstimatedTokens[index] ?? 0;
+      const isIncludedInPrompt = block.enabled !== false && (block.type === 'project_agents_md' || block.value.trim() !== '');
+      if (block.type === 'project_agents_md' && isIncludedInPrompt) {
+        return getApproxEstimatedTokensLabel(tokens);
+      }
+      return getEstimatedTokensLabel(tokens);
+    });
+  }, [agentInstructionBlocks, customBlockEstimatedTokens]);
+
+  const enabledInstructionTotalTokens = useMemo(() => {
+    if (!instructionEstimate) {
+      return null;
+    }
+    const baseTokens = instructionEstimate.base_estimated_tokens ?? 0;
+    const enabledBlockTokens = estimatedBlocks.reduce((sum, block) => {
+      if (block.enabled === false) {
+        return sum;
+      }
+      return sum + (block.estimated_tokens ?? 0);
+    }, 0);
+    return baseTokens + enabledBlockTokens;
+  }, [instructionEstimate, estimatedBlocks]);
+
+  const buildInstructionSettingsDraft = (): Record<string, string> => {
+    const normalizedAgentBlocks = agentInstructionBlocks
+      .map((block): InstructionBlock => ({
+        type: (
+          block.type === 'file'
+            ? 'file'
+            : block.type === 'project_agents_md'
+              ? 'project_agents_md'
+              : 'text'
+        ) as InstructionBlockType,
+        value: block.value.trim(),
+        enabled: block.enabled !== false,
+      }))
+      .filter((block) => block.enabled && (block.type === 'project_agents_md' || block.value !== ''));
+    const serializedAgentBlocks: InstructionBlock[] = [
+      { type: BUILTIN_TOOLS_BLOCK_TYPE, value: '', enabled: builtInToolsEnabled },
+      { type: INTEGRATION_SKILLS_BLOCK_TYPE, value: '', enabled: integrationSkillsEnabled },
+      { type: EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE, value: '', enabled: externalMarkdownSkillsEnabled },
+      ...normalizedAgentBlocks,
+    ];
+
+    return {
+      ...settings,
+      [AGENT_INSTRUCTION_BLOCKS_SETTING_KEY]: JSON.stringify(serializedAgentBlocks),
+      [AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY]: buildAgentSystemPromptAppend(normalizedAgentBlocks),
+    };
   };
 
   useEffect(() => {
-    if (completionAudioMode !== 'elevenlabs') {
-      return;
-    }
-    if (voices.length > 0 || isLoadingVoices || hasAttemptedVoiceLoad) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      loadVoices();
-    }, 500);
+    const timeoutId = window.setTimeout(async () => {
+      setIsEstimatingInstructions(true);
+      setInstructionEstimateError(null);
+      try {
+        const draftSettings = buildInstructionSettingsDraft();
+        const response = await estimateInstructionPrompt(draftSettings);
+        setInstructionEstimate(response.snapshot);
+      } catch (error) {
+        setInstructionEstimateError(error instanceof Error ? error.message : 'Failed to estimate instruction tokens');
+      } finally {
+        setIsEstimatingInstructions(false);
+      }
+    }, 250);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [completionAudioMode, voices.length, isLoadingVoices, hasAttemptedVoiceLoad]);
-
-  const handlePlayPreview = async (voice: ElevenLabsVoice | undefined) => {
-    if (!voice || !voice.preview_url) {
-      setVoicesError('Preview is unavailable for the selected voice.');
-      return;
-    }
-
-    setVoicesError(null);
-    try {
-      if (audioElement) {
-        audioElement.pause();
-      }
-      const nextAudio = new Audio(voice.preview_url);
-      setAudioElement(nextAudio);
-      setPlayingVoiceId(voice.voice_id);
-      nextAudio.onended = () => setPlayingVoiceId(null);
-      await nextAudio.play();
-    } catch (error) {
-      setPlayingVoiceId(null);
-      setVoicesError(error instanceof Error ? error.message : 'Failed to play voice preview');
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (audioElement) {
-        audioElement.pause();
-      }
-    };
-  }, [audioElement]);
-
-  const canSave = useMemo(() => {
-    return !isSaving;
-  }, [isSaving]);
+  }, [settings, agentInstructionBlocks, builtInToolsEnabled, integrationSkillsEnabled, externalMarkdownSkillsEnabled]);
 
   const addRow = () => {
     setCustomRows((prev) => [...prev, { id: crypto.randomUUID(), key: '', value: '' }]);
@@ -258,10 +286,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
     setSaveSuccess(null);
 
     const payload: Record<string, string> = {};
-
-    payload[COMPLETION_AUDIO_MODE] = completionAudioMode;
-    payload[COMPLETION_AUDIO_CONTENT] = completionAudioContent;
-    payload[SPEECH_ENABLED_KEY] = completionAudioMode === 'off' ? 'false' : 'true';
+    for (const key of SKILLS_MANAGED_SETTING_KEYS) {
+      const value = settings[key];
+      if (value === undefined || value.trim() === '') {
+        continue;
+      }
+      payload[key] = value;
+    }
 
     const compactionTrigger = Number.parseFloat(normalizeCompactionTriggerPercent(compactionTriggerPercent));
     if (!Number.isFinite(compactionTrigger) || compactionTrigger <= 0 || compactionTrigger > 100) {
@@ -277,12 +308,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
     }
     payload[CONTEXT_COMPACTION_PROMPT] = trimmedCompactionPrompt;
 
-    const voiceId = elevenLabsVoiceId.trim();
-    if (voiceId !== '') {
-      payload[ELEVENLABS_VOICE_ID] = voiceId;
-    }
-    const speed = ELEVENLABS_SPEED_OPTIONS[speedToOptionIndex(elevenLabsSpeed)];
-    payload[ELEVENLABS_SPEED] = speed;
+    const draftSettings = buildInstructionSettingsDraft();
+    payload[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] = draftSettings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '';
+    payload[AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY] = draftSettings[AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY] || '';
 
     for (const row of customRows) {
       const key = row.key.trim();
@@ -294,10 +322,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
 
     try {
       await onSave(payload);
-      if (completionAudioMode === 'elevenlabs') {
-        setHasAttemptedVoiceLoad(false);
-        await loadVoices();
-      }
       setSaveSuccess('Settings saved and synced to backend.');
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Failed to save settings');
@@ -306,116 +330,86 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
 
   return (
     <>
-      <div className="settings-panel settings-audio-panel">
-        <h2>Completion audio</h2>
+      <div className="settings-panel">
+        <div className="settings-panel-title-row">
+          <h2>Agent instructions</h2>
+          <span className="instruction-total-tokens">
+            {isEstimatingInstructions
+              ? 'Calculating...'
+              : enabledInstructionTotalTokens !== null
+                ? getEstimatedTokensLabel(enabledInstructionTotalTokens)
+                : 'No estimate'}
+          </span>
+        </div>
+        {instructionEstimateError ? <p className="settings-error">{instructionEstimateError}</p> : null}
         <p className="settings-help">
-          Choose where completion speech comes from. Web app playback uses your current browser/device audio output.
+          Compose reusable instruction blocks for the agent system prompt. Thinking runs inherit these and can add extra blocks.
         </p>
-
-        <div className="audio-mode-options">
-          <label className="audio-mode-option">
+        <div className="settings-actions">
+          <Link to="/skills" className="settings-add-btn">
+            Open Skills
+          </Link>
+        </div>
+        <div className="instruction-block instruction-block-singleline">
+          <div className="instruction-block-singleline-main">
+            <Link to="/skills" className="instruction-block-link">Built-in tools</Link>
+            <span className="instruction-block-token-count">{getEstimatedTokensLabel(builtInToolsEnabled ? builtInToolsEstimatedTokens : 0)}</span>
+          </div>
+          <label className="instruction-block-enabled-toggle" title="Enable built-in tools guidance in system prompt">
             <input
-              type="radio"
-              name="completion-audio-mode"
-              value="off"
-              checked={completionAudioMode === 'off'}
-              onChange={() => setCompletionAudioMode('off')}
+              type="checkbox"
+              checked={builtInToolsEnabled}
+              onChange={(event) => setBuiltInToolsEnabled(event.target.checked)}
+              disabled={isSaving}
+              aria-label="Enable built-in tools block"
             />
-            <span>Off</span>
-          </label>
-          <label className="audio-mode-option">
-            <input
-              type="radio"
-              name="completion-audio-mode"
-              value="system"
-              checked={completionAudioMode === 'system'}
-              onChange={() => setCompletionAudioMode('system')}
-            />
-            <span>System voice</span>
-          </label>
-          <label className="audio-mode-option">
-            <input
-              type="radio"
-              name="completion-audio-mode"
-              value="elevenlabs"
-              checked={completionAudioMode === 'elevenlabs'}
-              onChange={() => setCompletionAudioMode('elevenlabs')}
-            />
-            <span>ElevenLabs</span>
+            <span>Enabled</span>
           </label>
         </div>
-
-        <div className="settings-group">
-          <label className="settings-field">
-            <span>When a session finishes</span>
-            <select
-              value={completionAudioContent}
-              onChange={(e) => setCompletionAudioContent(e.target.value as CompletionAudioContent)}
-            >
-              <option value="status">Announce session status changes</option>
-              <option value="final_response">Speak final agent response</option>
-            </select>
-          </label>
-
-          <label className="settings-field">
-            <span>Voice</span>
-            <div className="elevenlabs-voice-row">
-              <select
-                value={elevenLabsVoiceId}
-                onChange={(e) => setElevenLabsVoiceId(e.target.value)}
-              >
-                {voices.length === 0 ? (
-                  <option value="">
-                    {isLoadingVoices ? 'Loading voices...' : 'API key required in Integrations'}
-                  </option>
-                ) : (
-                  voices.map((voice) => (
-                    <option key={voice.voice_id} value={voice.voice_id}>
-                      {voice.name}
-                    </option>
-                  ))
-                )}
-              </select>
-              <button
-                type="button"
-                onClick={() => handlePlayPreview(voices.find((voice) => voice.voice_id === elevenLabsVoiceId))}
-                className="elevenlabs-preview-btn"
-                disabled={!elevenLabsVoiceId || voices.length === 0}
-                title="Play selected voice preview"
-                aria-label="Play selected voice preview"
-              >
-                {playingVoiceId === elevenLabsVoiceId ? '...' : '▶'}
-              </button>
-            </div>
-          </label>
-
-          <label className="settings-field">
-            <span>Voice speed</span>
-            <div className="elevenlabs-speed-control">
-              <input
-                className="elevenlabs-speed-slider"
-                type="range"
-                min="0"
-                max={String(ELEVENLABS_SPEED_OPTIONS.length - 1)}
-                step="1"
-                value={String(speedToOptionIndex(elevenLabsSpeed))}
-                onChange={(e) => {
-                  const nextIndex = Number.parseInt(e.target.value, 10);
-                  setElevenLabsSpeed(ELEVENLABS_SPEED_OPTIONS[nextIndex] || ELEVENLABS_SPEED_OPTIONS[0]);
-                }}
-              />
-              <div className="settings-help">Selected: {ELEVENLABS_SPEED_OPTIONS[speedToOptionIndex(elevenLabsSpeed)]}x</div>
-            </div>
+        <div className="instruction-block instruction-block-singleline">
+          <div className="instruction-block-singleline-main">
+            <Link to="/skills" className="instruction-block-link">Integration-backed skills</Link>
+            <span className="instruction-block-token-count">{getEstimatedTokensLabel(integrationSkillsEnabled ? integrationSkillsEstimatedTokens : 0)}</span>
+          </div>
+          <label className="instruction-block-enabled-toggle" title="Enable integration skills context in system prompt">
+            <input
+              type="checkbox"
+              checked={integrationSkillsEnabled}
+              onChange={(event) => setIntegrationSkillsEnabled(event.target.checked)}
+              disabled={isSaving}
+              aria-label="Enable integration-backed skills block"
+            />
+            <span>Enabled</span>
           </label>
         </div>
-
-        {completionAudioMode === 'elevenlabs' && !isLoadingVoices && voices.length === 0 && (
-          <p className="settings-help">
-            ElevenLabs API key is configured in <Link to="/integrations">Integrations</Link>. Add an enabled ElevenLabs integration to load voices.
-          </p>
-        )}
-
-        {voicesError && <div className="settings-error">{voicesError}</div>}
+        <div className="instruction-block instruction-block-singleline">
+          <div className="instruction-block-singleline-main">
+            <Link to="/skills" className="instruction-block-link">External markdown skills</Link>
+            <span className="instruction-block-token-count">
+              {getEstimatedTokensLabel(externalMarkdownSkillsEnabled ? externalMarkdownSkillsEstimatedTokens : 0)}
+            </span>
+          </div>
+          <label className="instruction-block-enabled-toggle" title="Enable external markdown skills context in system prompt">
+            <input
+              type="checkbox"
+              checked={externalMarkdownSkillsEnabled}
+              onChange={(event) => setExternalMarkdownSkillsEnabled(event.target.checked)}
+              disabled={isSaving}
+              aria-label="Enable external markdown skills block"
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+        <InstructionBlocksEditor
+          blocks={agentInstructionBlocks}
+          onChange={setAgentInstructionBlocks}
+          disabled={isSaving}
+          blockEstimatedTokens={customBlockEstimatedTokens}
+          blockEstimatedTokenLabels={customBlockEstimatedTokenLabels}
+          textPlaceholder="Global instructions that should always apply..."
+          filePlaceholder="notes/agent-rules.md"
+          emptyStateText="No global instruction blocks configured."
+        />
       </div>
 
       <div className="settings-panel">

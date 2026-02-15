@@ -1,9 +1,52 @@
 import { useState, useEffect, useCallback, type DragEvent } from 'react';
 import ChatInput from './ChatInput';
-import { createProject, createSession, deleteProject, deleteSession, listProjects, listProviders, listSessions, updateSessionProject, type LLMProviderType, type Project, type ProviderConfig, type Session } from './api';
+import {
+  browseSkillDirectories,
+  createProject,
+  createSession,
+  deleteProject,
+  deleteSession,
+  listProjects,
+  listProviders,
+  listSessions,
+  updateProject,
+  updateSessionProject,
+  type LLMProviderType,
+  type MindTreeEntry,
+  type Project,
+  type ProviderConfig,
+  type Session,
+} from './api';
+import { THINKING_PROJECT_ID } from './thinking';
+
+const LAST_PROVIDER_STORAGE_KEY = 'a2gent.sessions.lastProvider';
+const LAST_PROJECT_STORAGE_KEY = 'a2gent.sessions.lastProject';
 
 interface SessionsListProps {
   onSelectSession: (sessionId: string, initialMessage?: string) => void;
+}
+
+function getParentPath(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '');
+  if (trimmed === '' || trimmed === '/') {
+    return '/';
+  }
+
+  const windowsRootMatch = /^[a-zA-Z]:$/.exec(trimmed);
+  if (windowsRootMatch) {
+    return `${trimmed}\\`;
+  }
+
+  const separatorIndex = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  if (separatorIndex < 0) {
+    return trimmed;
+  }
+
+  if (separatorIndex === 0) {
+    return '/';
+  }
+
+  return trimmed.slice(0, separatorIndex);
 }
 
 function SessionsList({ onSelectSession }: SessionsListProps) {
@@ -13,13 +56,22 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
+  const [hasLoadedProviders, setHasLoadedProviders] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [hasLoadedProjects, setHasLoadedProjects] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectFolders, setNewProjectFolders] = useState('');
   const [draggingSessionID, setDraggingSessionID] = useState<string | null>(null);
   const [dragOverSectionKey, setDragOverSectionKey] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [isProjectPickerOpen, setIsProjectPickerOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState('');
+  const [projectFolderDraft, setProjectFolderDraft] = useState<string[]>([]);
+  const [browsePath, setBrowsePath] = useState('');
+  const [browseEntries, setBrowseEntries] = useState<MindTreeEntry[]>([]);
+  const [isLoadingBrowse, setIsLoadingBrowse] = useState(false);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -46,6 +98,8 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
     } catch (err) {
       console.error('Failed to load projects:', err);
       setError(err instanceof Error ? err.message : 'Failed to load projects');
+    } finally {
+      setHasLoadedProjects(true);
     }
   }, []);
 
@@ -58,16 +112,79 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
       try {
         const data = await listProviders();
         setProviders(data);
+        let storedProvider: LLMProviderType | '' = '';
+        try {
+          storedProvider = (localStorage.getItem(LAST_PROVIDER_STORAGE_KEY) as LLMProviderType | null) || '';
+        } catch {
+          storedProvider = '';
+        }
+        if (storedProvider && data.some((provider) => provider.type === storedProvider)) {
+          setSelectedProvider(storedProvider);
+          return;
+        }
         const active = data.find((provider) => provider.is_active);
         if (active) {
           setSelectedProvider(active.type);
+          return;
+        }
+        if (data.length > 0) {
+          setSelectedProvider(data[0].type);
         }
       } catch (err) {
         console.error('Failed to load providers:', err);
+      } finally {
+        setHasLoadedProviders(true);
       }
     };
     loadProviders();
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedProviders) {
+      return;
+    }
+    try {
+      if (selectedProvider) {
+        localStorage.setItem(LAST_PROVIDER_STORAGE_KEY, selectedProvider);
+      } else {
+        localStorage.removeItem(LAST_PROVIDER_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [hasLoadedProviders, selectedProvider]);
+
+  useEffect(() => {
+    try {
+      const storedProjectId = localStorage.getItem(LAST_PROJECT_STORAGE_KEY) || '';
+      if (storedProjectId) {
+        setSelectedProjectId(storedProjectId);
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedProjects) {
+      return;
+    }
+    if (!projects.some((project) => project.id === selectedProjectId) && selectedProjectId !== '') {
+      setSelectedProjectId('');
+    }
+  }, [hasLoadedProjects, projects, selectedProjectId]);
+
+  useEffect(() => {
+    try {
+      if (selectedProjectId) {
+        localStorage.setItem(LAST_PROJECT_STORAGE_KEY, selectedProjectId);
+      } else {
+        localStorage.removeItem(LAST_PROJECT_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [selectedProjectId]);
 
   const handleDeleteSession = async (sessionId: string) => {
     if (!confirm('Delete this session?')) return;
@@ -195,6 +312,52 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
     }
   };
 
+  const loadBrowse = async (path: string) => {
+    setIsLoadingBrowse(true);
+    setError(null);
+    try {
+      const response = await browseSkillDirectories(path);
+      setBrowsePath(response.path);
+      setBrowseEntries(response.entries);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to browse directories');
+    } finally {
+      setIsLoadingBrowse(false);
+    }
+  };
+
+  const openProjectFolderPicker = async (project: Project) => {
+    setEditingProjectId(project.id);
+    setEditingProjectName(project.name);
+    setProjectFolderDraft(project.folders ?? []);
+    setIsProjectPickerOpen(true);
+    await loadBrowse((project.folders && project.folders[0]) || browsePath);
+  };
+
+  const handleAddDraftFolder = (folder: string) => {
+    const normalized = folder.trim();
+    if (normalized === '') {
+      return;
+    }
+    setProjectFolderDraft((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+  };
+
+  const handleSaveProjectFolders = async () => {
+    if (!editingProjectId) {
+      return;
+    }
+    try {
+      await updateProject(editingProjectId, { folders: projectFolderDraft });
+      setIsProjectPickerOpen(false);
+      setEditingProjectId(null);
+      setEditingProjectName('');
+      await loadProjects();
+    } catch (err) {
+      console.error('Failed to update project folders:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update project folders');
+    }
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
@@ -265,7 +428,17 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
   }, {});
 
   const ungroupedSessions = sessionsByProject.__ungrouped__ ?? [];
-  const sortedProjects = [...projects].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedProjects = [...projects].sort((a, b) => {
+    const aIsThinking = a.id === THINKING_PROJECT_ID;
+    const bIsThinking = b.id === THINKING_PROJECT_ID;
+    if (aIsThinking && !bIsThinking) {
+      return 1;
+    }
+    if (!aIsThinking && bIsThinking) {
+      return -1;
+    }
+    return a.name.localeCompare(b.name);
+  });
 
   const isSectionCollapsed = (sectionKey: string) => collapsedSections[sectionKey] === true;
   const toggleSection = (sectionKey: string) => {
@@ -373,59 +546,6 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
             </div>
           ) : (
             <div className="sessions-grouped-list">
-              {sortedProjects.map((project) => {
-                const sectionKey = `project:${project.id}`;
-                const sectionSessions = sessionsByProject[project.id] ?? [];
-                const count = sectionSessions.length;
-                const isCollapsed = isSectionCollapsed(sectionKey);
-                const showEmptyDropzone = Boolean(draggingSessionID && count === 0 && !isCollapsed);
-                return (
-                  <section
-                    key={project.id}
-                    className={`sessions-group-section${dragOverSectionKey === sectionKey ? ' drag-over' : ''}`}
-                    onDragOver={(event) => handleSectionDragOver(event, sectionKey)}
-                    onDragLeave={() => handleSectionDragLeave(sectionKey)}
-                    onDrop={(event) => {
-                      void handleSectionDrop(event, project.id);
-                    }}
-                  >
-                    <div className="sessions-group-header">
-                      <button
-                        className="sessions-collapse-btn"
-                        onClick={() => toggleSection(sectionKey)}
-                        title={isCollapsed ? 'Expand section' : 'Collapse section'}
-                        aria-label={isCollapsed ? `Expand ${project.name}` : `Collapse ${project.name}`}
-                      >
-                        {isCollapsed ? '▸' : '▾'}
-                      </button>
-                      <h2 className="sessions-group-title">{project.name}</h2>
-                      <span className="sessions-group-count">{count} session{count === 1 ? '' : 's'}</span>
-                      <button
-                        className="project-chip-delete"
-                        onClick={() => handleDeleteProject(project.id)}
-                        title={`Delete project ${project.name}`}
-                        aria-label={`Delete project ${project.name}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    {!isCollapsed ? (
-                      <div
-                        className="sessions-list"
-                        onDragOver={(event) => handleSectionDragOver(event, sectionKey)}
-                        onDragLeave={() => handleSectionDragLeave(sectionKey)}
-                        onDrop={(event) => {
-                          void handleSectionDrop(event, project.id);
-                        }}
-                      >
-                        {sectionSessions.map((session) => renderSessionCard(session))}
-                        {showEmptyDropzone ? <div className="session-project-dropzone">Drop a session here</div> : null}
-                      </div>
-                    ) : null}
-                  </section>
-                );
-              })}
-
               <section
                 className={`sessions-group-section${dragOverSectionKey === '__ungrouped__' ? ' drag-over' : ''}`}
                 onDragOver={(event) => handleSectionDragOver(event, '__ungrouped__')}
@@ -459,6 +579,67 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
                   </div>
                 ) : null}
               </section>
+
+              {sortedProjects.map((project) => {
+                const sectionKey = `project:${project.id}`;
+                const sectionSessions = sessionsByProject[project.id] ?? [];
+                const count = sectionSessions.length;
+                const isCollapsed = isSectionCollapsed(sectionKey);
+                const showEmptyDropzone = Boolean(draggingSessionID && count === 0 && !isCollapsed);
+                return (
+                  <section
+                    key={project.id}
+                    className={`sessions-group-section${dragOverSectionKey === sectionKey ? ' drag-over' : ''}`}
+                    onDragOver={(event) => handleSectionDragOver(event, sectionKey)}
+                    onDragLeave={() => handleSectionDragLeave(sectionKey)}
+                    onDrop={(event) => {
+                      void handleSectionDrop(event, project.id);
+                    }}
+                  >
+                    <div className="sessions-group-header">
+                      <button
+                        className="sessions-collapse-btn"
+                        onClick={() => toggleSection(sectionKey)}
+                        title={isCollapsed ? 'Expand section' : 'Collapse section'}
+                        aria-label={isCollapsed ? `Expand ${project.name}` : `Collapse ${project.name}`}
+                      >
+                        {isCollapsed ? '▸' : '▾'}
+                      </button>
+                      <h2 className="sessions-group-title">{project.name}</h2>
+                      <span className="sessions-group-count">{count} session{count === 1 ? '' : 's'}</span>
+                      <button
+                        className="project-folders-btn"
+                        onClick={() => void openProjectFolderPicker(project)}
+                        title={`Manage folders for ${project.name}`}
+                        aria-label={`Manage folders for ${project.name}`}
+                      >
+                        Folders
+                      </button>
+                      <button
+                        className="project-chip-delete"
+                        onClick={() => handleDeleteProject(project.id)}
+                        title={`Delete project ${project.name}`}
+                        aria-label={`Delete project ${project.name}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {!isCollapsed ? (
+                      <div
+                        className="sessions-list"
+                        onDragOver={(event) => handleSectionDragOver(event, sectionKey)}
+                        onDragLeave={() => handleSectionDragLeave(sectionKey)}
+                        onDrop={(event) => {
+                          void handleSectionDrop(event, project.id);
+                        }}
+                      >
+                        {sectionSessions.map((session) => renderSessionCard(session))}
+                        {showEmptyDropzone ? <div className="session-project-dropzone">Drop a session here</div> : null}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
             </div>
           )}
         </div>
@@ -470,7 +651,22 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
               disabled={isCreatingSession}
               autoFocus
               actionControls={(
-                <>
+                <div className="sessions-new-chat-controls">
+                  <label className="chat-provider-select">
+                    <select
+                      value={selectedProjectId}
+                      onChange={(e) => setSelectedProjectId(e.target.value)}
+                      title="Project"
+                      aria-label="Project"
+                    >
+                      <option value="">No project</option>
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   {providers.length > 0 ? (
                     <label className="chat-provider-select">
                       <select
@@ -487,27 +683,80 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
                       </select>
                     </label>
                   ) : null}
-                  <label className="chat-provider-select">
-                    <select
-                      value={selectedProjectId}
-                      onChange={(e) => setSelectedProjectId(e.target.value)}
-                      title="Project"
-                      aria-label="Project"
-                    >
-                      <option value="">No project</option>
-                      {projects.map((project) => (
-                        <option key={project.id} value={project.id}>
-                          {project.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </>
+                </div>
               )}
             />
           </div>
         </div>
       </div>
+
+      {isProjectPickerOpen ? (
+        <div className="mind-picker-overlay" role="dialog" aria-modal="true" aria-label="Choose project folders">
+          <div className="mind-picker-dialog">
+            <h2>Choose folders for {editingProjectName || 'project'}</h2>
+            <div className="mind-picker-path">{browsePath || 'Loading...'}</div>
+            <div className="mind-picker-actions">
+              <button
+                type="button"
+                className="settings-add-btn"
+                onClick={() => void loadBrowse(getParentPath(browsePath))}
+                disabled={isLoadingBrowse || browsePath.trim() === '' || getParentPath(browsePath) === browsePath}
+              >
+                Up
+              </button>
+              <button
+                type="button"
+                className="settings-save-btn"
+                onClick={() => handleAddDraftFolder(browsePath)}
+                disabled={isLoadingBrowse || browsePath.trim() === ''}
+              >
+                Use this folder
+              </button>
+              <button type="button" className="settings-remove-btn" onClick={() => setIsProjectPickerOpen(false)}>
+                Cancel
+              </button>
+            </div>
+
+            <div className="project-folder-draft-list">
+              {projectFolderDraft.length === 0 ? <div className="sessions-empty">No folders selected.</div> : null}
+              {projectFolderDraft.map((folder) => (
+                <div key={folder} className="project-folder-draft-item">
+                  <code>{folder}</code>
+                  <button
+                    type="button"
+                    className="project-chip-delete"
+                    onClick={() => setProjectFolderDraft((prev) => prev.filter((value) => value !== folder))}
+                    aria-label={`Remove ${folder}`}
+                    title={`Remove ${folder}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="mind-picker-list">
+              {!isLoadingBrowse && browseEntries.length === 0 ? <div className="sessions-empty">No folders found.</div> : null}
+              {browseEntries.map((entry) => (
+                <button
+                  type="button"
+                  key={entry.path}
+                  className="mind-picker-item"
+                  onClick={() => void loadBrowse(entry.path)}
+                >
+                  📁 {entry.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="mind-picker-actions project-folder-save-row">
+              <button type="button" className="settings-save-btn" onClick={() => void handleSaveProjectFolders()}>
+                Save folders
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

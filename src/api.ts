@@ -106,6 +106,8 @@ export interface Session {
   project_id?: string;
   provider?: string;
   model?: string;
+  routed_provider?: string;
+  routed_model?: string;
   title: string;
   status: string;
   total_tokens?: number;
@@ -113,6 +115,29 @@ export interface Session {
   created_at: string;
   updated_at: string;
   messages?: Message[];
+  system_prompt_snapshot?: SystemPromptSnapshot;
+}
+
+export interface SystemPromptSnapshot {
+  base_prompt: string;
+  combined_prompt: string;
+  base_estimated_tokens?: number;
+  combined_estimated_tokens?: number;
+  blocks: SystemPromptBlockSnapshot[];
+}
+
+export interface SystemPromptBlockSnapshot {
+  type: string;
+  value: string;
+  enabled: boolean;
+  resolved_content?: string;
+  source_path?: string;
+  error?: string;
+  estimated_tokens?: number;
+}
+
+export interface InstructionEstimateResponse {
+  snapshot: SystemPromptSnapshot;
 }
 
 export interface Message {
@@ -209,6 +234,52 @@ export interface MindTreeResponse {
   entries: MindTreeEntry[];
 }
 
+export interface SkillBrowseResponse {
+  path: string;
+  entries: MindTreeEntry[];
+}
+
+export interface SkillFile {
+  name: string;
+  path: string;
+  relative_path: string;
+}
+
+export interface SkillDiscoverResponse {
+  folder: string;
+  skills: SkillFile[];
+}
+
+export interface BuiltInSkill {
+  id: string;
+  name: string;
+  kind: string;
+  description: string;
+}
+
+export interface BuiltInSkillsResponse {
+  skills: BuiltInSkill[];
+}
+
+export interface IntegrationBackedTool {
+  name: string;
+  description: string;
+  input_schema?: Record<string, unknown>;
+}
+
+export interface IntegrationBackedSkill {
+  id: string;
+  name: string;
+  provider: string;
+  mode: string;
+  enabled: boolean;
+  tools: IntegrationBackedTool[];
+}
+
+export interface IntegrationBackedSkillsResponse {
+  skills: IntegrationBackedSkill[];
+}
+
 export interface MindFileResponse {
   root_folder: string;
   path: string;
@@ -285,7 +356,16 @@ function normalizeLMStudioBaseUrl(raw?: string): string {
   return base;
 }
 
-export type IntegrationProvider = 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'webhook' | 'google_calendar' | 'elevenlabs';
+export type IntegrationProvider =
+  | 'telegram'
+  | 'slack'
+  | 'discord'
+  | 'whatsapp'
+  | 'webhook'
+  | 'google_calendar'
+  | 'elevenlabs'
+  | 'perplexity'
+  | 'brave_search';
 export type IntegrationMode = 'notify_only' | 'duplex';
 
 export interface Integration {
@@ -520,6 +600,8 @@ export interface RecurringJob {
   schedule_human: string;
   schedule_cron: string;
   task_prompt: string;
+  task_prompt_source?: 'text' | 'file';
+  task_prompt_file?: string;
   llm_provider?: LLMProviderType;
   enabled: boolean;
   last_run_at?: string;
@@ -543,6 +625,8 @@ export interface CreateJobRequest {
   name: string;
   schedule_text: string;
   task_prompt: string;
+  task_prompt_source?: 'text' | 'file';
+  task_prompt_file?: string;
   llm_provider?: LLMProviderType;
   enabled: boolean;
 }
@@ -551,6 +635,8 @@ export interface UpdateJobRequest {
   name?: string;
   schedule_text?: string;
   task_prompt?: string;
+  task_prompt_source?: 'text' | 'file';
+  task_prompt_file?: string;
   llm_provider?: LLMProviderType | '';
   enabled?: boolean;
 }
@@ -665,6 +751,20 @@ export async function updateSettings(settings: Record<string, string>): Promise<
   return data.settings || {};
 }
 
+export async function estimateInstructionPrompt(settings: Record<string, string>): Promise<InstructionEstimateResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/settings/instruction-estimate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ settings }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to estimate instruction prompt');
+  }
+  return response.json();
+}
+
 // --- My Mind API ---
 
 export async function getMindConfig(): Promise<MindConfigResponse> {
@@ -698,6 +798,41 @@ export async function browseMindDirectories(path: string): Promise<MindTreeRespo
   return response.json();
 }
 
+export async function browseSkillDirectories(path: string): Promise<SkillBrowseResponse> {
+  const query = path.trim() === '' ? '' : `?path=${encodeURIComponent(path)}`;
+  const response = await fetch(`${getApiBaseUrl()}/skills/browse${query}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to browse skill directories');
+  }
+  return response.json();
+}
+
+export async function discoverSkills(folder: string): Promise<SkillDiscoverResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/skills/discover?folder=${encodeURIComponent(folder)}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to discover markdown skills');
+  }
+  return response.json();
+}
+
+export async function listBuiltInSkills(): Promise<BuiltInSkill[]> {
+  const response = await fetch(`${getApiBaseUrl()}/skills/builtin`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to list built-in skills');
+  }
+  const data: BuiltInSkillsResponse = await response.json();
+  return data.skills || [];
+}
+
+export async function listIntegrationBackedSkills(): Promise<IntegrationBackedSkill[]> {
+  const response = await fetch(`${getApiBaseUrl()}/skills/integration-backed`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to list integration-backed skills');
+  }
+  const data: IntegrationBackedSkillsResponse = await response.json();
+  return data.skills || [];
+}
+
 export async function listMindTree(path = ''): Promise<MindTreeResponse> {
   const query = path.trim() === '' ? '' : `?path=${encodeURIComponent(path)}`;
   const response = await fetch(`${getApiBaseUrl()}/mind/tree${query}`);
@@ -729,6 +864,15 @@ export async function saveMindFile(path: string, content: string): Promise<MindF
   return response.json();
 }
 
+export async function deleteMindFile(path: string): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/mind/file?path=${encodeURIComponent(path)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to delete markdown file');
+  }
+}
+
 export async function listSpeechVoices(): Promise<ElevenLabsVoice[]> {
   const response = await fetch(`${getApiBaseUrl()}/speech/voices`);
   if (!response.ok) {
@@ -747,6 +891,14 @@ export async function synthesizeCompletionAudio(text: string): Promise<Blob> {
   });
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to synthesize completion audio');
+  }
+  return response.blob();
+}
+
+export async function fetchSpeechClip(clipID: string): Promise<Blob> {
+  const response = await fetch(`${getApiBaseUrl()}/speech/clips/${encodeURIComponent(clipID)}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load generated speech clip');
   }
   return response.blob();
 }

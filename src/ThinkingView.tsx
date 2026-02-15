@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { createJob, getJob, getSettings, listProviders, updateJob, updateSettings, type LLMProviderType, type ProviderConfig } from './api';
 import {
-  buildThinkingFileTaskPrompt,
-  THINKING_FILE_PATH_SETTING_KEY,
+  createJob,
+  getJob,
+  getSettings,
+  listProviders,
+  runJobNow,
+  updateJob,
+  updateSettings,
+  type LLMProviderType,
+  type ProviderConfig,
+  type RecurringJob,
+} from './api';
+import InstructionBlocksEditor from './InstructionBlocksEditor';
+import { serializeInstructionBlocksSetting, type InstructionBlock, type InstructionBlockType } from './instructionBlocks';
+import {
+  buildThinkingTaskPrompt,
   THINKING_FREQUENCY_HOURS_SETTING_KEY,
   THINKING_FREQUENCY_MINUTES_SETTING_KEY,
+  THINKING_INSTRUCTION_BLOCKS_SETTING_KEY,
   THINKING_JOB_ID_SETTING_KEY,
   THINKING_SCHEDULE_TEXT_SETTING_KEY,
-  THINKING_SOURCE_SETTING_KEY,
+  THINKING_FILE_PATH_SETTING_KEY,
   THINKING_TEXT_SETTING_KEY,
+  THINKING_SOURCE_SETTING_KEY,
+  resolveThinkingInstructionBlocks,
   toThinkingSchedule,
-  type ThinkingInstructionsSource,
 } from './thinking';
 
 const DEFAULT_THINKING_SCHEDULE_TEXT = 'every 60 minutes from 8:00 to 23:00';
@@ -35,11 +49,11 @@ function ThinkingView() {
   const [thinkingJobID, setThinkingJobID] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [scheduleText, setScheduleText] = useState(DEFAULT_THINKING_SCHEDULE_TEXT);
-  const [source, setSource] = useState<ThinkingInstructionsSource>('text');
-  const [instructionsText, setInstructionsText] = useState('');
-  const [instructionsFilePath, setInstructionsFilePath] = useState('');
+  const [instructionBlocks, setInstructionBlocks] = useState<InstructionBlock[]>([]);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [llmProvider, setLLMProvider] = useState<LLMProviderType>('openai');
+  const [thinkingJob, setThinkingJob] = useState<RecurringJob | null>(null);
+  const [runningNow, setRunningNow] = useState(false);
 
   const loadThinkingConfig = useCallback(async () => {
     setLoading(true);
@@ -52,37 +66,35 @@ function ThinkingView() {
       setProviders(normalizedProviders);
       const activeProvider = (availableProviders.find((provider) => provider.is_active)?.type || 'openai') as LLMProviderType;
       const configuredJobID = (settings[THINKING_JOB_ID_SETTING_KEY] || '').trim();
-      const configuredSource = (settings[THINKING_SOURCE_SETTING_KEY] || '').trim();
       const scheduleTextFromSettings = (settings[THINKING_SCHEDULE_TEXT_SETTING_KEY] || '').trim();
       const minutesFromSettings = (settings[THINKING_FREQUENCY_MINUTES_SETTING_KEY] || '').trim();
       const hoursFromLegacySettings = (settings[THINKING_FREQUENCY_HOURS_SETTING_KEY] || '').trim();
       const scheduleTextFromLegacyFrequency = minutesFromSettings !== ''
         ? toThinkingSchedule(toPositiveIntOrDefault(minutesFromSettings, 60))
         : toThinkingSchedule(toPositiveIntOrDefault(hoursFromLegacySettings, 1) * 60);
-      const configuredText = settings[THINKING_TEXT_SETTING_KEY] || '';
-      const configuredFilePath = settings[THINKING_FILE_PATH_SETTING_KEY] || '';
+      const configuredBlocks = resolveThinkingInstructionBlocks(settings);
 
       const prefillFile = (searchParams.get('prefillFile') || '').trim();
-      const shouldApplyPrefill = prefillFile !== '' && configuredFilePath.trim() === '';
+      const hasConfiguredFileBlock = configuredBlocks.some((block) => block.type === 'file');
+      const shouldApplyPrefill = prefillFile !== '' && !hasConfiguredFileBlock;
+      const blocksWithPrefill = shouldApplyPrefill
+        ? [...configuredBlocks, { type: 'file' as const, value: prefillFile, enabled: true }]
+        : configuredBlocks;
 
       setThinkingJobID(configuredJobID);
       setLLMProvider(activeProvider);
-      setSource(configuredSource === 'file' ? 'file' : 'text');
-      setInstructionsText(configuredText);
-      setInstructionsFilePath(shouldApplyPrefill ? prefillFile : configuredFilePath);
+      setInstructionBlocks(blocksWithPrefill);
+      setThinkingJob(null);
       setScheduleText(
         scheduleTextFromSettings !== ''
           ? scheduleTextFromSettings
           : scheduleTextFromLegacyFrequency || DEFAULT_THINKING_SCHEDULE_TEXT,
       );
 
-      if (shouldApplyPrefill) {
-        setSource('file');
-      }
-
       if (configuredJobID !== '') {
         try {
           const existingJob = await getJob(configuredJobID);
+          setThinkingJob(existingJob);
           setEnabled(existingJob.enabled);
           if (existingJob.llm_provider) {
             setLLMProvider(existingJob.llm_provider);
@@ -93,6 +105,7 @@ function ThinkingView() {
         } catch {
           // Keep editable settings even if referenced job no longer exists.
           setThinkingJobID('');
+          setThinkingJob(null);
         }
       }
     } catch (loadError) {
@@ -106,6 +119,26 @@ function ThinkingView() {
     void loadThinkingConfig();
   }, [loadThinkingConfig]);
 
+  const handleRunNow = async () => {
+    const jobID = thinkingJobID.trim();
+    if (jobID === '') {
+      setError('Save Thinking settings first to create its recurring job.');
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setRunningNow(true);
+    try {
+      await runJobNow(jobID);
+      setSuccess('Thinking run started.');
+    } catch (runError) {
+      setError(runError instanceof Error ? runError.message : 'Failed to run Thinking now');
+    } finally {
+      setRunningNow(false);
+    }
+  };
+
   const handleSave = async () => {
     setError(null);
     setSuccess(null);
@@ -116,21 +149,23 @@ function ThinkingView() {
       return;
     }
 
-    const textValue = instructionsText.trim();
-    const fileValue = instructionsFilePath.trim();
-
-    if (source === 'text' && textValue === '') {
-      setError('Instructions text is required when text mode is selected.');
-      return;
-    }
-    if (source === 'file' && fileValue === '') {
-      setError('Instructions file path is required when file mode is selected.');
-      return;
-    }
+    const normalizedBlocks = instructionBlocks
+      .map((block): InstructionBlock => ({
+        type: (
+          block.type === 'file'
+            ? 'file'
+            : block.type === 'project_agents_md'
+              ? 'project_agents_md'
+              : 'text'
+        ) as InstructionBlockType,
+        value: block.value.trim(),
+        enabled: block.enabled !== false,
+      }))
+      .filter((block) => block.enabled && (block.type === 'project_agents_md' || block.value !== ''));
 
     setSaving(true);
     try {
-      const taskPrompt = source === 'file' ? buildThinkingFileTaskPrompt(fileValue) : textValue;
+      const taskPrompt = buildThinkingTaskPrompt(normalizedBlocks);
       let jobID = thinkingJobID.trim();
 
       if (jobID === '') {
@@ -168,22 +203,24 @@ function ThinkingView() {
       }
 
       const currentSettings = await getSettings();
-      const {
-        [THINKING_FREQUENCY_HOURS_SETTING_KEY]: _legacyHoursSetting,
-        [THINKING_FREQUENCY_MINUTES_SETTING_KEY]: _legacyMinutesSetting,
-        ...settingsWithoutLegacyFrequency
-      } = currentSettings;
+      const settingsWithoutLegacyFrequency = { ...currentSettings };
+      delete settingsWithoutLegacyFrequency[THINKING_FREQUENCY_HOURS_SETTING_KEY];
+      delete settingsWithoutLegacyFrequency[THINKING_FREQUENCY_MINUTES_SETTING_KEY];
+      const primaryBlock = normalizedBlocks[0];
       const nextSettings = {
         ...settingsWithoutLegacyFrequency,
         [THINKING_JOB_ID_SETTING_KEY]: jobID,
-        [THINKING_SOURCE_SETTING_KEY]: source,
+        [THINKING_SOURCE_SETTING_KEY]: primaryBlock?.type || 'text',
         [THINKING_SCHEDULE_TEXT_SETTING_KEY]: normalizedScheduleText,
-        [THINKING_TEXT_SETTING_KEY]: source === 'text' ? textValue : '',
-        [THINKING_FILE_PATH_SETTING_KEY]: source === 'file' ? fileValue : '',
+        [THINKING_TEXT_SETTING_KEY]: primaryBlock?.type === 'text' ? primaryBlock.value : '',
+        [THINKING_FILE_PATH_SETTING_KEY]: primaryBlock?.type === 'file' ? primaryBlock.value : '',
+        [THINKING_INSTRUCTION_BLOCKS_SETTING_KEY]: serializeInstructionBlocksSetting(normalizedBlocks),
       };
 
       await updateSettings(nextSettings);
       setThinkingJobID(jobID);
+      const latestJob = await getJob(jobID);
+      setThinkingJob(latestJob);
       setSuccess('Thinking settings saved.');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save Thinking settings');
@@ -249,63 +286,45 @@ function ThinkingView() {
             </p>
           </label>
 
-          <div className="thinking-source-toggle">
-            <label>
-              <input
-                type="radio"
-                name="thinking-source"
-                checked={source === 'text'}
-                onChange={() => setSource('text')}
-                disabled={saving}
-              />
-              <span>Text instructions</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="thinking-source"
-                checked={source === 'file'}
-                onChange={() => setSource('file')}
-                disabled={saving}
-              />
-              <span>File path instructions</span>
-            </label>
+          <div className="thinking-field">
+            <span>Thinking instruction blocks</span>
+            <InstructionBlocksEditor
+              blocks={instructionBlocks}
+              onChange={setInstructionBlocks}
+              disabled={saving}
+              textPlaceholder="Describe what the agent should do during Thinking runs..."
+              filePlaceholder="notes/thinking.md"
+              emptyStateText="No blocks yet. Add text and/or file blocks. Blocks are executed in order."
+            />
+            <p className="thinking-note">
+              These blocks are Thinking-specific and run after your global agent instruction settings.
+            </p>
           </div>
-
-          {source === 'text' ? (
-            <label className="thinking-field">
-              <span>Instructions</span>
-              <textarea
-                value={instructionsText}
-                onChange={(event) => setInstructionsText(event.target.value)}
-                rows={10}
-                placeholder="Describe what the agent should do during Thinking runs..."
-                disabled={saving}
-              />
-            </label>
-          ) : (
-            <label className="thinking-field">
-              <span>Instructions file path</span>
-              <input
-                type="text"
-                value={instructionsFilePath}
-                onChange={(event) => setInstructionsFilePath(event.target.value)}
-                placeholder="notes/thinking.md"
-                disabled={saving}
-              />
-            </label>
-          )}
 
           <p className="thinking-note">
             Saving creates or updates a protected recurring job. Disable it here when you want to stop it.
           </p>
 
           <div className="thinking-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void handleRunNow()}
+              disabled={saving || runningNow || thinkingJobID.trim() === ''}
+            >
+              {runningNow ? 'Starting...' : 'Run Now'}
+            </button>
             <button type="button" className="btn btn-primary" onClick={() => void handleSave()} disabled={saving}>
               {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
         </div>
+
+        <div className="job-task-section">
+          <h3>Task Instructions</h3>
+          <pre className="task-prompt">{thinkingJob?.task_prompt || 'No generated task instructions yet. Save Thinking settings first.'}</pre>
+        </div>
+
       </div>
     </div>
   );

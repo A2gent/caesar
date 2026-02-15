@@ -1,13 +1,22 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { createJob, updateJob, getJob, listProviders, type CreateJobRequest, type LLMProviderType, type ProviderConfig } from './api';
+
+type TaskPromptSource = 'text' | 'file';
+
+function buildFileTaskPrompt(path: string): string {
+  return `Load and follow instructions from this file path: ${path}`;
+}
 
 function JobEdit() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [name, setName] = useState('');
   const [scheduleText, setScheduleText] = useState('');
   const [taskPrompt, setTaskPrompt] = useState('');
+  const [taskPromptSource, setTaskPromptSource] = useState<TaskPromptSource>('text');
+  const [taskPromptFile, setTaskPromptFile] = useState('');
   const [llmProvider, setLLMProvider] = useState<LLMProviderType>('openai');
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [enabled, setEnabled] = useState(true);
@@ -26,6 +35,19 @@ function JobEdit() {
       void loadJob(jobId);
     }
   }, [isEditMode, jobId]);
+
+  useEffect(() => {
+    if (isEditMode) {
+      return;
+    }
+    const prefillPath = (searchParams.get('prefillInstructionFile') || '').trim();
+    if (prefillPath === '') {
+      return;
+    }
+    setTaskPromptSource('file');
+    setTaskPromptFile(prefillPath);
+    setTaskPrompt(buildFileTaskPrompt(prefillPath));
+  }, [isEditMode, searchParams]);
 
   const loadProviders = async () => {
     try {
@@ -48,6 +70,8 @@ function JobEdit() {
       setName(job.name);
       setScheduleText(job.schedule_human);
       setTaskPrompt(job.task_prompt);
+      setTaskPromptSource(job.task_prompt_source === 'file' ? 'file' : 'text');
+      setTaskPromptFile(job.task_prompt_file || '');
       if (job.llm_provider) {
         setLLMProvider(job.llm_provider);
       }
@@ -71,7 +95,15 @@ function JobEdit() {
       setError('Schedule is required');
       return;
     }
-    if (!taskPrompt.trim()) {
+    const normalizedSource: TaskPromptSource = taskPromptSource === 'file' ? 'file' : 'text';
+    const normalizedTaskPrompt = taskPrompt.trim();
+    const normalizedTaskPromptFile = taskPromptFile.trim();
+    if (normalizedSource === 'file') {
+      if (!normalizedTaskPromptFile) {
+        setError('Instruction file path is required');
+        return;
+      }
+    } else if (!normalizedTaskPrompt) {
       setError('Task instructions are required');
       return;
     }
@@ -84,7 +116,9 @@ function JobEdit() {
         await updateJob(jobId, {
           name: name.trim(),
           schedule_text: scheduleText.trim(),
-          task_prompt: taskPrompt.trim(),
+          task_prompt: normalizedSource === 'file' ? buildFileTaskPrompt(normalizedTaskPromptFile) : normalizedTaskPrompt,
+          task_prompt_source: normalizedSource,
+          task_prompt_file: normalizedSource === 'file' ? normalizedTaskPromptFile : '',
           llm_provider: llmProvider,
           enabled,
         });
@@ -92,7 +126,9 @@ function JobEdit() {
         const request: CreateJobRequest = {
           name: name.trim(),
           schedule_text: scheduleText.trim(),
-          task_prompt: taskPrompt.trim(),
+          task_prompt: normalizedSource === 'file' ? buildFileTaskPrompt(normalizedTaskPromptFile) : normalizedTaskPrompt,
+          task_prompt_source: normalizedSource,
+          task_prompt_file: normalizedSource === 'file' ? normalizedTaskPromptFile : '',
           llm_provider: llmProvider,
           enabled,
         };
@@ -153,17 +189,46 @@ function JobEdit() {
         </div>
 
         <div className="form-group">
-          <label htmlFor="task">Task Instructions</label>
-          <textarea
-            id="task"
-            value={taskPrompt}
-            onChange={(e) => setTaskPrompt(e.target.value)}
-            placeholder="Describe what the agent should do when this job runs..."
-            rows={10}
+          <label htmlFor="task-source">Task Instructions Source</label>
+          <select
+            id="task-source"
+            value={taskPromptSource}
+            onChange={(event) => setTaskPromptSource(event.target.value as TaskPromptSource)}
             disabled={saving}
-          />
+          >
+            <option value="text">Text</option>
+            <option value="file">File path</option>
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="task">Task Instructions</label>
+          {taskPromptSource === 'file' ? (
+            <input
+              type="text"
+              id="task"
+              value={taskPromptFile}
+              onChange={(event) => {
+                setTaskPromptFile(event.target.value);
+                setTaskPrompt(buildFileTaskPrompt(event.target.value.trim()));
+              }}
+              placeholder="/absolute/path/to/instructions.md"
+              disabled={saving}
+            />
+          ) : (
+            <textarea
+              id="task"
+              value={taskPrompt}
+              onChange={(e) => setTaskPrompt(e.target.value)}
+              placeholder="Describe what the agent should do when this job runs..."
+              rows={10}
+              disabled={saving}
+            />
+          )}
           <p className="help-text">
-            These instructions will be given to the agent each time the job runs.
+            {taskPromptSource === 'file'
+              ? 'The file will be read at runtime and its content will be used as the job instructions.'
+              : 'These instructions will be given to the agent each time the job runs.'}
           </p>
         </div>
 

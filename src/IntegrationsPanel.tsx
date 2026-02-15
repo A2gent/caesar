@@ -4,10 +4,9 @@ import type {
   IntegrationMode,
   IntegrationProvider,
   IntegrationRequest,
-  TelegramChatCandidate,
   IntegrationTestResponse,
 } from './api';
-import { discoverTelegramChats } from './api';
+import { IntegrationProviderIcon } from './integrationMeta';
 
 interface IntegrationsPanelProps {
   integrations: Integration[];
@@ -42,25 +41,6 @@ const PROVIDERS: ProviderSpec[] = [
     modes: ['notify_only', 'duplex'],
     fields: [
       { key: 'bot_token', label: 'Bot token', placeholder: '123456:abc...', secret: true },
-      { key: 'chat_id', label: 'Chat ID (optional in all-group mode)', placeholder: '-1001234567890', required: false },
-      {
-        key: 'allow_all_group_chats',
-        label: 'Chat scope',
-        kind: 'select',
-        options: [
-          { value: 'false', label: 'Single chat (use Chat ID)' },
-          { value: 'true', label: 'All groups this bot is in' },
-        ],
-      },
-      {
-        key: 'project_scope',
-        label: 'Project mapping',
-        kind: 'select',
-        options: [
-          { value: 'group', label: 'Map each Telegram group to a project' },
-          { value: 'none', label: 'Do not assign project' },
-        ],
-      },
       {
         key: 'session_scope',
         label: 'Session mapping',
@@ -69,6 +49,12 @@ const PROVIDERS: ProviderSpec[] = [
           { value: 'topic', label: 'Map each topic/thread to a session' },
           { value: 'chat', label: 'Single session per chat' },
         ],
+      },
+      {
+        key: 'default_chat_id',
+        label: 'Default chat ID (optional)',
+        placeholder: '-1001234567890',
+        required: false,
       },
     ],
   },
@@ -116,7 +102,7 @@ const PROVIDERS: ProviderSpec[] = [
   {
     provider: 'elevenlabs',
     label: 'ElevenLabs',
-    description: 'Store ElevenLabs API key for completion audio voice loading and playback.',
+    description: 'Store ElevenLabs API key so agent tools can synthesize speech clips.',
     modes: ['notify_only'],
     fields: [
       { key: 'api_key', label: 'API key', placeholder: 'sk_...', secret: true },
@@ -137,91 +123,38 @@ const PROVIDERS: ProviderSpec[] = [
       { key: 'calendar_id', label: 'Default calendar ID (optional)', placeholder: 'primary', required: false },
     ],
   },
+  {
+    provider: 'perplexity',
+    label: 'Perplexity',
+    description: 'Store Perplexity API credentials for future web research and answer generation workflows.',
+    modes: ['notify_only'],
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: 'pplx-...', secret: true },
+      { key: 'model', label: 'Default model (optional)', placeholder: 'sonar-pro', required: false },
+    ],
+  },
+  {
+    provider: 'brave_search',
+    label: 'Brave Search',
+    description: 'Store Brave Search credentials so agent tools can run web search.',
+    modes: ['notify_only'],
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: 'BSA...', secret: true },
+      {
+        key: 'safesearch',
+        label: 'Safe search (optional)',
+        kind: 'select',
+        required: false,
+        options: [
+          { value: '', label: 'Provider default' },
+          { value: 'moderate', label: 'Moderate' },
+          { value: 'strict', label: 'Strict' },
+          { value: 'off', label: 'Off' },
+        ],
+      },
+    ],
+  },
 ];
-
-function ProviderIcon({ provider, label }: { provider: IntegrationProvider; label: string }) {
-  const commonProps = { className: 'integration-provider-icon-svg', viewBox: '0 0 24 24', 'aria-hidden': true as const };
-
-  switch (provider) {
-    case 'telegram':
-      return (
-        <span className="integration-provider-icon integration-provider-icon-telegram" title={label}>
-          <svg {...commonProps}>
-            <path d="M20.5 4.2 3.9 10.6c-1 .4-1 1.8.1 2.1l4.2 1.4 1.6 5.1c.3 1 1.6 1.1 2.1.2l2.4-3.5 3.9 2.9c.7.5 1.7.1 1.9-.8L22 5.6c.2-1.1-.7-2-1.8-1.4Z" />
-          </svg>
-        </span>
-      );
-    case 'slack':
-      return (
-        <span className="integration-provider-icon integration-provider-icon-slack" title={label}>
-          <svg {...commonProps}>
-            <rect x="3" y="9" width="7" height="4" rx="2" />
-            <rect x="7" y="3" width="4" height="7" rx="2" />
-            <rect x="14" y="3" width="4" height="7" rx="2" />
-            <rect x="14" y="11" width="7" height="4" rx="2" />
-            <rect x="13" y="14" width="4" height="7" rx="2" />
-            <rect x="6" y="14" width="4" height="7" rx="2" />
-          </svg>
-        </span>
-      );
-    case 'discord':
-      return (
-        <span className="integration-provider-icon integration-provider-icon-discord" title={label}>
-          <svg {...commonProps}>
-            <path d="M7.2 6.7a15.7 15.7 0 0 1 3-1l.4.8a14 14 0 0 1 2.8 0l.4-.8a15.6 15.6 0 0 1 3 1c1.8 2.6 2.3 5.1 2.1 7.6a12 12 0 0 1-3.7 1.9l-.8-1.3c.5-.2 1-.5 1.4-.8l-.3-.2c-2.7 1.3-5.6 1.3-8.3 0l-.3.2c.4.3.9.6 1.4.8l-.8 1.3a12 12 0 0 1-3.7-1.9c-.2-2.5.3-5 2.1-7.6Z" />
-            <circle cx="9.7" cy="11.7" r="1.1" fill="currentColor" />
-            <circle cx="14.3" cy="11.7" r="1.1" fill="currentColor" />
-          </svg>
-        </span>
-      );
-    case 'whatsapp':
-      return (
-        <span className="integration-provider-icon integration-provider-icon-whatsapp" title={label}>
-          <svg {...commonProps}>
-            <path d="M12 3.5a8.5 8.5 0 0 0-7.4 12.6L3 20.5l4.6-1.4A8.5 8.5 0 1 0 12 3.5Z" />
-            <path
-              d="M9.2 8.8c.2-.5.5-.5.8-.5h.7c.2 0 .4.1.5.3l.7 1.7c.1.2 0 .4-.1.6l-.4.6c-.1.1-.1.3 0 .4.3.6.8 1.2 1.4 1.6.1.1.3.1.4 0l.7-.4c.2-.1.4-.1.6 0l1.6.8c.2.1.3.3.3.5v.7c0 .3 0 .6-.5.8-.4.2-1.3.4-2.3 0-1.1-.4-2.2-1.2-3-2.2-.9-.9-1.4-2-1.8-2.9-.4-1.1-.2-1.9 0-2.4Z"
-              fill="#1f1f1f"
-            />
-          </svg>
-        </span>
-      );
-    case 'webhook':
-      return (
-        <span className="integration-provider-icon integration-provider-icon-webhook" title={label}>
-          <svg {...commonProps}>
-            <circle cx="6" cy="12" r="2.3" />
-            <circle cx="18" cy="7" r="2.3" />
-            <circle cx="18" cy="17" r="2.3" />
-            <path d="M8.2 11.2 15.7 7.8M8.2 12.8l7.5 3.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" fill="none" />
-          </svg>
-        </span>
-      );
-    case 'google_calendar':
-      return (
-        <span className="integration-provider-icon integration-provider-icon-google-calendar" title={label}>
-          <svg {...commonProps}>
-            <path d="M7 3.5v3m10-3v3M4.5 8.5h15m-14 0h13a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-9a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx="9" cy="13" r="1.2" />
-            <circle cx="13" cy="13" r="1.2" />
-            <circle cx="17" cy="13" r="1.2" />
-            <circle cx="9" cy="17" r="1.2" />
-            <circle cx="13" cy="17" r="1.2" />
-          </svg>
-        </span>
-      );
-    case 'elevenlabs':
-      return (
-        <span className="integration-provider-icon integration-provider-icon-elevenlabs" title={label}>
-          <svg {...commonProps}>
-            <path d="M8 4.5a3.5 3.5 0 0 1 3.5 3.5v2h-2V8a1.5 1.5 0 0 0-3 0v8a1.5 1.5 0 0 0 3 0v-2h2v2a3.5 3.5 0 0 1-7 0V8A3.5 3.5 0 0 1 8 4.5Zm8 0a3.5 3.5 0 0 1 3.5 3.5v8a3.5 3.5 0 1 1-7 0v-2h2v2a1.5 1.5 0 1 0 3 0V8a1.5 1.5 0 0 0-3 0v2h-2V8A3.5 3.5 0 0 1 16 4.5Z" />
-          </svg>
-        </span>
-      );
-    default:
-      return null;
-  }
-}
 
 function providerById(provider: IntegrationProvider): ProviderSpec {
   const spec = PROVIDERS.find((p) => p.provider === provider);
@@ -232,7 +165,7 @@ function providerById(provider: IntegrationProvider): ProviderSpec {
 }
 
 function modeLabel(mode: IntegrationMode): string {
-  return mode === 'duplex' ? 'Duplex chat' : 'Notify only';
+  return mode === 'duplex' ? 'Duplex chat' : 'One-way / API';
 }
 
 function defaultConfigForProvider(provider: IntegrationProvider): Record<string, string> {
@@ -240,8 +173,6 @@ function defaultConfigForProvider(provider: IntegrationProvider): Record<string,
     return {};
   }
   return {
-    allow_all_group_chats: 'false',
-    project_scope: 'group',
     session_scope: 'topic',
   };
 }
@@ -255,9 +186,6 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
   const [config, setConfig] = useState<Record<string, string>>(defaultConfigForProvider('telegram'));
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [isDiscoveringTelegramChats, setIsDiscoveringTelegramChats] = useState(false);
-  const [telegramChats, setTelegramChats] = useState<TelegramChatCandidate[]>([]);
-  const [telegramDiscoveryMessage, setTelegramDiscoveryMessage] = useState<string | null>(null);
 
   const spec = useMemo(() => providerById(provider), [provider]);
 
@@ -274,8 +202,6 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
     setProvider(next);
     setMode(nextSpec.modes[0]);
     setConfig(defaultConfigForProvider(next));
-    setTelegramChats([]);
-    setTelegramDiscoveryMessage(null);
   };
 
   const resetForm = () => {
@@ -287,8 +213,6 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
     setConfig(defaultConfigForProvider('telegram'));
     setError(null);
     setSuccess(null);
-    setTelegramChats([]);
-    setTelegramDiscoveryMessage(null);
   };
 
   const validateForm = (): string | null => {
@@ -337,16 +261,16 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
   };
 
   const handleEdit = (integration: Integration) => {
+    const editSpec = providerById(integration.provider);
+    const nextMode = editSpec.modes.includes(integration.mode) ? integration.mode : editSpec.modes[0];
     setEditingId(integration.id);
     setProvider(integration.provider);
     setName(integration.name);
-    setMode(integration.mode);
+    setMode(nextMode);
     setEnabled(integration.enabled);
     setConfig({ ...defaultConfigForProvider(integration.provider), ...(integration.config || {}) });
     setError(null);
     setSuccess(null);
-    setTelegramChats([]);
-    setTelegramDiscoveryMessage(null);
   };
 
   const handleDelete = async (integration: Integration) => {
@@ -381,61 +305,13 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
     setMode(nextMode);
   };
 
-  const handleDiscoverTelegramChats = async () => {
-    setError(null);
-    setSuccess(null);
-
-    const botToken = (config.bot_token || '').trim();
-    if (!botToken) {
-      setError('Bot token is required before discovering Chat IDs.');
-      return;
-    }
-
-    try {
-      setIsDiscoveringTelegramChats(true);
-      const result = await discoverTelegramChats(botToken);
-      setTelegramChats(result.chats || []);
-      setTelegramDiscoveryMessage(result.message || null);
-
-      if ((result.chats || []).length === 1) {
-        const foundID = result.chats[0].chat_id;
-        setConfig((prev) => ({ ...prev, chat_id: foundID }));
-        setSuccess(`Found 1 chat. Chat ID "${foundID}" was filled automatically.`);
-        return;
-      }
-      setSuccess(result.message || 'Telegram chat discovery completed.');
-    } catch (discoverError) {
-      setError(discoverError instanceof Error ? discoverError.message : 'Failed to discover Telegram chat IDs');
-    } finally {
-      setIsDiscoveringTelegramChats(false);
-    }
-  };
-
-  const formatTelegramChatLabel = (chat: TelegramChatCandidate): string => {
-    const title = (chat.title || '').trim();
-    if (title) {
-      return `${title} (${chat.type})`;
-    }
-    const username = (chat.username || '').trim();
-    if (username) {
-      return `@${username} (${chat.type})`;
-    }
-    const firstName = (chat.first_name || '').trim();
-    const lastName = (chat.last_name || '').trim();
-    const fullName = [firstName, lastName].filter(Boolean).join(' ');
-    if (fullName) {
-      return `${fullName} (${chat.type})`;
-    }
-    return chat.type || 'chat';
-  };
-
   return (
     <div className="integrations-panel">
       <p className="settings-help">
         Connect chat channels, webhooks, and data sources like Google Calendar, then enable or remove them anytime.
       </p>
       <p className="settings-help">
-        For completion audio, add an enabled ElevenLabs integration with your API key, then choose voice and speed in Settings.
+        For agent-triggered speech, add an enabled ElevenLabs integration, then set default voice and speed in Skills.
       </p>
 
       <div className="integration-provider-grid">
@@ -448,7 +324,7 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
           >
             <div className="integration-provider-card-header">
               <span className="integration-provider-label">
-                <ProviderIcon provider={item.provider} label={item.label} />
+                <IntegrationProviderIcon provider={item.provider} label={item.label} />
                 <span>{item.label}</span>
               </span>
               <span className="integration-count-badge">{connectedByProvider.get(item.provider) || 0} connected</span>
@@ -480,16 +356,18 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
             />
           </label>
 
-          <label className="settings-field">
-            <span>Mode</span>
-            <select value={mode} onChange={(e) => handleModeChange(e.target.value as IntegrationMode)}>
-              {spec.modes.map((modeOption) => (
-                <option key={modeOption} value={modeOption}>
-                  {modeLabel(modeOption)}
-                </option>
-              ))}
-            </select>
-          </label>
+          {spec.modes.length > 1 && (
+            <label className="settings-field">
+              <span>Mode</span>
+              <select value={mode} onChange={(e) => handleModeChange(e.target.value as IntegrationMode)}>
+                {spec.modes.map((modeOption) => (
+                  <option key={modeOption} value={modeOption}>
+                    {modeLabel(modeOption)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="settings-field integration-toggle">
             <span>Enabled</span>
@@ -504,19 +382,7 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
         <div className="settings-group">
           {spec.fields.map((field) => (
             <label className="settings-field" key={field.key}>
-              <span className={provider === 'telegram' && field.key === 'chat_id' ? 'settings-field-label-row' : ''}>
-                <span>{field.label}</span>
-                {provider === 'telegram' && field.key === 'chat_id' && (
-                  <button
-                    type="button"
-                    className="settings-add-btn integration-field-action-btn"
-                    onClick={handleDiscoverTelegramChats}
-                    disabled={isDiscoveringTelegramChats}
-                  >
-                    {isDiscoveringTelegramChats ? 'Finding...' : 'Find chat IDs'}
-                  </button>
-                )}
-              </span>
+              <span>{field.label}</span>
               {field.kind === 'select' ? (
                 <select
                   value={config[field.key] || field.options?.[0]?.value || ''}
@@ -543,35 +409,14 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
                     First create a Telegram bot with @BotFather (send /newbot), then copy the bot token BotFather gives you and paste it here.
                   </p>
                   <p className="settings-help integration-helper-text">
-                    In @BotFather, enable group usage with /setjoingroups and disable privacy mode with /setprivacy if you want normal (non-command) group messages.
-                  </p>
-                </div>
-              )}
-              {provider === 'telegram' && field.key === 'chat_id' && (
-                <div className="integration-helper-block">
-                  <p className="settings-help integration-helper-text">
-                    BotFather gives only a bot token. To get Chat ID: 1) open Telegram and start a chat with your bot, 2) send any message (for example, /start), 3) click Find chat IDs.
+                    In @BotFather, enable group usage with /setjoingroups and disable privacy mode with /setprivacy. This integration listens to all groups/topics the bot is in.
                   </p>
                   <p className="settings-help integration-helper-text">
-                    For group-to-project and thread-to-session mapping: add the bot to your group, create topics in that group, and keep Session mapping set to topic.
+                    New Telegram sessions are assigned to the My Mind project. For thread-to-session mapping, add the bot to your group, create topics, and keep Session mapping set to topic.
                   </p>
-                  {telegramDiscoveryMessage && (
-                    <p className="settings-help integration-helper-text">{telegramDiscoveryMessage}</p>
-                  )}
-                  {telegramChats.length > 0 && (
-                    <div className="integration-chat-candidates">
-                      {telegramChats.map((chat) => (
-                        <button
-                          key={chat.chat_id}
-                          type="button"
-                          className="settings-add-btn integration-chat-candidate-btn"
-                          onClick={() => setConfig((prev) => ({ ...prev, chat_id: chat.chat_id }))}
-                        >
-                          Use {chat.chat_id} ({formatTelegramChatLabel(chat)})
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <p className="settings-help integration-helper-text">
+                    Set Default chat ID to mirror newly created Web App sessions into Telegram automatically. If topic creation fails, the message is posted in the main chat.
+                  </p>
                 </div>
               )}
             </label>
@@ -602,7 +447,7 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
                 </div>
                 <div className="integration-row-meta">
                   <span className="integration-provider-label">
-                    <ProviderIcon provider={integration.provider} label={providerById(integration.provider).label} />
+                    <IntegrationProviderIcon provider={integration.provider} label={providerById(integration.provider).label} />
                     <span>{providerById(integration.provider).label}</span>
                   </span>
                   <span>{modeLabel(integration.mode)}</span>

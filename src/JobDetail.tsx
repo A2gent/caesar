@@ -18,6 +18,12 @@ function JobDetail() {
     }
   }, [jobId]);
 
+  useEffect(() => {
+    if (!loading && jobId && thinkingJobID !== '' && jobId === thinkingJobID) {
+      navigate('/thinking', { replace: true });
+    }
+  }, [jobId, loading, navigate, thinkingJobID]);
+
   const loadJob = async (id: string) => {
     try {
       setLoading(true);
