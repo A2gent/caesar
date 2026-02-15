@@ -250,6 +250,15 @@ body.mind-resizing * {
   color: white;
 }
 
+.stop-button {
+  background-color: #6d2323;
+  color: #fff;
+}
+
+.stop-button:hover:not(:disabled) {
+  background-color: #8f2f2f;
+}
+
 .voice-button.recording {
   background-color: #ff4444;
   color: white;
@@ -1179,6 +1188,12 @@ body.mind-resizing * {
   overflow: hidden;
 }
 
+.tool-execution-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .tool-card-summary {
   display: flex;
   align-items: center;
@@ -1278,6 +1293,86 @@ body.mind-resizing * {
   margin: 0;
 }
 
+.tool-edit-input {
+  background-color: #0a0a0a;
+  border-radius: 4px;
+  margin: 0;
+  overflow: hidden;
+}
+
+.tool-edit-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  color: #9aa6bc;
+}
+
+.tool-edit-path {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  color: #d4dded;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-edit-flag {
+  border: 1px solid rgba(127, 180, 255, 0.4);
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: #b8d3ff;
+}
+
+.tool-edit-diff {
+  max-height: 280px;
+  overflow: auto;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.tool-edit-row {
+  display: grid;
+  grid-template-columns: 20px 54px 54px minmax(0, 1fr);
+  align-items: baseline;
+}
+
+.tool-edit-sign,
+.tool-edit-line {
+  color: #6f7d95;
+  text-align: right;
+  padding: 0 8px 0 6px;
+  user-select: none;
+}
+
+.tool-edit-code {
+  padding: 1px 10px 1px 8px;
+  white-space: pre;
+  color: #d7deea;
+}
+
+.tool-edit-row-add {
+  background-color: rgba(76, 175, 80, 0.18);
+}
+
+.tool-edit-row-remove {
+  background-color: rgba(244, 67, 54, 0.2);
+}
+
+.tool-edit-row-add .tool-edit-sign {
+  color: #79df88;
+}
+
+.tool-edit-row-remove .tool-edit-sign {
+  color: #ff8f86;
+}
+
+.tool-edit-row-marker .tool-edit-code {
+  color: #8896ad;
+  font-style: italic;
+}
+
 .tool-result-image {
   display: block;
   width: 100%;
@@ -1286,6 +1381,24 @@ body.mind-resizing * {
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: #0a0a0a;
+}
+
+.tool-preview-always {
+  margin-top: 0;
+}
+
+.tool-preview-always .tool-execution-label {
+  margin: 10px 12px 6px;
+}
+
+.tool-camera-preview {
+  margin-top: 8px;
+  width: 100%;
+  max-height: 260px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0a0a0a;
+  object-fit: contain;
 }
 
 /* Loading indicator */

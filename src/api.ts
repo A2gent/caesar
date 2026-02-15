@@ -307,6 +307,16 @@ export interface PiperVoiceOption {
   model_path?: string;
 }
 
+export interface CameraDeviceInfo {
+  index: number;
+  name: string;
+  id?: string;
+}
+
+export interface CameraDevicesResponse {
+  cameras: CameraDeviceInfo[];
+}
+
 export type LLMProviderType = string;
 
 export interface FallbackChainNode {
@@ -974,6 +984,15 @@ export async function listPiperVoices(): Promise<PiperVoiceOption[]> {
     throw await buildApiError(response, 'Failed to load Piper voices');
   }
   return response.json();
+}
+
+export async function listCameraDevices(): Promise<CameraDeviceInfo[]> {
+  const response = await fetch(`${getApiBaseUrl()}/devices/cameras`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load camera devices');
+  }
+  const data: CameraDevicesResponse = await response.json();
+  return data.cameras || [];
 }
 
 export async function synthesizeCompletionAudio(text: string): Promise<Blob> {

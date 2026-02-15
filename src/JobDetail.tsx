@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { deleteJob, getJob, getSettings, listJobSessions, runJobNow, type RecurringJob, type Session } from './api';
 import { THINKING_JOB_ID_SETTING_KEY } from './thinking';
 import { buildOpenInMyMindUrl } from './myMindNavigation';
+
+const SESSION_POLL_INTERVAL_MS = 1500;
 
 function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -11,13 +13,43 @@ function JobDetail() {
   const [thinkingJobID, setThinkingJobID] = useState('');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRunningNow, setIsRunningNow] = useState(false);
+  const [pendingRunStartedAt, setPendingRunStartedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const loadSessions = useCallback(async (id: string): Promise<Session[]> => {
+    const sessionsData = await listJobSessions(id);
+    setSessions(sessionsData);
+    return sessionsData;
+  }, []);
+
+  const loadJob = useCallback(async (id: string) => {
+    const [jobData, sessionsData] = await Promise.all([
+      getJob(id),
+      listJobSessions(id),
+    ]);
+    const settings = await getSettings();
+    setJob(jobData);
+    setSessions(sessionsData);
+    setThinkingJobID((settings[THINKING_JOB_ID_SETTING_KEY] || '').trim());
+  }, []);
 
   useEffect(() => {
     if (jobId) {
-      loadJob(jobId);
+      void (async () => {
+        try {
+          setLoading(true);
+          setError(null);
+          await loadJob(jobId);
+        } catch (err) {
+          console.error('Failed to load job:', err);
+          setError(err instanceof Error ? err.message : 'Failed to load job');
+        } finally {
+          setLoading(false);
+        }
+      })();
     }
-  }, [jobId]);
+  }, [jobId, loadJob]);
 
   useEffect(() => {
     if (!loading && jobId && thinkingJobID !== '' && jobId === thinkingJobID) {
@@ -25,34 +57,55 @@ function JobDetail() {
     }
   }, [jobId, loading, navigate, thinkingJobID]);
 
-  const loadJob = async (id: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [jobData, sessionsData] = await Promise.all([
-        getJob(id),
-        listJobSessions(id)
-      ]);
-      const settings = await getSettings();
-      setJob(jobData);
-      setSessions(sessionsData);
-      setThinkingJobID((settings[THINKING_JOB_ID_SETTING_KEY] || '').trim());
-    } catch (err) {
-      console.error('Failed to load job:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load job');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!jobId) return;
+    const shouldPoll = isRunningNow || sessions.some((session) => session.status === 'running');
+    if (!shouldPoll) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadSessions(jobId).catch((err) => {
+        console.error('Failed to refresh job sessions:', err);
+      });
+    }, SESSION_POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isRunningNow, jobId, loadSessions, sessions]);
+
+  useEffect(() => {
+    if (!pendingRunStartedAt) return;
+    const startedAtMs = Date.parse(pendingRunStartedAt);
+    const hasLikelyNewSession = sessions.some((session) => Date.parse(session.created_at) >= startedAtMs - 5000);
+    if (hasLikelyNewSession || !isRunningNow) {
+      setPendingRunStartedAt(null);
     }
-  };
+  }, [isRunningNow, pendingRunStartedAt, sessions]);
 
   const handleRunNow = async () => {
-    if (!jobId) return;
+    if (!jobId || isRunningNow) return;
+    const startedAt = new Date().toISOString();
+    setIsRunningNow(true);
+    setPendingRunStartedAt(startedAt);
+    setError(null);
+
     try {
+      // Trigger an immediate refresh while the run request is in-flight so new session appears ASAP.
+      void loadSessions(jobId).catch((err) => {
+        console.error('Failed to refresh sessions after run start:', err);
+      });
       await runJobNow(jobId);
-      alert('Job started. Refresh to see new sessions.');
+      const [updatedJob] = await Promise.all([
+        getJob(jobId),
+        loadSessions(jobId),
+      ]);
+      setJob(updatedJob);
     } catch (err) {
       console.error('Failed to run job:', err);
       setError(err instanceof Error ? err.message : 'Failed to run job');
+      setPendingRunStartedAt(null);
+    } finally {
+      setIsRunningNow(false);
     }
   };
 
@@ -99,6 +152,25 @@ function JobDetail() {
     return date.toLocaleString();
   };
 
+  const formatStatusLabel = (status: string): string => {
+    if (!status) return 'Unknown';
+    return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
+  const optimisticSession = useMemo<Session | null>(() => {
+    if (!pendingRunStartedAt) return null;
+    return {
+      id: `optimistic-run-${pendingRunStartedAt}`,
+      agent_id: 'job-runner',
+      title: 'Starting execution...',
+      status: 'running',
+      created_at: pendingRunStartedAt,
+      updated_at: pendingRunStartedAt,
+    };
+  }, [pendingRunStartedAt]);
+
+  const displayedSessions = optimisticSession ? [optimisticSession, ...sessions] : sessions;
+
   if (loading) {
     return <div className="job-detail-loading">Loading job...</div>;
   }
@@ -130,9 +202,9 @@ function JobDetail() {
           <button 
             onClick={handleRunNow} 
             className="btn btn-primary"
-            disabled={!job.enabled}
+            disabled={!job.enabled || isRunningNow}
           >
-            Run Now
+            {isRunningNow ? 'Running...' : 'Run Now'}
           </button>
           {isThinkingJob ? (
             <button onClick={() => navigate('/thinking')} className="btn btn-secondary">
@@ -204,27 +276,41 @@ function JobDetail() {
         </div>
 
         <div className="job-sessions-section">
-          <h3>Execution Sessions ({sessions.length})</h3>
-          {sessions.length === 0 ? (
+          <h3>Execution Sessions ({displayedSessions.length})</h3>
+          {displayedSessions.length === 0 ? (
             <p className="no-sessions">No executions yet. Run the job to see sessions here.</p>
           ) : (
             <div className="sessions-list">
-              {sessions.map(session => (
+              {displayedSessions.map((session) => (
                 <div 
                   key={session.id} 
                   className="session-card"
-                  onClick={() => navigate(`/chat/${session.id}`)}
+                  onClick={() => {
+                    if (session.id.startsWith('optimistic-run-')) {
+                      return;
+                    }
+                    navigate(`/chat/${session.id}`);
+                  }}
                 >
-                  <div className="session-card-header">
-                    <span className="session-title">
+                  <div className="session-card-row">
+                    <div className="session-name-wrap">
+                      <span
+                        className={`session-status-dot status-${session.status}`}
+                        title={`Status: ${formatStatusLabel(session.status)}`}
+                        aria-label={`Status: ${formatStatusLabel(session.status)}`}
+                      />
+                      <h3 className="session-name">
                       {session.title || `Session ${session.id.substring(0, 8)}`}
-                    </span>
-                    <span className={`status-badge status-${session.status}`}>
-                      {session.status}
-                    </span>
-                  </div>
-                  <div className="session-meta">
-                    <span>{formatDate(session.created_at)}</span>
+                      </h3>
+                    </div>
+                    <div className="session-row-right">
+                      <div className="session-meta">
+                        <span className={`status-badge status-${session.status}`}>
+                          {formatStatusLabel(session.status)}
+                        </span>
+                        <span className="session-date">{formatDate(session.updated_at || session.created_at)}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}

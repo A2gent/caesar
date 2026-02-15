@@ -380,26 +380,6 @@ function ChatView() {
   return (
     <>
       <div className="top-bar">
-        <div className="top-bar-left">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => navigate('/sessions')}
-          >
-            Back to Sessions
-          </button>
-          {session ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void handleCancelSession()}
-              disabled={!isActiveRequest && session.status !== 'running'}
-            >
-              Cancel Run
-            </button>
-          ) : null}
-        </div>
-
         <div className="session-info">
           {session ? (
             <div className="session-meta-stack">
@@ -489,6 +469,9 @@ function ChatView() {
       <ChatInput
         onSend={handleSendMessage}
         disabled={inputDisabled}
+        onStop={() => void handleCancelSession()}
+        showStopButton={Boolean(session && (isActiveRequest || session.status === 'running'))}
+        canStop={Boolean(session)}
         actionControls={!session && providers.length > 0 ? (
           <label className="chat-provider-select">
             <select

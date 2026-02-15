@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   browseSkillDirectories,
+  getApiBaseUrl,
   getSettings,
+  listCameraDevices,
   listBuiltInSkills,
   listIntegrationBackedSkills,
   listPiperVoices,
   listSpeechVoices,
   type BuiltInSkill,
+  type CameraDeviceInfo,
   type ElevenLabsVoice,
   type IntegrationBackedSkill,
   type MindTreeEntry,
@@ -51,6 +54,57 @@ function getParentPath(path: string): string {
   return trimmed.slice(0, separatorIndex);
 }
 
+interface BrowserCameraInfo {
+  deviceId: string;
+  label: string;
+}
+
+function normalizeCameraName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function scoreCameraMatch(browserLabel: string, backendName: string): number {
+  const browserNorm = normalizeCameraName(browserLabel);
+  const backendNorm = normalizeCameraName(backendName);
+  if (browserNorm === '' || backendNorm === '') {
+    return 0;
+  }
+  if (browserNorm === backendNorm) {
+    return 100;
+  }
+  if (browserNorm.includes(backendNorm) || backendNorm.includes(browserNorm)) {
+    return 70;
+  }
+  const backendTokens = backendNorm.split(' ').filter(Boolean);
+  let matched = 0;
+  for (const token of backendTokens) {
+    if (browserNorm.includes(token)) {
+      matched += 1;
+    }
+  }
+  return matched * 10;
+}
+
+function likelySameMachine(apiBaseUrl: string): boolean {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+  try {
+    const api = new URL(apiBaseUrl);
+    const ui = new URL(window.location.href);
+    const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+    if (api.hostname === ui.hostname) {
+      return true;
+    }
+    if (localHosts.has(api.hostname) && localHosts.has(ui.hostname)) {
+      return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function ToolsView() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +119,15 @@ function ToolsView() {
   const [screenshotDisplayIndex, setScreenshotDisplayIndex] = useState('');
   const [cameraOutputDir, setCameraOutputDir] = useState('/tmp');
   const [cameraIndex, setCameraIndex] = useState('');
+  const [backendCameras, setBackendCameras] = useState<CameraDeviceInfo[]>([]);
+  const [isLoadingBackendCameras, setIsLoadingBackendCameras] = useState(false);
+  const [backendCamerasError, setBackendCamerasError] = useState<string | null>(null);
+  const [browserCameras, setBrowserCameras] = useState<BrowserCameraInfo[]>([]);
+  const [selectedBrowserCameraId, setSelectedBrowserCameraId] = useState('');
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isStartingPreview, setIsStartingPreview] = useState(false);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const previewStreamRef = useRef<MediaStream | null>(null);
   const [piperVoices, setPiperVoices] = useState<PiperVoiceOption[]>([]);
   const [isLoadingPiperVoices, setIsLoadingPiperVoices] = useState(false);
   const [piperVoicesError, setPiperVoicesError] = useState<string | null>(null);
@@ -85,6 +148,8 @@ function ToolsView() {
   const [integrationSkills, setIntegrationSkills] = useState<IntegrationBackedSkill[]>([]);
   const hasElevenLabsSkill = integrationSkills.some((integration) => integration.provider === 'elevenlabs');
   const hasPiperTool = builtInSkills.some((skill) => skill.name === 'piper_tts');
+  const hasCameraTool = builtInSkills.some((skill) => skill.name === 'take_camera_photo_tool');
+  const isLikelySameHost = useMemo(() => likelySameMachine(getApiBaseUrl()), []);
   const piperVoiceOptions = (() => {
     const map = new Map<string, PiperVoiceOption>();
     for (const voice of piperVoices) {
@@ -101,6 +166,25 @@ function ToolsView() {
       return a.id.localeCompare(b.id);
     });
   })();
+  const selectedBrowserCamera = browserCameras.find((camera) => camera.deviceId === selectedBrowserCameraId);
+  const suggestedBackendCamera = useMemo(() => {
+    if (!selectedBrowserCamera || backendCameras.length === 0) {
+      return null;
+    }
+    let best: CameraDeviceInfo | null = null;
+    let bestScore = 0;
+    for (const camera of backendCameras) {
+      const score = scoreCameraMatch(selectedBrowserCamera.label, camera.name);
+      if (score > bestScore) {
+        best = camera;
+        bestScore = score;
+      }
+    }
+    if (!best || bestScore < 20) {
+      return null;
+    }
+    return best;
+  }, [selectedBrowserCamera, backendCameras]);
 
   const loadSettings = async () => {
     try {
@@ -140,6 +224,80 @@ function ToolsView() {
       setPiperVoicesError(loadError instanceof Error ? loadError.message : 'Failed to load Piper voices');
     } finally {
       setIsLoadingPiperVoices(false);
+    }
+  };
+
+  const loadBackendCameras = async () => {
+    setBackendCamerasError(null);
+    setIsLoadingBackendCameras(true);
+    try {
+      const devices = await listCameraDevices();
+      const sorted = devices.slice().sort((a, b) => a.index - b.index);
+      setBackendCameras(sorted);
+    } catch (loadError) {
+      setBackendCameras([]);
+      setBackendCamerasError(loadError instanceof Error ? loadError.message : 'Failed to load backend cameras');
+    } finally {
+      setIsLoadingBackendCameras(false);
+    }
+  };
+
+  const stopCameraPreview = () => {
+    const stream = previewStreamRef.current;
+    if (stream) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+    }
+    previewStreamRef.current = null;
+    if (previewVideoRef.current) {
+      previewVideoRef.current.srcObject = null;
+    }
+  };
+
+  const loadBrowserCameras = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      throw new Error('This browser does not support media device enumeration.');
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices
+      .filter((device) => device.kind === 'videoinput')
+      .map((device) => ({
+        deviceId: device.deviceId,
+        label: device.label || `Camera ${device.deviceId.slice(0, 6)}`,
+      }));
+    setBrowserCameras(cameras);
+    return cameras;
+  };
+
+  const startCameraPreview = async (deviceId: string) => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPreviewError('This browser does not support camera preview.');
+      return;
+    }
+    setPreviewError(null);
+    setIsStartingPreview(true);
+    try {
+      stopCameraPreview();
+      const constraints: MediaStreamConstraints = {
+        video: deviceId ? { deviceId: { exact: deviceId } } : true,
+        audio: false,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      previewStreamRef.current = stream;
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = stream;
+        await previewVideoRef.current.play().catch(() => undefined);
+      }
+      const cameras = await loadBrowserCameras();
+      if (cameras.length > 0 && selectedBrowserCameraId.trim() === '') {
+        setSelectedBrowserCameraId(cameras[0].deviceId);
+      }
+    } catch (startError) {
+      stopCameraPreview();
+      setPreviewError(startError instanceof Error ? startError.message : 'Failed to start camera preview');
+    } finally {
+      setIsStartingPreview(false);
     }
   };
 
@@ -211,6 +369,19 @@ function ToolsView() {
     }
     void loadPiperVoices();
   }, [hasPiperTool, isLoadingPiperVoices, piperVoices.length]);
+
+  useEffect(() => {
+    if (!hasCameraTool || isLoadingBackendCameras || backendCameras.length > 0) {
+      return;
+    }
+    void loadBackendCameras();
+  }, [hasCameraTool, isLoadingBackendCameras, backendCameras.length]);
+
+  useEffect(() => {
+    return () => {
+      stopCameraPreview();
+    };
+  }, []);
 
   const loadBrowse = async (path: string) => {
     setIsLoadingBrowse(true);
@@ -426,18 +597,95 @@ function ToolsView() {
                             </div>
                           </label>
                           <label className="settings-field">
-                            <span>Default camera index (optional)</span>
-                            <input
-                              type="text"
-                              value={cameraIndex}
-                              onChange={(event) => setCameraIndex(event.target.value)}
-                              placeholder="1"
-                              autoComplete="off"
-                            />
+                            <span>Default backend camera</span>
+                            <div className="tool-folder-picker-row">
+                              <select value={cameraIndex} onChange={(event) => setCameraIndex(event.target.value)}>
+                                <option value="">Auto (index 1)</option>
+                                {backendCameras.map((camera) => (
+                                  <option key={`${camera.index}:${camera.id || camera.name}`} value={String(camera.index)}>
+                                    #{camera.index} {camera.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                className="settings-add-btn"
+                                onClick={() => void loadBackendCameras()}
+                                disabled={isLoadingBackendCameras}
+                              >
+                                {isLoadingBackendCameras ? 'Loading...' : 'Refresh'}
+                              </button>
+                            </div>
                             <div className="settings-help">
-                              1-based camera index used by <code>take_camera_photo_tool</code> when no explicit camera is passed.
+                              Uses backend camera index for <code>take_camera_photo_tool</code>.
                             </div>
                           </label>
+                          {backendCamerasError ? <div className="settings-error">{backendCamerasError}</div> : null}
+                          {!isLikelySameHost ? (
+                            <div className="settings-help">
+                              Browser and backend appear to be on different hosts, so browser preview devices may not match backend camera indices.
+                            </div>
+                          ) : (
+                            <div className="settings-help">
+                              Browser and backend look like the same host, so camera mapping should usually align.
+                            </div>
+                          )}
+                          <div className="settings-field">
+                            <span>Browser camera preview</span>
+                            <div className="tool-folder-picker-row">
+                              <button
+                                type="button"
+                                className="settings-add-btn"
+                                onClick={() => void startCameraPreview(selectedBrowserCameraId)}
+                                disabled={isStartingPreview}
+                              >
+                                {isStartingPreview ? 'Starting...' : 'Enable preview'}
+                              </button>
+                              <button type="button" className="settings-remove-btn" onClick={() => stopCameraPreview()}>
+                                Stop preview
+                              </button>
+                            </div>
+                            <select
+                              value={selectedBrowserCameraId}
+                              onChange={(event) => {
+                                const deviceId = event.target.value;
+                                setSelectedBrowserCameraId(deviceId);
+                                if (deviceId.trim() !== '') {
+                                  void startCameraPreview(deviceId);
+                                }
+                              }}
+                              disabled={browserCameras.length === 0}
+                            >
+                              {browserCameras.length === 0 ? (
+                                <option value="">Enable preview to list browser cameras</option>
+                              ) : (
+                                browserCameras.map((camera) => (
+                                  <option key={camera.deviceId} value={camera.deviceId}>
+                                    {camera.label}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                            <video ref={previewVideoRef} className="tool-camera-preview" playsInline muted />
+                            {previewError ? <div className="settings-error">{previewError}</div> : null}
+                            {selectedBrowserCamera && suggestedBackendCamera ? (
+                              <div className="settings-help">
+                                Suggested backend camera: #{suggestedBackendCamera.index} {suggestedBackendCamera.name}{' '}
+                                <button
+                                  type="button"
+                                  className="settings-add-btn"
+                                  onClick={() => setCameraIndex(String(suggestedBackendCamera.index))}
+                                >
+                                  Use suggestion
+                                </button>
+                              </div>
+                            ) : null}
+                            {selectedBrowserCamera && !suggestedBackendCamera ? (
+                              <div className="settings-help">
+                                Could not confidently map this browser camera to a backend camera index. Pick backend camera manually.
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       </details>
                     ) : null}

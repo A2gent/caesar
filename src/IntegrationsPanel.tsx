@@ -58,6 +58,12 @@ const PROVIDERS: ProviderSpec[] = [
         placeholder: '-1001234567890',
         required: false,
       },
+      {
+        key: 'web_app_base_url',
+        label: 'Web app base URL (optional)',
+        placeholder: 'https://your-app.example.com',
+        required: false,
+      },
     ],
   },
   {

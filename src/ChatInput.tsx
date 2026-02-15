@@ -2,9 +2,12 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 interface ChatInputProps {
   onSend?: (message: string) => void;
+  onStop?: () => void;
   disabled?: boolean;
   autoFocus?: boolean;
   actionControls?: React.ReactNode;
+  showStopButton?: boolean;
+  canStop?: boolean;
 }
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -40,7 +43,15 @@ const isVoiceShortcut = (event: { altKey: boolean; shiftKey: boolean; metaKey: b
   return event.altKey && !event.shiftKey && !event.ctrlKey;
 };
 
-const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false, autoFocus = false, actionControls }) => {
+const ChatInput: React.FC<ChatInputProps> = ({
+  onSend,
+  onStop,
+  disabled = false,
+  autoFocus = false,
+  actionControls,
+  showStopButton = false,
+  canStop = true,
+}) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const shouldRestartRef = useRef(false);
@@ -335,6 +346,9 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false, autoFoc
 
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
+      if (showStopButton) {
+        return;
+      }
       handleSend();
     }
   };
@@ -439,17 +453,33 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled = false, autoFoc
             </svg>
           )}
         </button>
-        <button
-          type="button"
-          className="send-button"
-          onClick={handleSend}
-          disabled={disabled || (!value.trim() && !interimTranscript)}
-          title="Send message"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" className="send-icon">
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-          </svg>
-        </button>
+        {showStopButton ? (
+          <button
+            type="button"
+            className="send-button stop-button"
+            onClick={onStop}
+            disabled={!canStop}
+            title="Stop run"
+            aria-label="Stop run"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="send-icon" aria-hidden="true">
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="send-button"
+            onClick={handleSend}
+            disabled={disabled || (!value.trim() && !interimTranscript)}
+            title="Send message"
+            aria-label="Send message"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="send-icon" aria-hidden="true">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );
