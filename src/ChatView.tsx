@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
 import { 
   getSession, 
   createSession, 
+  cancelSessionRun,
   listProviders,
   sendMessageStream,
   type LLMProviderType,
@@ -134,6 +135,9 @@ function ChatView() {
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
   const [activeRequestSessionId, setActiveRequestSessionId] = useState<string | null>(null);
   const [showSystemPromptDetails, setShowSystemPromptDetails] = useState(false);
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
+  const queuedMessagesRef = useRef<string[]>([]);
+  const activeStreamAbortRef = useRef<AbortController | null>(null);
 
   const activeSessionId = urlSessionId;
   const locationState = (location.state || {}) as ChatLocationState;
@@ -202,6 +206,22 @@ function ChatView() {
     }
   };
 
+  const pushQueuedMessage = (message: string) => {
+    const next = [...queuedMessagesRef.current, message];
+    queuedMessagesRef.current = next;
+    setQueuedMessages(next);
+  };
+
+  const shiftQueuedMessage = (): string | null => {
+    if (queuedMessagesRef.current.length === 0) {
+      return null;
+    }
+    const [nextMessage, ...remaining] = queuedMessagesRef.current;
+    queuedMessagesRef.current = remaining;
+    setQueuedMessages(remaining);
+    return nextMessage;
+  };
+
   const sendMessageWithStreaming = async (targetSessionId: string, message: string) => {
     setActiveRequestSessionId(targetSessionId);
     const userMessage: Message = {
@@ -217,18 +237,26 @@ function ChatView() {
     setMessages(prev => [...prev, userMessage, assistantMessage]);
     setIsLoading(true);
     setError(null);
+    const controller = new AbortController();
+    activeStreamAbortRef.current = controller;
 
     try {
-      for await (const event of sendMessageStream(targetSessionId, message)) {
+      for await (const event of sendMessageStream(targetSessionId, message, controller.signal)) {
         handleStreamEvent(event, targetSessionId);
       }
     } catch (err) {
-      console.error('Failed to send message:', err);
-      setError(normalizeFailureReason(err instanceof Error ? err.message : 'Failed to send message'));
-      setMessages(prev => prev.slice(0, -2));
+      const isAbort = err instanceof DOMException && err.name === 'AbortError';
+      if (!isAbort) {
+        console.error('Failed to send message:', err);
+        setError(normalizeFailureReason(err instanceof Error ? err.message : 'Failed to send message'));
+        setMessages(prev => prev.slice(0, -2));
+      }
     } finally {
       setIsLoading(false);
       setActiveRequestSessionId(prev => prev === targetSessionId ? null : prev);
+      if (activeStreamAbortRef.current === controller) {
+        activeStreamAbortRef.current = null;
+      }
     }
   };
 
@@ -283,6 +311,16 @@ function ChatView() {
     }
   };
 
+  const processMessageQueue = async (targetSessionId: string, initialMessage: string) => {
+    let nextMessage: string | null = initialMessage;
+
+    while (nextMessage) {
+      // eslint-disable-next-line no-await-in-loop
+      await sendMessageWithStreaming(targetSessionId, nextMessage);
+      nextMessage = shiftQueuedMessage();
+    }
+  };
+
   const handleSendMessage = async (message: string) => {
     if (!session) {
       setIsLoading(true);
@@ -305,8 +343,39 @@ function ChatView() {
       return;
     }
 
-    await sendMessageWithStreaming(session.id, message);
+    if (activeRequestSessionId === session.id) {
+      pushQueuedMessage(message);
+      return;
+    }
+
+    await processMessageQueue(session.id, message);
   };
+
+  const handleCancelSession = async () => {
+    if (!session) {
+      return;
+    }
+    activeStreamAbortRef.current?.abort();
+    queuedMessagesRef.current = [];
+    setQueuedMessages([]);
+
+    try {
+      await cancelSessionRun(session.id);
+      const fresh = await getSession(session.id);
+      setSession(fresh);
+      setMessages(fresh.messages || []);
+      setError('Request was canceled before completion.');
+    } catch (err) {
+      console.error('Failed to cancel session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to cancel session');
+    } finally {
+      setIsLoading(false);
+      setActiveRequestSessionId((prev) => (prev === session.id ? null : prev));
+    }
+  };
+
+  const isActiveRequest = Boolean(session && activeRequestSessionId === session.id);
+  const inputDisabled = isLoading && !session;
 
   return (
     <>
@@ -319,6 +388,16 @@ function ChatView() {
           >
             Back to Sessions
           </button>
+          {session ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void handleCancelSession()}
+              disabled={!isActiveRequest && session.status !== 'running'}
+            >
+              Cancel Run
+            </button>
+          ) : null}
         </div>
 
         <div className="session-info">
@@ -409,7 +488,7 @@ function ChatView() {
       
       <ChatInput
         onSend={handleSendMessage}
-        disabled={isLoading}
+        disabled={inputDisabled}
         actionControls={!session && providers.length > 0 ? (
           <label className="chat-provider-select">
             <select
@@ -425,6 +504,10 @@ function ChatView() {
               ))}
             </select>
           </label>
+        ) : queuedMessages.length > 0 ? (
+          <span className="chat-provider-select" title={queuedMessages.join('\n')}>
+            Queued: {queuedMessages.length}
+          </span>
         ) : null}
       />
     </>

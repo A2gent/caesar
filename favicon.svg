@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Sun favicon">
+  <defs>
+    <radialGradient id="sunCore" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#ffe083" />
+      <stop offset="100%" stop-color="#ffb703" />
+    </radialGradient>
+    <linearGradient id="sunRays" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffd166" />
+      <stop offset="100%" stop-color="#fb8500" />
+    </linearGradient>
+  </defs>
+  <g fill="url(#sunRays)">
+    <rect x="30" y="3" width="4" height="12" rx="2" />
+    <rect x="30" y="49" width="4" height="12" rx="2" />
+    <rect x="49" y="30" width="12" height="4" rx="2" />
+    <rect x="3" y="30" width="12" height="4" rx="2" />
+    <rect x="46.5" y="11.2" width="4" height="12" rx="2" transform="rotate(45 48.5 17.2)" />
+    <rect x="13.5" y="44.2" width="4" height="12" rx="2" transform="rotate(45 15.5 50.2)" />
+    <rect x="44.2" y="46.5" width="12" height="4" rx="2" transform="rotate(45 50.2 48.5)" />
+    <rect x="11.2" y="13.5" width="12" height="4" rx="2" transform="rotate(45 17.2 15.5)" />
+  </g>
+  <circle cx="32" cy="32" r="14" fill="url(#sunCore)" />
+  <circle cx="27.5" cy="27.5" r="4.5" fill="#fff5cd" opacity="0.75" />
+</svg>

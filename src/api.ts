@@ -585,12 +585,17 @@ export async function deleteProject(projectId: string): Promise<void> {
   }
 }
 
-export async function* sendMessageStream(sessionId: string, message: string): AsyncGenerator<ChatStreamEvent, void, unknown> {
+export async function* sendMessageStream(
+  sessionId: string,
+  message: string,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamEvent, void, unknown> {
   const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/chat/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
+    signal,
     body: JSON.stringify({ message }),
   });
 
@@ -638,6 +643,15 @@ export async function* sendMessageStream(sessionId: string, message: string): As
     } catch {
       // Ignore malformed tail chunks.
     }
+  }
+}
+
+export async function cancelSessionRun(sessionId: string): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/cancel`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to cancel session');
   }
 }
 

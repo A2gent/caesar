@@ -32,32 +32,59 @@ const CONTEXT_COMPACTION_PROMPT = 'AAGENT_CONTEXT_COMPACTION_PROMPT';
 const DEFAULT_COMPACTION_TRIGGER = '80';
 const DEFAULT_COMPACTION_PROMPT = 'Create a concise continuation summary preserving goals, progress, constraints, and next actions.';
 
-function splitAgentInstructionBlocks(blocks: InstructionBlock[]): {
-  builtInToolsEnabled: boolean;
-  integrationSkillsEnabled: boolean;
-  externalMarkdownSkillsEnabled: boolean;
-  customBlocks: InstructionBlock[];
-} {
-  let builtInToolsEnabled = true;
-  let integrationSkillsEnabled = true;
-  let externalMarkdownSkillsEnabled = true;
-  const customBlocks: InstructionBlock[] = [];
+const MANAGED_INSTRUCTION_BLOCK_TYPES: InstructionBlockType[] = [
+  BUILTIN_TOOLS_BLOCK_TYPE,
+  INTEGRATION_SKILLS_BLOCK_TYPE,
+  EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE,
+];
+
+function isManagedInstructionBlockType(type: InstructionBlockType): boolean {
+  return MANAGED_INSTRUCTION_BLOCK_TYPES.includes(type);
+}
+
+function normalizeInstructionBlockForSettings(block: InstructionBlock): InstructionBlock {
+  return {
+    type: (
+      block.type === 'file'
+        ? 'file'
+        : block.type === 'project_agents_md'
+          ? 'project_agents_md'
+          : block.type === BUILTIN_TOOLS_BLOCK_TYPE
+            ? BUILTIN_TOOLS_BLOCK_TYPE
+            : block.type === INTEGRATION_SKILLS_BLOCK_TYPE
+              ? INTEGRATION_SKILLS_BLOCK_TYPE
+              : block.type === EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE
+                ? EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE
+                : 'text'
+    ) as InstructionBlockType,
+    value: block.value.trim(),
+    enabled: block.enabled !== false,
+  };
+}
+
+function ensureManagedInstructionBlocks(blocks: InstructionBlock[]): InstructionBlock[] {
+  const normalizedBlocks: InstructionBlock[] = [];
+  const seenManagedTypes = new Set<InstructionBlockType>();
   for (const block of blocks) {
-    if (block.type === BUILTIN_TOOLS_BLOCK_TYPE) {
-      builtInToolsEnabled = block.enabled !== false;
+    const normalized = normalizeInstructionBlockForSettings(block);
+    if (isManagedInstructionBlockType(normalized.type)) {
+      if (seenManagedTypes.has(normalized.type)) {
+        continue;
+      }
+      seenManagedTypes.add(normalized.type);
+      normalizedBlocks.push({ ...normalized, value: '' });
       continue;
     }
-    if (block.type === INTEGRATION_SKILLS_BLOCK_TYPE) {
-      integrationSkillsEnabled = block.enabled !== false;
-      continue;
-    }
-    if (block.type === EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE) {
-      externalMarkdownSkillsEnabled = block.enabled !== false;
-      continue;
-    }
-    customBlocks.push(block);
+    normalizedBlocks.push(normalized);
   }
-  return { builtInToolsEnabled, integrationSkillsEnabled, externalMarkdownSkillsEnabled, customBlocks };
+
+  for (const type of MANAGED_INSTRUCTION_BLOCK_TYPES) {
+    if (seenManagedTypes.has(type)) {
+      continue;
+    }
+    normalizedBlocks.push({ type, value: '', enabled: true });
+  }
+  return normalizedBlocks;
 }
 
 const MANAGED_KEYS = [
@@ -123,16 +150,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
   );
   const [compactionPrompt, setCompactionPrompt] = useState(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
   const [agentInstructionBlocks, setAgentInstructionBlocks] = useState<InstructionBlock[]>(
-    splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')).customBlocks,
-  );
-  const [builtInToolsEnabled, setBuiltInToolsEnabled] = useState<boolean>(
-    splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')).builtInToolsEnabled,
-  );
-  const [integrationSkillsEnabled, setIntegrationSkillsEnabled] = useState<boolean>(
-    splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')).integrationSkillsEnabled,
-  );
-  const [externalMarkdownSkillsEnabled, setExternalMarkdownSkillsEnabled] = useState<boolean>(
-    splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')).externalMarkdownSkillsEnabled,
+    ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')),
   );
 
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -152,11 +170,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
 
     setCompactionTriggerPercent(normalizeCompactionTriggerPercent(settings[CONTEXT_COMPACTION_TRIGGER_PERCENT] || DEFAULT_COMPACTION_TRIGGER));
     setCompactionPrompt(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
-    const splitBlocks = splitAgentInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || ''));
-    setAgentInstructionBlocks(splitBlocks.customBlocks);
-    setBuiltInToolsEnabled(splitBlocks.builtInToolsEnabled);
-    setIntegrationSkillsEnabled(splitBlocks.integrationSkillsEnabled);
-    setExternalMarkdownSkillsEnabled(splitBlocks.externalMarkdownSkillsEnabled);
+    setAgentInstructionBlocks(ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')));
   }, [settings]);
 
   const compactionTriggerValue = Number.parseFloat(compactionTriggerPercent);
@@ -169,43 +183,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
   }, [isSaving]);
 
   const estimatedBlocks = instructionEstimate?.blocks || [];
-  const builtInToolsEstimatedTokens = estimatedBlocks.find((block) => block.type === BUILTIN_TOOLS_BLOCK_TYPE)?.estimated_tokens ?? 0;
-  const integrationSkillsEstimatedTokens = estimatedBlocks.find((block) => block.type === INTEGRATION_SKILLS_BLOCK_TYPE)?.estimated_tokens ?? 0;
-  const externalMarkdownSkillsEstimatedTokens = estimatedBlocks.find((block) => block.type === EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE)?.estimated_tokens ?? 0;
-
-  const customEstimatedBlocks = useMemo(() => {
-    return estimatedBlocks.filter((block) => (
-      block.type !== BUILTIN_TOOLS_BLOCK_TYPE
-      && block.type !== INTEGRATION_SKILLS_BLOCK_TYPE
-      && block.type !== EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE
-    ));
-  }, [estimatedBlocks]);
-
-  const customBlockEstimatedTokens = useMemo(() => {
-    const perBlockTokens: Array<number | null> = [];
-    let estimateIndex = 0;
-    for (const block of agentInstructionBlocks) {
-      const isIncludedInPrompt = block.enabled !== false && (block.type === 'project_agents_md' || block.value.trim() !== '');
-      if (!isIncludedInPrompt) {
-        perBlockTokens.push(0);
-        continue;
+  const instructionBlockEstimatedTokens = useMemo(() => {
+    const estimateQueue = [...estimatedBlocks];
+    return agentInstructionBlocks.map((block) => {
+      const nextType = normalizeInstructionBlockForSettings(block).type;
+      const estimateIndex = estimateQueue.findIndex((estimate) => estimate.type === nextType);
+      if (estimateIndex < 0) {
+        return 0;
       }
-      perBlockTokens.push(customEstimatedBlocks[estimateIndex]?.estimated_tokens ?? 0);
-      estimateIndex += 1;
-    }
-    return perBlockTokens;
-  }, [agentInstructionBlocks, customEstimatedBlocks]);
+      const [estimate] = estimateQueue.splice(estimateIndex, 1);
+      return estimate?.estimated_tokens ?? 0;
+    });
+  }, [agentInstructionBlocks, estimatedBlocks]);
 
-  const customBlockEstimatedTokenLabels = useMemo(() => {
+  const instructionBlockEstimatedTokenLabels = useMemo(() => {
     return agentInstructionBlocks.map((block, index) => {
-      const tokens = customBlockEstimatedTokens[index] ?? 0;
-      const isIncludedInPrompt = block.enabled !== false && (block.type === 'project_agents_md' || block.value.trim() !== '');
+      const tokens = instructionBlockEstimatedTokens[index] ?? 0;
+      const isIncludedInPrompt = block.enabled !== false
+        && (isManagedInstructionBlockType(block.type) || block.type === 'project_agents_md' || block.value.trim() !== '');
       if (block.type === 'project_agents_md' && isIncludedInPrompt) {
         return getApproxEstimatedTokensLabel(tokens);
       }
       return getEstimatedTokensLabel(tokens);
     });
-  }, [agentInstructionBlocks, customBlockEstimatedTokens]);
+  }, [agentInstructionBlocks, instructionBlockEstimatedTokens]);
 
   const enabledInstructionTotalTokens = useMemo(() => {
     if (!instructionEstimate) {
@@ -222,30 +223,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
   }, [instructionEstimate, estimatedBlocks]);
 
   const buildInstructionSettingsDraft = (): Record<string, string> => {
-    const normalizedAgentBlocks = agentInstructionBlocks
-      .map((block): InstructionBlock => ({
-        type: (
-          block.type === 'file'
-            ? 'file'
-            : block.type === 'project_agents_md'
-              ? 'project_agents_md'
-              : 'text'
-        ) as InstructionBlockType,
-        value: block.value.trim(),
-        enabled: block.enabled !== false,
-      }))
-      .filter((block) => block.enabled && (block.type === 'project_agents_md' || block.value !== ''));
-    const serializedAgentBlocks: InstructionBlock[] = [
-      { type: BUILTIN_TOOLS_BLOCK_TYPE, value: '', enabled: builtInToolsEnabled },
-      { type: INTEGRATION_SKILLS_BLOCK_TYPE, value: '', enabled: integrationSkillsEnabled },
-      { type: EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE, value: '', enabled: externalMarkdownSkillsEnabled },
-      ...normalizedAgentBlocks,
-    ];
+    const serializedAgentBlocks = ensureManagedInstructionBlocks(
+      agentInstructionBlocks
+        .map((block) => normalizeInstructionBlockForSettings(block))
+        .filter((block) => isManagedInstructionBlockType(block.type) || (block.enabled && (block.type === 'project_agents_md' || block.value !== ''))),
+    );
 
     return {
       ...settings,
       [AGENT_INSTRUCTION_BLOCKS_SETTING_KEY]: JSON.stringify(serializedAgentBlocks),
-      [AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY]: buildAgentSystemPromptAppend(normalizedAgentBlocks),
+      [AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY]: buildAgentSystemPromptAppend(serializedAgentBlocks),
     };
   };
 
@@ -267,7 +254,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [settings, agentInstructionBlocks, builtInToolsEnabled, integrationSkillsEnabled, externalMarkdownSkillsEnabled]);
+  }, [settings, agentInstructionBlocks]);
 
   const addRow = () => {
     setCustomRows((prev) => [...prev, { id: crypto.randomUUID(), key: '', value: '' }]);
@@ -350,66 +337,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, isSaving, onSav
             Open Tools
           </Link>
         </div>
-        <div className="instruction-block instruction-block-singleline">
-          <div className="instruction-block-singleline-main">
-            <Link to="/tools" className="instruction-block-link">Built-in tools</Link>
-            <span className="instruction-block-token-count">{getEstimatedTokensLabel(builtInToolsEnabled ? builtInToolsEstimatedTokens : 0)}</span>
-          </div>
-          <label className="instruction-block-enabled-toggle" title="Enable built-in tools guidance in system prompt">
-            <input
-              type="checkbox"
-              checked={builtInToolsEnabled}
-              onChange={(event) => setBuiltInToolsEnabled(event.target.checked)}
-              disabled={isSaving}
-              aria-label="Enable built-in tools block"
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        <div className="instruction-block instruction-block-singleline">
-          <div className="instruction-block-singleline-main">
-            <Link to="/tools" className="instruction-block-link">Integration-backed skills</Link>
-            <span className="instruction-block-token-count">{getEstimatedTokensLabel(integrationSkillsEnabled ? integrationSkillsEstimatedTokens : 0)}</span>
-          </div>
-          <label className="instruction-block-enabled-toggle" title="Enable integration skills context in system prompt">
-            <input
-              type="checkbox"
-              checked={integrationSkillsEnabled}
-              onChange={(event) => setIntegrationSkillsEnabled(event.target.checked)}
-              disabled={isSaving}
-              aria-label="Enable integration-backed skills block"
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
-        <div className="instruction-block instruction-block-singleline">
-          <div className="instruction-block-singleline-main">
-            <Link to="/skills" className="instruction-block-link">External markdown skills</Link>
-            <span className="instruction-block-token-count">
-              {getEstimatedTokensLabel(externalMarkdownSkillsEnabled ? externalMarkdownSkillsEstimatedTokens : 0)}
-            </span>
-          </div>
-          <label className="instruction-block-enabled-toggle" title="Enable external markdown skills context in system prompt">
-            <input
-              type="checkbox"
-              checked={externalMarkdownSkillsEnabled}
-              onChange={(event) => setExternalMarkdownSkillsEnabled(event.target.checked)}
-              disabled={isSaving}
-              aria-label="Enable external markdown skills block"
-            />
-            <span>Enabled</span>
-          </label>
-        </div>
         <InstructionBlocksEditor
           blocks={agentInstructionBlocks}
           onChange={setAgentInstructionBlocks}
           disabled={isSaving}
-          blockEstimatedTokens={customBlockEstimatedTokens}
-          blockEstimatedTokenLabels={customBlockEstimatedTokenLabels}
+          blockEstimatedTokens={instructionBlockEstimatedTokens}
+          blockEstimatedTokenLabels={instructionBlockEstimatedTokenLabels}
           textPlaceholder="Global instructions that should always apply..."
           filePlaceholder="notes/agent-rules.md"
-          emptyStateText="No global instruction blocks configured."
+          emptyStateText="No instruction blocks configured."
           showOpenInMyMind
+          managedBlocks={{
+            [BUILTIN_TOOLS_BLOCK_TYPE]: {
+              label: 'Built-in tools',
+              linkTo: '/tools',
+              enabledTitle: 'Enable built-in tools guidance in system prompt',
+              enabledAriaLabel: 'Enable built-in tools block',
+            },
+            [INTEGRATION_SKILLS_BLOCK_TYPE]: {
+              label: 'Integration-backed skills',
+              linkTo: '/tools',
+              enabledTitle: 'Enable integration skills context in system prompt',
+              enabledAriaLabel: 'Enable integration-backed skills block',
+            },
+            [EXTERNAL_MARKDOWN_SKILLS_BLOCK_TYPE]: {
+              label: 'External markdown skills',
+              linkTo: '/skills',
+              enabledTitle: 'Enable external markdown skills context in system prompt',
+              enabledAriaLabel: 'Enable external markdown skills block',
+            },
+          }}
         />
       </div>
 

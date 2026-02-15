@@ -1,6 +1,13 @@
 import type { InstructionBlock, InstructionBlockType } from './instructionBlocks';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { buildOpenInMyMindUrl } from './myMindNavigation';
+
+interface ManagedBlockConfig {
+  label: string;
+  linkTo?: string;
+  enabledTitle?: string;
+  enabledAriaLabel?: string;
+}
 
 interface InstructionBlocksEditorProps {
   blocks: InstructionBlock[];
@@ -14,6 +21,7 @@ interface InstructionBlocksEditorProps {
   addFileLabel?: string;
   emptyStateText?: string;
   showOpenInMyMind?: boolean;
+  managedBlocks?: Partial<Record<InstructionBlockType, ManagedBlockConfig>>;
 }
 
 function InstructionBlocksEditor({
@@ -28,8 +36,13 @@ function InstructionBlocksEditor({
   addFileLabel = 'Add file block',
   emptyStateText = 'No instruction blocks yet.',
   showOpenInMyMind = false,
+  managedBlocks = {},
 }: InstructionBlocksEditorProps) {
   const navigate = useNavigate();
+
+  const isManagedBlock = (type: InstructionBlockType): boolean => {
+    return managedBlocks[type] !== undefined;
+  };
 
   const addBlock = (type: InstructionBlockType) => {
     onChange([...blocks, { type, value: '', enabled: true }]);
@@ -83,29 +96,40 @@ function InstructionBlocksEditor({
         {blocks.map((block, index) => (
           <div className="instruction-block" key={`${block.type}-${index}`}>
             <div className="instruction-block-toolbar">
-              <select
-                className="instruction-block-type-select"
-                value={block.type}
-                onChange={(event) => updateBlock(index, { type: event.target.value as InstructionBlockType })}
-                disabled={disabled}
-                aria-label="Instruction block type"
-              >
-                <option value="text">Text</option>
-                <option value="file">File path</option>
-                <option value="project_agents_md">Project AGENTS.md</option>
-              </select>
+              {isManagedBlock(block.type) ? (
+                managedBlocks[block.type]?.linkTo ? (
+                  <Link to={managedBlocks[block.type]?.linkTo || ''} className="instruction-block-link">{managedBlocks[block.type]?.label}</Link>
+                ) : (
+                  <span>{managedBlocks[block.type]?.label}</span>
+                )
+              ) : (
+                <select
+                  className="instruction-block-type-select"
+                  value={block.type}
+                  onChange={(event) => updateBlock(index, { type: event.target.value as InstructionBlockType })}
+                  disabled={disabled}
+                  aria-label="Instruction block type"
+                >
+                  <option value="text">Text</option>
+                  <option value="file">File path</option>
+                  <option value="project_agents_md">Project AGENTS.md</option>
+                </select>
+              )}
               <span className="instruction-block-token-count">
                 {blockEstimatedTokenLabels[index] || `${blockEstimatedTokens[index] ?? 0} tokens`}
               </span>
 
               <div className="instruction-block-toolbar-actions">
-                <label className="instruction-block-enabled-toggle" title="Enable this block">
+                <label
+                  className="instruction-block-enabled-toggle"
+                  title={managedBlocks[block.type]?.enabledTitle || 'Enable this block'}
+                >
                   <input
                     type="checkbox"
                     checked={block.enabled !== false}
                     onChange={(event) => updateBlock(index, { enabled: event.target.checked })}
                     disabled={disabled}
-                    aria-label="Enable instruction block"
+                    aria-label={managedBlocks[block.type]?.enabledAriaLabel || 'Enable instruction block'}
                   />
                   <span>Enabled</span>
                 </label>
@@ -131,13 +155,15 @@ function InstructionBlocksEditor({
                     </button>
                   </>
                 ) : null}
-                <button type="button" className="settings-remove-btn" onClick={() => removeBlock(index)} disabled={disabled}>
-                  Remove
-                </button>
+                {!isManagedBlock(block.type) ? (
+                  <button type="button" className="settings-remove-btn" onClick={() => removeBlock(index)} disabled={disabled}>
+                    Remove
+                  </button>
+                ) : null}
               </div>
             </div>
 
-            {block.type === 'text' ? (
+            {isManagedBlock(block.type) ? null : block.type === 'text' ? (
               <textarea
                 value={block.value}
                 onChange={(event) => updateBlock(index, { value: event.target.value })}
