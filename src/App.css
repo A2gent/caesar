@@ -888,7 +888,7 @@ body.mind-resizing * {
 .message-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .message {
@@ -1206,14 +1206,14 @@ body.mind-resizing * {
 .tool-execution-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tool-card-summary {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   cursor: pointer;
 }
 
@@ -1234,7 +1234,7 @@ body.mind-resizing * {
 }
 
 .tool-card-body {
-  padding: 0 12px 12px;
+  padding: 0 10px 10px;
 }
 
 .tool-card-collapsed[open] .tool-card-summary {
@@ -1254,7 +1254,7 @@ body.mind-resizing * {
 }
 
 .tool-execution-block + .tool-execution-block {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .tool-execution-label {
@@ -1262,7 +1262,7 @@ body.mind-resizing * {
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   color: #a7b1c2;
 }
 
@@ -1299,7 +1299,7 @@ body.mind-resizing * {
 .tool-input,
 .tool-result-content {
   background-color: #0a0a0a;
-  padding: 10px;
+  padding: 8px;
   border-radius: 4px;
   overflow-x: auto;
   font-size: 12px;
@@ -1319,7 +1319,7 @@ body.mind-resizing * {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 11px;
   color: #9aa6bc;
