@@ -6,6 +6,7 @@ import {
   createSession,
   deleteProject,
   deleteSession,
+  getSession,
   listProjects,
   listProviders,
   listSessions,
@@ -53,6 +54,7 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
@@ -61,11 +63,13 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [hasLoadedProjects, setHasLoadedProjects] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectFolders, setNewProjectFolders] = useState('');
+  const [newProjectFolderDraft, setNewProjectFolderDraft] = useState<string[]>([]);
+  const [isCreateProjectFormOpen, setIsCreateProjectFormOpen] = useState(false);
   const [draggingSessionID, setDraggingSessionID] = useState<string | null>(null);
   const [dragOverSectionKey, setDragOverSectionKey] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [isProjectPickerOpen, setIsProjectPickerOpen] = useState(false);
+  const [projectPickerMode, setProjectPickerMode] = useState<'create' | 'edit'>('edit');
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState('');
   const [projectFolderDraft, setProjectFolderDraft] = useState<string[]>([]);
@@ -217,6 +221,32 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
     }
   };
 
+  const handleDuplicateSession = async (sourceSession: Session) => {
+    setDuplicatingSessionID(sourceSession.id);
+    setError(null);
+
+    try {
+      const detailedSession = await getSession(sourceSession.id);
+      const firstUserMessage = (detailedSession.messages || [])
+        .find((message) => message.role === 'user' && message.content.trim() !== '')
+        ?.content.trim();
+
+      const created = await createSession({
+        agent_id: detailedSession.agent_id || sourceSession.agent_id || 'build',
+        task: firstUserMessage || undefined,
+        provider: detailedSession.provider || sourceSession.provider || undefined,
+        model: detailedSession.model || sourceSession.model || undefined,
+        project_id: detailedSession.project_id || sourceSession.project_id || undefined,
+      });
+      onSelectSession(created.id);
+    } catch (err) {
+      console.error('Failed to duplicate session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to duplicate session');
+    } finally {
+      setDuplicatingSessionID((current) => (current === sourceSession.id ? null : current));
+    }
+  };
+
   const handleAssignProject = async (sessionId: string, projectId?: string) => {
     try {
       await updateSessionProject(sessionId, projectId);
@@ -281,15 +311,13 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
       return;
     }
 
-    const folders = newProjectFolders
-      .split(',')
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0);
+    const folders = newProjectFolderDraft;
 
     try {
       await createProject({ name, folders });
       setNewProjectName('');
-      setNewProjectFolders('');
+      setNewProjectFolderDraft([]);
+      setIsCreateProjectFormOpen(false);
       await loadProjects();
     } catch (err) {
       console.error('Failed to create project:', err);
@@ -327,6 +355,7 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
   };
 
   const openProjectFolderPicker = async (project: Project) => {
+    setProjectPickerMode('edit');
     setEditingProjectId(project.id);
     setEditingProjectName(project.name);
     setProjectFolderDraft(project.folders ?? []);
@@ -334,12 +363,32 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
     await loadBrowse((project.folders && project.folders[0]) || browsePath);
   };
 
+  const openCreateFolderPicker = async () => {
+    setProjectPickerMode('create');
+    setIsProjectPickerOpen(true);
+    await loadBrowse((newProjectFolderDraft && newProjectFolderDraft[0]) || browsePath);
+  };
+
+  const activeFolderDraft = projectPickerMode === 'create' ? newProjectFolderDraft : projectFolderDraft;
+
   const handleAddDraftFolder = (folder: string) => {
     const normalized = folder.trim();
     if (normalized === '') {
       return;
     }
+    if (projectPickerMode === 'create') {
+      setNewProjectFolderDraft((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+      return;
+    }
     setProjectFolderDraft((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+  };
+
+  const handleRemoveDraftFolder = (folder: string) => {
+    if (projectPickerMode === 'create') {
+      setNewProjectFolderDraft((prev) => prev.filter((value) => value !== folder));
+      return;
+    }
+    setProjectFolderDraft((prev) => prev.filter((value) => value !== folder));
   };
 
   const handleSaveProjectFolders = async () => {
@@ -484,10 +533,22 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
           </div>
           <div className="session-actions">
             <button
+              className="session-duplicate-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleDuplicateSession(session);
+              }}
+              title="Duplicate session"
+              aria-label={`Duplicate ${formatSessionTitle(session)}`}
+              disabled={duplicatingSessionID === session.id}
+            >
+              ↻
+            </button>
+            <button
               className="session-delete-btn"
               onClick={(e) => {
                 e.stopPropagation();
-                handleDeleteSession(session.id);
+                void handleDeleteSession(session.id);
               }}
               title="Delete session"
               aria-label={`Delete ${formatSessionTitle(session)}`}
@@ -512,30 +573,6 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
           <button onClick={() => setError(null)} className="error-dismiss">×</button>
         </div>
       )}
-
-      <div className="page-content sessions-projects-panel">
-        <div className="sessions-projects-row">
-          <input
-            type="text"
-            value={newProjectName}
-            onChange={(event) => setNewProjectName(event.target.value)}
-            placeholder="New project name"
-            className="sessions-project-input"
-            aria-label="New project name"
-          />
-          <input
-            type="text"
-            value={newProjectFolders}
-            onChange={(event) => setNewProjectFolders(event.target.value)}
-            placeholder="Folders (comma-separated, optional)"
-            className="sessions-project-input sessions-project-folders"
-            aria-label="Project folders"
-          />
-          <button className="create-session-btn" onClick={handleCreateProject}>
-            Create project
-          </button>
-        </div>
-      </div>
 
       <div className="sessions-layout">
         <div className="page-content sessions-list-container">
@@ -642,6 +679,67 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
               })}
             </div>
           )}
+          <div className="sessions-add-project-block">
+            <button
+              type="button"
+              className="sessions-add-project-divider"
+              onClick={() => setIsCreateProjectFormOpen((prev) => !prev)}
+              aria-expanded={isCreateProjectFormOpen}
+              aria-controls="create-project-form"
+            >
+              <span className="sessions-add-project-line" />
+              <span className="sessions-add-project-label">Add new project</span>
+              <span className="sessions-add-project-line" />
+            </button>
+            {isCreateProjectFormOpen ? (
+              <div id="create-project-form" className="sessions-create-project-form">
+                <input
+                  type="text"
+                  value={newProjectName}
+                  onChange={(event) => setNewProjectName(event.target.value)}
+                  placeholder="Project name"
+                  className="sessions-project-input"
+                  aria-label="New project name"
+                />
+                <div className="sessions-project-folder-input-row">
+                  <input
+                    type="text"
+                    value={newProjectFolderDraft.join(', ')}
+                    readOnly
+                    placeholder="No folders selected (optional)"
+                    className="sessions-project-input sessions-project-folders"
+                    aria-label="Project folders"
+                  />
+                  <button type="button" className="settings-add-btn" onClick={() => void openCreateFolderPicker()}>
+                    Browse folders
+                  </button>
+                </div>
+                {newProjectFolderDraft.length > 0 ? (
+                  <div className="project-folder-draft-list">
+                    {newProjectFolderDraft.map((folder) => (
+                      <div key={folder} className="project-folder-draft-item">
+                        <code>{folder}</code>
+                        <button
+                          type="button"
+                          className="project-chip-delete"
+                          onClick={() => setNewProjectFolderDraft((prev) => prev.filter((value) => value !== folder))}
+                          aria-label={`Remove ${folder}`}
+                          title={`Remove ${folder}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="sessions-projects-row">
+                  <button className="create-session-btn" onClick={() => void handleCreateProject()}>
+                    Create project
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="sessions-composer">
@@ -693,7 +791,11 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
       {isProjectPickerOpen ? (
         <div className="mind-picker-overlay" role="dialog" aria-modal="true" aria-label="Choose project folders">
           <div className="mind-picker-dialog">
-            <h2>Choose folders for {editingProjectName || 'project'}</h2>
+            <h2>
+              {projectPickerMode === 'create'
+                ? 'Choose folders for new project'
+                : `Choose folders for ${editingProjectName || 'project'}`}
+            </h2>
             <div className="mind-picker-path">{browsePath || 'Loading...'}</div>
             <div className="mind-picker-actions">
               <button
@@ -718,14 +820,14 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
             </div>
 
             <div className="project-folder-draft-list">
-              {projectFolderDraft.length === 0 ? <div className="sessions-empty">No folders selected.</div> : null}
-              {projectFolderDraft.map((folder) => (
+              {activeFolderDraft.length === 0 ? <div className="sessions-empty">No folders selected.</div> : null}
+              {activeFolderDraft.map((folder) => (
                 <div key={folder} className="project-folder-draft-item">
                   <code>{folder}</code>
                   <button
                     type="button"
                     className="project-chip-delete"
-                    onClick={() => setProjectFolderDraft((prev) => prev.filter((value) => value !== folder))}
+                    onClick={() => handleRemoveDraftFolder(folder)}
                     aria-label={`Remove ${folder}`}
                     title={`Remove ${folder}`}
                   >
@@ -750,9 +852,15 @@ function SessionsList({ onSelectSession }: SessionsListProps) {
             </div>
 
             <div className="mind-picker-actions project-folder-save-row">
-              <button type="button" className="settings-save-btn" onClick={() => void handleSaveProjectFolders()}>
-                Save folders
-              </button>
+              {projectPickerMode === 'edit' ? (
+                <button type="button" className="settings-save-btn" onClick={() => void handleSaveProjectFolders()}>
+                  Save folders
+                </button>
+              ) : (
+                <button type="button" className="settings-save-btn" onClick={() => setIsProjectPickerOpen(false)}>
+                  Done
+                </button>
+              )}
             </div>
           </div>
         </div>

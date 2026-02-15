@@ -519,7 +519,8 @@ body.mind-resizing * {
   background-color: #ff9800;
 }
 
-.session-delete-btn {
+.session-delete-btn,
+.session-duplicate-btn {
   border: 1px solid #444;
   background: #2f2f2f;
   color: #bdbdbd;
@@ -536,16 +537,30 @@ body.mind-resizing * {
   transition: all 0.2s;
 }
 
-.session-item:hover .session-delete-btn {
+.session-item:hover .session-delete-btn,
+.session-item:hover .session-duplicate-btn {
   opacity: 1;
 }
 
-.session-item .session-delete-btn {
+.session-item .session-delete-btn,
+.session-item .session-duplicate-btn {
   opacity: 0;
 }
 
-.session-card .session-delete-btn {
+.session-card .session-delete-btn,
+.session-card .session-duplicate-btn {
   opacity: 1;
+}
+
+.session-duplicate-btn:hover {
+  background-color: #4f6b8a;
+  color: white;
+  border-color: #4f6b8a;
+}
+
+.session-duplicate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .session-delete-btn:hover {
@@ -1598,16 +1613,58 @@ body.mind-resizing * {
   overflow: hidden;
 }
 
-.sessions-projects-panel {
-  padding-top: 12px;
-  padding-bottom: 8px;
-}
-
 .sessions-projects-row {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.sessions-add-project-block {
+  margin-bottom: 12px;
+}
+
+.sessions-add-project-divider {
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.sessions-add-project-line {
+  flex: 1;
+  height: 1px;
+  background: #474747;
+}
+
+.sessions-add-project-label {
+  color: #9a9a9a;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.sessions-add-project-divider:hover .sessions-add-project-label {
+  color: #c7c7c7;
+}
+
+.sessions-create-project-form {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sessions-project-folder-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .sessions-project-input {
@@ -1881,7 +1938,8 @@ body.mind-resizing * {
   cursor: help;
 }
 
-.session-card .session-delete-btn {
+.session-card .session-delete-btn,
+.session-card .session-duplicate-btn {
   min-height: 34px;
   padding: 0 12px;
   font-size: 13px;
@@ -4628,8 +4686,43 @@ input[type="checkbox"]:disabled {
   background: #2a2a2a;
 }
 
-.mind-session-dialog {
-  width: min(860px, 100%);
+.mind-session-panel {
+  position: sticky;
+  bottom: 12px;
+  z-index: 25;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #1f1f1f;
+  padding: 10px;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 42vh;
+  min-height: 0;
+}
+
+.mind-session-panel.with-inline-session {
+  min-height: 220px;
+}
+
+.mind-session-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mind-session-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #efefef;
+}
+
+.mind-session-inline-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .mind-session-target {
@@ -4649,7 +4742,7 @@ input[type="checkbox"]:disabled {
 
 .mind-session-textarea {
   width: 100%;
-  min-height: 180px;
+  min-height: 78px;
   resize: vertical;
   border: 1px solid #3f3f3f;
   border-radius: 8px;
@@ -4666,6 +4759,43 @@ input[type="checkbox"]:disabled {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.mind-session-context-toggle {
+  border: 1px solid #494949;
+  border-radius: 6px;
+  background: #242424;
+  color: #d8d8d8;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mind-session-context-toggle:hover {
+  border-color: #6d90ff;
+}
+
+.mind-session-context-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mind-session-inline-body {
+  border: 1px solid #353535;
+  border-radius: 8px;
+  background: #191919;
+  padding: 10px;
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.mind-session-inline-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  flex: 1;
 }
 
 /* Thinking */
@@ -4774,6 +4904,10 @@ input[type="checkbox"]:disabled {
 
   .mind-tree-resize-handle {
     display: none;
+  }
+
+  .mind-session-panel {
+    max-height: 52vh;
   }
 
   .thinking-source-toggle {

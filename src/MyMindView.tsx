@@ -3,9 +3,11 @@ import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent } f
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   browseMindDirectories,
+  cancelSessionRun,
   createProject,
   createSession,
   deleteMindFile,
+  getSession,
   getSettings,
   getMindConfig,
   getMindFile,
@@ -13,13 +15,19 @@ import {
   listProjects,
   listProviders,
   saveMindFile,
+  sendMessageStream,
+  type ChatStreamEvent,
   type LLMProviderType,
+  type Message,
   type MindTreeEntry,
   type ProviderConfig,
+  type Session,
   updateSettings,
   updateMindConfig,
   updateProject,
 } from './api';
+import ChatInput from './ChatInput';
+import MessageList from './MessageList';
 import {
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
   AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
@@ -35,6 +43,12 @@ const DEFAULT_TREE_PANEL_WIDTH = 360;
 const MIN_TREE_PANEL_WIDTH = 240;
 const MAX_TREE_PANEL_WIDTH = 720;
 const TREE_PANEL_WIDTH_STORAGE_KEY = 'a2gent.mind.tree.width';
+const SESSION_POLL_INTERVAL_MS = 4000;
+
+function isTerminalSessionStatus(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'completed' || normalized === 'failed';
+}
 
 function readStoredTreePanelWidth(): number {
   const rawWidth = localStorage.getItem(TREE_PANEL_WIDTH_STORAGE_KEY);
@@ -363,10 +377,15 @@ function MyMindView() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
 
-  const [isSessionDialogOpen, setIsSessionDialogOpen] = useState(false);
+  const [isSessionPanelOpen, setIsSessionPanelOpen] = useState(false);
+  const [sessionUserPrompt, setSessionUserPrompt] = useState('');
+  const [isSessionContextExpanded, setIsSessionContextExpanded] = useState(false);
   const [sessionContextMessage, setSessionContextMessage] = useState('');
   const [sessionTargetLabel, setSessionTargetLabel] = useState('');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [inlineSession, setInlineSession] = useState<Session | null>(null);
+  const [inlineMessages, setInlineMessages] = useState<Message[]>([]);
+  const [isInlineSessionLoading, setIsInlineSessionLoading] = useState(false);
   const [agentInstructionFilePaths, setAgentInstructionFilePaths] = useState<Set<string>>(new Set());
   const [isAddingAgentInstructionFile, setIsAddingAgentInstructionFile] = useState(false);
   const [isFileActionsMenuOpen, setIsFileActionsMenuOpen] = useState(false);
@@ -375,6 +394,7 @@ function MyMindView() {
   const treeResizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const fileActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const handledOpenFileQueryRef = useRef('');
+  const activeInlineStreamAbortRef = useRef<AbortController | null>(null);
 
   const loadTree = useCallback(async (path: string) => {
     setLoadingDirs((prev) => new Set(prev).add(path));
@@ -740,14 +760,24 @@ function MyMindView() {
 
     const fullPath = joinMindAbsolutePath(rootFolder, relativePath);
     setSessionTargetLabel(`${type === 'folder' ? 'Folder' : 'File'}: ${fullPath}`);
+    setSessionUserPrompt('');
+    setIsSessionContextExpanded(false);
     setSessionContextMessage(buildMindSessionContext(type, fullPath));
-    setIsSessionDialogOpen(true);
+    setInlineSession(null);
+    setInlineMessages([]);
+    setIsInlineSessionLoading(false);
+    setIsSessionPanelOpen(true);
   };
 
   const closeSessionDialog = () => {
-    setIsSessionDialogOpen(false);
+    setIsSessionPanelOpen(false);
+    setSessionUserPrompt('');
+    setIsSessionContextExpanded(false);
     setSessionTargetLabel('');
     setSessionContextMessage('');
+    setInlineSession(null);
+    setInlineMessages([]);
+    setIsInlineSessionLoading(false);
   };
 
   const ensureMyMindProject = useCallback(async (): Promise<string> => {
@@ -777,12 +807,114 @@ function MyMindView() {
     return created.id;
   }, [rootFolder]);
 
-  const handleCreateMindSession = async () => {
-    const message = sessionContextMessage.trim();
-    if (message === '') {
-      setError('Session context cannot be empty.');
+  const handleInlineStreamEvent = (event: ChatStreamEvent, targetSessionId: string) => {
+    if (event.type === 'assistant_delta') {
+      if (!event.delta) {
+        return;
+      }
+      setInlineMessages((prev) => {
+        const next = [...prev];
+        if (next.length === 0 || next[next.length - 1].role !== 'assistant') {
+          next.push({
+            role: 'assistant',
+            content: event.delta,
+            timestamp: new Date().toISOString(),
+          });
+          return next;
+        }
+        const last = next[next.length - 1];
+        next[next.length - 1] = { ...last, content: `${last.content}${event.delta}` };
+        return next;
+      });
       return;
     }
+
+    if (event.type === 'status') {
+      setInlineSession((prev) => {
+        if (!prev || prev.id !== targetSessionId) {
+          return prev;
+        }
+        return { ...prev, status: event.status || prev.status };
+      });
+      return;
+    }
+
+    if (event.type === 'done') {
+      setInlineMessages(event.messages || []);
+      setInlineSession((prev) => {
+        if (!prev || prev.id !== targetSessionId) {
+          return prev;
+        }
+        return { ...prev, status: event.status || prev.status };
+      });
+      setIsInlineSessionLoading(false);
+      void getSession(targetSessionId)
+        .then((fresh) => {
+          setInlineSession(fresh);
+          setInlineMessages(fresh.messages || event.messages || []);
+        })
+        .catch((refreshError) => {
+          console.error('Failed to refresh inline My Mind session:', refreshError);
+        });
+      return;
+    }
+
+    if (event.type === 'error') {
+      setError(event.error || 'Failed to send initial My Mind session context');
+      const nextStatus = typeof event.status === 'string' ? event.status.trim() : '';
+      if (nextStatus !== '') {
+        setInlineSession((prev) => (prev && prev.id === targetSessionId ? { ...prev, status: nextStatus } : prev));
+      }
+      setIsInlineSessionLoading(false);
+    }
+  };
+
+  const sendInlineMessageWithStreaming = async (targetSessionId: string, message: string) => {
+    const trimmedMessage = message.trim();
+    if (trimmedMessage === '') {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    setInlineMessages((prev) => [
+      ...prev,
+      { role: 'user', content: trimmedMessage, timestamp: now },
+      { role: 'assistant', content: '', timestamp: now },
+    ]);
+    setIsInlineSessionLoading(true);
+    setError(null);
+
+    const controller = new AbortController();
+    activeInlineStreamAbortRef.current = controller;
+
+    try {
+      for await (const event of sendMessageStream(targetSessionId, trimmedMessage, controller.signal)) {
+        handleInlineStreamEvent(event, targetSessionId);
+      }
+    } catch (streamError) {
+      const isAbort = streamError instanceof DOMException && streamError.name === 'AbortError';
+      if (!isAbort) {
+        console.error('Failed to send inline My Mind session message:', streamError);
+        setError(streamError instanceof Error ? streamError.message : 'Failed to send message');
+      }
+      setIsInlineSessionLoading(false);
+    } finally {
+      if (activeInlineStreamAbortRef.current === controller) {
+        activeInlineStreamAbortRef.current = null;
+      }
+    }
+  };
+
+  const handleCreateMindSession = async () => {
+    const userPrompt = sessionUserPrompt.trim();
+    if (userPrompt === '') {
+      setError('Describe what you want to do with this file/folder.');
+      return;
+    }
+    const context = sessionContextMessage.trim();
+    const message = context === ''
+      ? userPrompt
+      : `${userPrompt}\n\nContext:\n${context}`;
 
     setError(null);
     setSuccess(null);
@@ -795,17 +927,82 @@ function MyMindView() {
         provider: selectedProvider || undefined,
         project_id: projectId,
       });
-      closeSessionDialog();
-      navigate(`/chat/${created.id}`, {
-        state: { initialMessage: message },
+      const now = new Date().toISOString();
+      setInlineSession({
+        id: created.id,
+        agent_id: 'build',
+        provider: selectedProvider || undefined,
+        title: 'My Mind Session',
+        status: 'running',
+        created_at: now,
+        updated_at: now,
       });
+      setInlineMessages([]);
+      await sendInlineMessageWithStreaming(created.id, message);
     } catch (createError) {
       console.error('Failed to create session from My Mind:', createError);
       setError(createError instanceof Error ? createError.message : 'Failed to create session from My Mind');
+      setIsInlineSessionLoading(false);
     } finally {
       setIsCreatingSession(false);
     }
   };
+
+  const handleSendInlineMessage = async (message: string) => {
+    if (!inlineSession || isInlineSessionLoading) {
+      return;
+    }
+    await sendInlineMessageWithStreaming(inlineSession.id, message);
+  };
+
+  const handleCancelInlineSession = async () => {
+    if (!inlineSession) {
+      return;
+    }
+    activeInlineStreamAbortRef.current?.abort();
+    setIsInlineSessionLoading(false);
+
+    try {
+      await cancelSessionRun(inlineSession.id);
+      const fresh = await getSession(inlineSession.id);
+      setInlineSession(fresh);
+      setInlineMessages(fresh.messages || []);
+      setError('Request was canceled before completion.');
+    } catch (cancelError) {
+      console.error('Failed to cancel inline My Mind session run:', cancelError);
+      setError(cancelError instanceof Error ? cancelError.message : 'Failed to cancel session run');
+    }
+  };
+
+  useEffect(() => {
+    if (!inlineSession || isInlineSessionLoading) {
+      return;
+    }
+    if (isTerminalSessionStatus(inlineSession.status)) {
+      return;
+    }
+
+    const sessionId = inlineSession.id;
+    const interval = window.setInterval(() => {
+      void getSession(sessionId)
+        .then((fresh) => {
+          setInlineSession(fresh);
+          setInlineMessages((prev) => {
+            if ((fresh.messages || []).length === 0 && prev.length > 0) {
+              return prev;
+            }
+            return fresh.messages || [];
+          });
+        })
+        .catch((pollError) => {
+          console.error('Failed to poll inline My Mind session:', pollError);
+        });
+    }, SESSION_POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [inlineSession, isInlineSessionLoading]);
 
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
   const hasUnsavedChanges = selectedFilePath !== '' && selectedFileContent !== savedFileContent;
@@ -1250,45 +1447,119 @@ function MyMindView() {
           </div>
         ) : null}
 
-        {isSessionDialogOpen ? (
-          <div className="mind-picker-overlay" role="dialog" aria-modal="true" aria-label="Create My Mind session">
-            <div className="mind-picker-dialog mind-session-dialog">
-              <h2>Create session</h2>
-              <div className="mind-session-target">{sessionTargetLabel}</div>
-              <label className="mind-session-label" htmlFor="mind-session-context">Initial context</label>
-              <textarea
-                id="mind-session-context"
-                className="mind-session-textarea"
-                value={sessionContextMessage}
-                onChange={(event) => setSessionContextMessage(event.target.value)}
-                disabled={isCreatingSession}
-              />
-              <div className="mind-session-controls">
-                {providers.length > 0 ? (
-                  <label className="chat-provider-select">
-                    <select
-                      value={selectedProvider}
-                      onChange={(event) => setSelectedProvider(event.target.value as LLMProviderType)}
-                      title="Provider"
-                      aria-label="Provider"
-                      disabled={isCreatingSession}
-                    >
-                      {providers.map((provider) => (
-                        <option key={provider.type} value={provider.type}>
-                          {provider.display_name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                <button type="button" className="settings-save-btn" onClick={() => void handleCreateMindSession()} disabled={isCreatingSession}>
-                  {isCreatingSession ? 'Creating...' : 'Create session'}
-                </button>
-                <button type="button" className="settings-remove-btn" onClick={closeSessionDialog} disabled={isCreatingSession}>
-                  Cancel
-                </button>
+        {isSessionPanelOpen ? (
+          <div
+            className={`mind-session-panel ${inlineSession ? 'with-inline-session' : 'create-mode'}`}
+            role="region"
+            aria-label="Create My Mind session"
+          >
+            {inlineSession ? (
+              <div className="mind-session-panel-header">
+                <h2>Session</h2>
+                <div className="mind-session-inline-meta">
+                  <span className={`session-status status-${inlineSession.status}`}>
+                    {inlineSession.status}
+                  </span>
+                  <button
+                    type="button"
+                    className="settings-add-btn"
+                    onClick={() => navigate(`/chat/${inlineSession.id}`)}
+                  >
+                    Open full session
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-remove-btn"
+                    onClick={() => {
+                      setInlineSession(null);
+                      setInlineMessages([]);
+                      setIsInlineSessionLoading(false);
+                    }}
+                  >
+                    New session
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : null}
+            {inlineSession ? (
+              <div className="mind-session-inline-conversation">
+                <div className="mind-session-inline-body">
+                  <MessageList
+                    messages={inlineMessages}
+                    isLoading={isInlineSessionLoading}
+                    sessionId={inlineSession.id}
+                  />
+                </div>
+                <ChatInput
+                  onSend={(message) => void handleSendInlineMessage(message)}
+                  disabled={isInlineSessionLoading}
+                  onStop={() => void handleCancelInlineSession()}
+                  showStopButton={isInlineSessionLoading || inlineSession.status === 'running'}
+                  canStop={true}
+                />
+              </div>
+            ) : (
+              <>
+                <textarea
+                  id="mind-session-user-prompt"
+                  className="mind-session-textarea"
+                  value={sessionUserPrompt}
+                  onChange={(event) => setSessionUserPrompt(event.target.value)}
+                  disabled={isCreatingSession || isInlineSessionLoading}
+                  placeholder={sessionTargetLabel
+                    ? `Describe the task for ${sessionTargetLabel.toLowerCase()}...`
+                    : 'Describe the task...'}
+                />
+                {isSessionContextExpanded ? (
+                  <textarea
+                    id="mind-session-context"
+                    className="mind-session-textarea"
+                    value={sessionContextMessage}
+                    onChange={(event) => setSessionContextMessage(event.target.value)}
+                    disabled={isCreatingSession || isInlineSessionLoading}
+                    placeholder="Generated context"
+                  />
+                ) : null}
+                <div className="mind-session-controls">
+                  <button
+                    type="button"
+                    className="mind-session-context-toggle"
+                    onClick={() => setIsSessionContextExpanded((prev) => !prev)}
+                    disabled={isCreatingSession || isInlineSessionLoading}
+                  >
+                    {isSessionContextExpanded ? 'Hide generated context' : 'Show generated context'}
+                  </button>
+                  {providers.length > 0 ? (
+                    <label className="chat-provider-select">
+                      <select
+                        value={selectedProvider}
+                        onChange={(event) => setSelectedProvider(event.target.value as LLMProviderType)}
+                        title="Provider"
+                        aria-label="Provider"
+                        disabled={isCreatingSession || isInlineSessionLoading}
+                      >
+                        {providers.map((provider) => (
+                          <option key={provider.type} value={provider.type}>
+                            {provider.display_name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="settings-save-btn"
+                    onClick={() => void handleCreateMindSession()}
+                    disabled={isCreatingSession || isInlineSessionLoading}
+                  >
+                    {isCreatingSession || isInlineSessionLoading ? 'Creating...' : 'Create session'}
+                  </button>
+                  <button type="button" className="settings-remove-btn" onClick={closeSessionDialog} disabled={isCreatingSession}>
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ) : null}
       </div>
