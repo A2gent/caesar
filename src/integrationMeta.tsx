@@ -10,6 +10,7 @@ const INTEGRATION_PROVIDER_LABELS: Record<IntegrationProvider, string> = {
   elevenlabs: 'ElevenLabs',
   perplexity: 'Perplexity',
   brave_search: 'Brave Search',
+  exa: 'Exa',
 };
 
 const TOOL_PROVIDER_BY_NAME: Partial<Record<string, IntegrationProvider>> = {
@@ -17,6 +18,7 @@ const TOOL_PROVIDER_BY_NAME: Partial<Record<string, IntegrationProvider>> = {
   brave_search_query: 'brave_search',
   elevenlabs_tts: 'elevenlabs',
   telegram_send_message: 'telegram',
+  exa_search: 'exa',
 };
 
 function asIntegrationProvider(provider: string): IntegrationProvider | null {
@@ -133,6 +135,14 @@ export function IntegrationProviderIcon({ provider, label }: { provider: string;
         <span className="integration-provider-icon integration-provider-icon-brave-search" title={title}>
           <svg {...commonProps}>
             <path d="M12 3.3 8 4.6 5.5 8v4.6L8 19.4l4 1.3 4-1.3 2.5-6.8V8L16 4.6 12 3.3Zm-3.1 7.9c.5-.9 1.5-1.6 3.1-1.6s2.6.7 3.1 1.6c.4.8.3 1.8-.2 2.6-.6 1-1.6 1.5-2.9 1.5s-2.3-.5-2.9-1.5c-.5-.8-.6-1.8-.2-2.6Zm3.1.2c-.8 0-1.3.3-1.6.8-.2.3-.2.8.1 1.2.3.6.8.8 1.5.8s1.2-.2 1.5-.8c.3-.4.3-.9.1-1.2-.3-.5-.8-.8-1.6-.8Z" />
+          </svg>
+        </span>
+      );
+    case 'exa':
+      return (
+        <span className="integration-provider-icon integration-provider-icon-exa" title={title}>
+          <svg {...commonProps}>
+            <path d="M12 2L2 19.8h11.8l2.9-5.2 2.9 5.2H22L12 2zm0 4.4l7.1 12.4H4.9L12 6.4z" />
           </svg>
         </span>
       );

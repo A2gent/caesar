@@ -170,6 +170,16 @@ const PROVIDERS: ProviderSpec[] = [
       },
     ],
   },
+  {
+    provider: 'exa',
+    label: 'Exa',
+    description: 'Store Exa API key for AI-optimized web search.',
+    flow: 'input',
+    modes: ['notify_only'],
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: 'exa-...', secret: true },
+    ],
+  },
 ];
 
 function providerById(provider: IntegrationProvider): ProviderSpec {

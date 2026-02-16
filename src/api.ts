@@ -402,7 +402,8 @@ export type IntegrationProvider =
   | 'google_calendar'
   | 'elevenlabs'
   | 'perplexity'
-  | 'brave_search';
+  | 'brave_search'
+  | 'exa';
 export type IntegrationMode = 'notify_only' | 'duplex';
 
 export interface Integration {
