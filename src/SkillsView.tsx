@@ -186,6 +186,7 @@ function SkillsView() {
     }
 
     setInstallingSkills(prev => new Set(prev).add(skill.id));
+    setError(null); // Clear previous errors
 
     try {
       await installRegistrySkill(skill.id);
@@ -199,7 +200,21 @@ function SkillsView() {
         setDiscoveredSkills(refreshed.skills);
       }
     } catch (installError) {
-      setError(installError instanceof Error ? installError.message : 'Failed to install skill');
+      const errorMsg = installError instanceof Error ? installError.message : 'Failed to install skill';
+      
+      // Make rate limit errors more user-friendly
+      if (errorMsg.includes('rate limit') || errorMsg.includes('429')) {
+        setError(`⏱️ Rate limit reached for skill "${skill.name}". Please wait a minute and try again.`);
+      } else {
+        setError(`Failed to install "${skill.name}": ${errorMsg}`);
+      }
+      
+      // Don't mark as installed if there was an error
+      setInstalledSkills(prev => {
+        const next = new Set(prev);
+        next.delete(skill.id);
+        return next;
+      });
     } finally {
       setInstallingSkills(prev => {
         const next = new Set(prev);
