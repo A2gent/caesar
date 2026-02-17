@@ -35,6 +35,11 @@ function routedTargetLabel(session: Session | null): string {
   return model ? `${provider} / ${model}` : provider;
 }
 
+function isTerminalSessionStatus(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'completed' || normalized === 'failed';
+}
+
 function stripErrorPrefixes(raw: string): string {
   let next = raw.trim();
   const prefixes = [
@@ -139,6 +144,8 @@ function ChatView() {
   const queuedMessagesRef = useRef<string[]>([]);
   const activeStreamAbortRef = useRef<AbortController | null>(null);
 
+  const SESSION_POLL_INTERVAL_MS = 2000; // Poll every 2 seconds for active sessions
+  
   const activeSessionId = urlSessionId;
   const locationState = (location.state || {}) as ChatLocationState;
   const sessionFailureReason = useMemo(
@@ -190,6 +197,32 @@ function ChatView() {
     };
     loadProviders();
   }, []);
+
+  // Poll active sessions for real-time updates after streaming ends
+  useEffect(() => {
+    if (!session || isLoading) {
+      return;
+    }
+    if (isTerminalSessionStatus(session.status)) {
+      return;
+    }
+
+    const sessionId = session.id;
+    const interval = window.setInterval(() => {
+      void getSession(sessionId)
+        .then((fresh) => {
+          setSession(prev => (prev && prev.id === sessionId ? fresh : prev));
+          setMessages(fresh.messages || []);
+        })
+        .catch((pollError) => {
+          console.error('Failed to poll session:', pollError);
+        });
+    }, SESSION_POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [session, isLoading, SESSION_POLL_INTERVAL_MS]);
 
   const loadSession = async (id: string) => {
     try {
@@ -470,7 +503,7 @@ function ChatView() {
         onSend={handleSendMessage}
         disabled={inputDisabled}
         onStop={() => void handleCancelSession()}
-        showStopButton={Boolean(session && (isActiveRequest || session.status === 'running'))}
+        showStopButton={Boolean(session && isActiveRequest)}
         canStop={Boolean(session)}
         actionControls={!session && providers.length > 0 ? (
           <label className="chat-provider-select">
