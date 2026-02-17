@@ -1199,6 +1199,57 @@ export async function deleteProvider(providerType: LLMProviderType): Promise<voi
   }
 }
 
+// Anthropic OAuth
+export interface AnthropicOAuthStartResponse {
+  auth_url: string;
+  verifier: string;
+}
+
+export interface AnthropicOAuthStatusResponse {
+  enabled: boolean;
+  expires_at?: number;
+}
+
+export async function startAnthropicOAuth(): Promise<AnthropicOAuthStartResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/providers/anthropic/oauth/start`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to start OAuth');
+  }
+  return response.json();
+}
+
+export async function completeAnthropicOAuth(code: string, verifier: string): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/providers/anthropic/oauth/callback`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ code, verifier }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to complete OAuth');
+  }
+}
+
+export async function getAnthropicOAuthStatus(): Promise<AnthropicOAuthStatusResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/providers/anthropic/oauth/status`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to get OAuth status');
+  }
+  return response.json();
+}
+
+export async function disconnectAnthropicOAuth(): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/providers/anthropic/oauth`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to disconnect OAuth');
+  }
+}
+
 export async function setActiveProvider(providerType: LLMProviderType): Promise<ProviderConfig[]> {
   const response = await fetch(`${getApiBaseUrl()}/providers/active`, {
     method: 'PUT',
@@ -1287,18 +1338,27 @@ export async function listOpenAIModels(baseURL?: string): Promise<string[]> {
 }
 
 export async function listOpenRouterModels(baseURL?: string): Promise<string[]> {
-  const url = new URL(`${getApiBaseUrl()}/providers/openrouter/models`);
-  const normalizedBaseURL = normalizeLMStudioBaseUrl(baseURL);
-  if (normalizedBaseURL) {
-    url.searchParams.set('base_url', normalizedBaseURL);
+  const params = new URLSearchParams();
+  if (baseURL) {
+    params.set('base_url', baseURL);
   }
-
-  const response = await fetch(url.toString());
+  const queryString = params.toString();
+  const url = `${getApiBaseUrl()}/providers/openrouter/models${queryString ? `?${queryString}` : ''}`;
+  const response = await fetch(url);
   if (!response.ok) {
-    throw await buildApiError(response, 'Failed to load OpenRouter models');
+    throw new Error(`Failed to list OpenRouter models: ${response.statusText}`);
   }
   const data: ProviderModelsResponse = await response.json();
-  return data.models || [];
+  return data.models;
+}
+
+export async function listAnthropicModels(): Promise<string[]> {
+  const response = await fetch(`${getApiBaseUrl()}/providers/anthropic/models`);
+  if (!response.ok) {
+    throw new Error(`Failed to list Anthropic models: ${response.statusText}`);
+  }
+  const data: ProviderModelsResponse = await response.json();
+  return data.models;
 }
 
 // --- Integrations API ---

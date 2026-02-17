@@ -7,9 +7,14 @@ import {
   listLMStudioModels,
   listOpenAIModels,
   listOpenRouterModels,
+  listAnthropicModels,
   listProviders,
   setActiveProvider,
   updateProvider,
+  startAnthropicOAuth,
+  completeAnthropicOAuth,
+  getAnthropicOAuthStatus,
+  disconnectAnthropicOAuth,
   type FallbackChainNode,
   type LLMProviderType,
   type ProviderConfig,
@@ -24,7 +29,7 @@ function isFallbackProvider(type?: string): boolean {
 }
 
 function isModelQueryableProvider(type: LLMProviderType): boolean {
-  return type === 'lmstudio' || type === 'kimi' || type === 'google' || type === 'openai' || type === 'openrouter';
+  return type === 'lmstudio' || type === 'kimi' || type === 'google' || type === 'openai' || type === 'openrouter' || type === 'anthropic';
 }
 
 function ProviderEditView() {
@@ -61,6 +66,13 @@ function ProviderEditView() {
   const [routingTargetModels, setRoutingTargetModels] = useState<string[]>([]);
   const [isLoadingRoutingTargetModels, setIsLoadingRoutingTargetModels] = useState(false);
 
+  // Anthropic OAuth state
+  const [oauthEnabled, setOAuthEnabled] = useState(false);
+  const [oauthExpiresAt, setOAuthExpiresAt] = useState<number | null>(null);
+  const [oauthAuthCode, setOAuthAuthCode] = useState('');
+  const [oauthVerifier, setOAuthVerifier] = useState('');
+  const [isOAuthFlow, setIsOAuthFlow] = useState(false);
+
   const selected = useMemo(
     () => providers.find((provider) => provider.type === providerType),
     [providers, providerType],
@@ -72,6 +84,7 @@ function ProviderEditView() {
   const isGoogle = selected?.type === 'google';
   const isOpenAI = selected?.type === 'openai';
   const isOpenRouter = selected?.type === 'openrouter';
+  const isAnthropic = selected?.type === 'anthropic';
   const isFallback = isFallbackProvider(selected?.type);
   const isNamedFallbackAggregate = selected?.type ? selected.type.startsWith('fallback_chain:') : false;
 
@@ -106,6 +119,8 @@ function ProviderEditView() {
         (await listOpenAIModels(provider.base_url)).forEach((name) => options.add(name));
       } else if (provider.type === 'openrouter') {
         (await listOpenRouterModels(provider.base_url)).forEach((name) => options.add(name));
+      } else if (provider.type === 'anthropic') {
+        (await listAnthropicModels()).forEach((name) => options.add(name));
       }
     } catch {
       // Keep saved/default options when model querying fails.
@@ -131,6 +146,26 @@ function ProviderEditView() {
   useEffect(() => {
     void loadProviders();
   }, []);
+
+  // Load OAuth status for Anthropic
+  useEffect(() => {
+    if (selected?.type !== 'anthropic') return;
+    
+    let canceled = false;
+    void getAnthropicOAuthStatus()
+      .then((status) => {
+        if (canceled) return;
+        setOAuthEnabled(status.enabled);
+        setOAuthExpiresAt(status.expires_at || null);
+      })
+      .catch((err) => {
+        console.error('Failed to load OAuth status:', err);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [selected]);
 
   useEffect(() => {
     if (!selected) return;
@@ -416,6 +451,68 @@ function ProviderEditView() {
     }
   };
 
+  const handleStartOAuth = async () => {
+    try {
+      setIsSaving(true);
+      setError(null);
+      const result = await startAnthropicOAuth();
+      setOAuthVerifier(result.verifier);
+      setIsOAuthFlow(true);
+      // Open OAuth URL in new window
+      window.open(result.auth_url, '_blank');
+      setSuccess('Authorization page opened. After approving, paste the code below.');
+    } catch (err) {
+      console.error('Failed to start OAuth:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start OAuth');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCompleteOAuth = async () => {
+    if (!oauthAuthCode.trim() || !oauthVerifier) {
+      setError('Missing authorization code or verifier');
+      return;
+    }
+    try {
+      setIsSaving(true);
+      setError(null);
+      await completeAnthropicOAuth(oauthAuthCode.trim(), oauthVerifier);
+      setSuccess('OAuth connected successfully! Free API access enabled.');
+      setIsOAuthFlow(false);
+      setOAuthAuthCode('');
+      setOAuthVerifier('');
+      // Reload OAuth status
+      const status = await getAnthropicOAuthStatus();
+      setOAuthEnabled(status.enabled);
+      setOAuthExpiresAt(status.expires_at || null);
+    } catch (err) {
+      console.error('Failed to complete OAuth:', err);
+      setError(err instanceof Error ? err.message : 'Failed to complete OAuth');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDisconnectOAuth = async () => {
+    if (!confirm('Disconnect OAuth? You will need to use API key instead.')) {
+      return;
+    }
+    try {
+      setIsSaving(true);
+      setError(null);
+      await disconnectAnthropicOAuth();
+      setOAuthEnabled(false);
+      setOAuthExpiresAt(null);
+      setSuccess('OAuth disconnected. Use API key for authentication.');
+    } catch (err) {
+      console.error('Failed to disconnect OAuth:', err);
+      setError(err instanceof Error ? err.message : 'Failed to disconnect OAuth');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (isLoading) {
     return <div className="sessions-loading">Loading provider...</div>;
   }
@@ -460,7 +557,128 @@ function ProviderEditView() {
             </div>
           </div>
 
-          {!isLMStudio && !isFallback && !isAutomaticRouter ? (
+          {/* Anthropic: OAuth or API key */}
+          {isAnthropic && !isFallback && !isAutomaticRouter ? (
+            <div className="settings-field">
+              <span>Authentication method</span>
+              {oauthEnabled ? (
+                <div className="provider-oauth-status">
+                  <div className="provider-oauth-status-row">
+                    <span className="status-badge status-completed">✓ OAuth Connected (Free API)</span>
+                    <button
+                      type="button"
+                      className="settings-remove-btn"
+                      onClick={handleDisconnectOAuth}
+                      disabled={isSaving}
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                  {oauthExpiresAt ? (
+                    <span className="thinking-note" style={{ margin: 0 }}>
+                      Token expires: {new Date(oauthExpiresAt * 1000).toLocaleString()}
+                    </span>
+                  ) : null}
+                </div>
+              ) : isOAuthFlow ? (
+                <div className="provider-oauth-flow">
+                  <span className="thinking-note">
+                    After approving in the browser, paste the authorization code here:
+                  </span>
+                  <input
+                    type="text"
+                    value={oauthAuthCode}
+                    onChange={(e) => setOAuthAuthCode(e.target.value)}
+                    placeholder="Paste authorization code (e.g., abc123#state456)"
+                    autoComplete="off"
+                  />
+                  <div className="settings-actions">
+                    <button
+                      type="button"
+                      className="settings-save-btn"
+                      onClick={handleCompleteOAuth}
+                      disabled={isSaving || !oauthAuthCode.trim()}
+                    >
+                      {isSaving ? 'Connecting...' : 'Complete OAuth'}
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-add-btn"
+                      onClick={() => {
+                        setIsOAuthFlow(false);
+                        setOAuthAuthCode('');
+                      }}
+                      disabled={isSaving}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="provider-oauth-choice">
+                  {/* OAuth Section */}
+                  <div className="provider-oauth-section recommended">
+                    <div className="provider-oauth-section-header">
+                      <div className="provider-oauth-section-title">
+                        Claude Pro/Max Subscription
+                        <span className="provider-oauth-badge recommended">Recommended</span>
+                      </div>
+                      <span className="provider-oauth-badge free">Free API</span>
+                    </div>
+                    <div className="provider-oauth-section-description">
+                      Connect your Claude Pro or Max subscription to get free API access
+                    </div>
+                    <div className="provider-oauth-benefits">
+                      <div className="provider-oauth-benefit">Zero cost - covered by subscription</div>
+                      <div className="provider-oauth-benefit">Higher rate limits</div>
+                      <div className="provider-oauth-benefit">Auto-refresh tokens</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="settings-save-btn"
+                      onClick={handleStartOAuth}
+                      disabled={isSaving}
+                      style={{ width: '100%' }}
+                    >
+                      {isSaving ? 'Starting...' : 'Connect with OAuth'}
+                    </button>
+                  </div>
+
+                  <div className="provider-oauth-divider" />
+
+                  {/* API Key Section */}
+                  <div className="provider-oauth-section">
+                    <div className="provider-oauth-section-header">
+                      <div className="provider-oauth-section-title">
+                        API Key
+                      </div>
+                      <span className="provider-oauth-badge paid">Pay per use</span>
+                    </div>
+                    <div className="provider-oauth-section-description">
+                      Use an API key for pay-as-you-go access. Free tier available with rate limits.
+                    </div>
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder={selected.has_api_key ? 'Stored (enter to replace)' : 'Enter API key'}
+                      autoComplete="off"
+                      style={{ marginBottom: '8px' }}
+                    />
+                    <span className="thinking-note" style={{ margin: 0 }}>
+                      Get an API key from{' '}
+                      <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer noopener">
+                        console.anthropic.com/settings/keys
+                      </a>
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {/* Other providers: API key only */}
+          {!isLMStudio && !isFallback && !isAutomaticRouter && !isAnthropic ? (
             <label className="settings-field">
               <span>API key</span>
               <input
@@ -491,14 +709,14 @@ function ProviderEditView() {
             </label>
           ) : null}
 
-          {!isFallback && !isAutomaticRouter ? (
+          {!isFallback && !isAutomaticRouter && !isAnthropic ? (
             <label className="settings-field">
               <span>Base URL</span>
               <input type="text" value={baseURL} onChange={(e) => setBaseURL(e.target.value)} autoComplete="off" />
             </label>
           ) : null}
 
-          {(isLMStudio || isKimi || isGoogle || isOpenAI || isOpenRouter) && !isFallback && !isAutomaticRouter ? (
+          {(isLMStudio || isKimi || isGoogle || isOpenAI || isOpenRouter || isAnthropic) && !isFallback && !isAutomaticRouter ? (
             <div className="settings-field">
               <span>Default model</span>
               <div className="provider-model-query-row">
@@ -512,7 +730,9 @@ function ProviderEditView() {
                           ? 'Select an OpenAI model'
                           : isOpenRouter
                             ? 'Select an OpenRouter model'
-                            : 'Select a loaded Kimi model'}
+                            : isAnthropic
+                              ? 'Select a Claude model'
+                              : 'Select a loaded Kimi model'}
                   </option>
                   {model.trim() !== '' && !availableModels.includes(model) ? (
                     <option value={model}>{model}</option>
