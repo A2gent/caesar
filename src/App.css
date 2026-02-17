@@ -3279,6 +3279,7 @@ body.mind-resizing * {
 .settings-field input,
 .settings-custom-row input,
 .settings-field select,
+.settings-field-select,
 .settings-field textarea {
   border: 1px solid #444;
   background: #1f1f1f;
@@ -3306,6 +3307,7 @@ body.mind-resizing * {
 .settings-field input:focus,
 .settings-custom-row input:focus,
 .settings-field select:focus,
+.settings-field-select:focus,
 .settings-field textarea:focus {
   outline: none;
   border-color: #646cff;

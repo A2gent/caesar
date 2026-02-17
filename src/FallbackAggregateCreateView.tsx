@@ -6,6 +6,7 @@ import {
   listKimiModels,
   listLMStudioModels,
   listOpenAIModels,
+  listOpenRouterModels,
   listProviders,
   type FallbackChainNode,
   type LLMProviderType,
@@ -99,6 +100,8 @@ function FallbackAggregateCreateView() {
         (await listGoogleModels(provider.base_url)).forEach((modelName) => nextOptions.add(modelName));
       } else if (provider.type === 'openai') {
         (await listOpenAIModels(provider.base_url)).forEach((modelName) => nextOptions.add(modelName));
+      } else if (provider.type === 'openrouter') {
+        (await listOpenRouterModels(provider.base_url)).forEach((modelName) => nextOptions.add(modelName));
       }
     } catch {
       // Keep defaults when querying models fails.
@@ -106,7 +109,7 @@ function FallbackAggregateCreateView() {
       setIsLoadingCandidateModels(false);
     }
 
-    const options = Array.from(nextOptions);
+    const options = Array.from(nextOptions).sort((a, b) => a.localeCompare(b));
     setCandidateModels(options);
     setCandidateModel((current) => (current.trim() !== '' && nextOptions.has(current.trim()) ? current.trim() : (options[0] || '')));
   };
@@ -192,14 +195,14 @@ function FallbackAggregateCreateView() {
           </label>
 
           <div className="provider-fallback-compose-row">
-            <select value={candidateProvider} onChange={(event) => setCandidateProvider(event.target.value)}>
+            <select className="settings-field-select" value={candidateProvider} onChange={(event) => setCandidateProvider(event.target.value)}>
               {directProviders.map((provider) => (
                 <option key={provider.type} value={provider.type} disabled={!provider.configured}>
                   {provider.display_name} {provider.configured ? '' : '(not configured)'}
                 </option>
               ))}
             </select>
-            <select value={candidateModel} onChange={(event) => setCandidateModel(event.target.value)} disabled={isLoadingCandidateModels}>
+            <select className="settings-field-select" value={candidateModel} onChange={(event) => setCandidateModel(event.target.value)} disabled={isLoadingCandidateModels}>
               {candidateModels.map((modelName) => (
                 <option key={modelName} value={modelName}>{modelName}</option>
               ))}
