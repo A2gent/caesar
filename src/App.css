@@ -627,6 +627,7 @@ body.mind-resizing * {
   align-items: center;
   gap: 12px;
   min-width: 200px;
+  position: relative; /* Контейнер для абсолютного позиционирования */
 }
 
 .session-meta-stack {
@@ -634,6 +635,7 @@ body.mind-resizing * {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  margin-left: 26px; /* Отступ для кружка (16px + 10px отступ) */
 }
 
 .session-meta-row {
@@ -1972,9 +1974,11 @@ body.mind-resizing * {
   border-radius: 50%;
   background-color: #777;
   box-sizing: border-box;
-  display: inline-block;
-  flex-shrink: 0;
-  margin-right: 10px;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%); /* Центрируем вертикально */
+  z-index: 1; /* Над остальным контентом */
 }
 
 .session-status-dot-large.status-running {

@@ -415,14 +415,15 @@ function ChatView() {
       <div className="top-bar">
         <div className="session-info">
           {session ? (
-            <div className="session-meta-stack">
-              <div className="session-meta-row">
-                <span
-                  className={`session-status-dot-large status-${session.status}`}
-                  title={`Status: ${session.status}`}
-                  aria-label={`Status: ${session.status}`}
-                />
-                <span className="session-title">{session.title || 'Untitled Session'}</span>
+            <>
+              <span
+                className={`session-status-dot-large status-${session.status}`}
+                title={`Status: ${session.status}`}
+                aria-label={`Status: ${session.status}`}
+              />
+              <div className="session-meta-stack">
+                <div className="session-meta-row">
+                  <span className="session-title">{session.title || 'Untitled Session'}</span>
                 {session.provider ? <span className="session-provider-chip">{session.provider}</span> : null}
                 {session.model ? <span className="session-provider-chip">{session.model}</span> : null}
                 {session.provider === 'automatic_router' && routedTarget ? (
@@ -476,7 +477,8 @@ function ChatView() {
                   ) : null}
                 </div>
               ) : null}
-            </div>
+              </div>
+            </>
           ) : (
             <span className="session-title">New Session</span>
           )}
