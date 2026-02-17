@@ -16,10 +16,14 @@ import {
   type MindTreeEntry,
   type PiperVoiceOption,
   updateSettings,
+  getBrowserChromeProfileStatus,
+  launchBrowserChrome,
+  type BrowserChromeProfileStatus,
 } from './api';
 import {
   CAMERA_INDEX,
   CAMERA_OUTPUT_DIR,
+  CHROME_HEADLESS,
   ELEVENLABS_SPEED,
   ELEVENLABS_SPEED_OPTIONS,
   ELEVENLABS_VOICE_ID,
@@ -150,6 +154,14 @@ function ToolsView() {
 
   const [builtInSkills, setBuiltInSkills] = useState<BuiltInSkill[]>([]);
   const [integrationSkills, setIntegrationSkills] = useState<IntegrationBackedSkill[]>([]);
+
+  // Browser Chrome state
+  const [chromeHeadless, setChromeHeadless] = useState(false);
+  const [browserChromeProfile, setBrowserChromeProfile] = useState<BrowserChromeProfileStatus | null>(null);
+  const [isLoadingBrowserChromeProfile, setIsLoadingBrowserChromeProfile] = useState(false);
+  const [isLaunchingBrowserChrome, setIsLaunchingBrowserChrome] = useState(false);
+  const hasBrowserChromeTool = builtInSkills.some((skill) => skill.name === 'browser_chrome');
+
   const hasElevenLabsSkill = integrationSkills.some((integration) => integration.provider === 'elevenlabs');
   const hasPiperTool = builtInSkills.some((skill) => skill.name === 'piper_tts');
   const hasCameraTool = builtInSkills.some((skill) => skill.name === 'take_camera_photo_tool');
@@ -205,6 +217,7 @@ function ToolsView() {
       setScreenshotDisplayIndex(loaded[SCREENSHOT_DISPLAY_INDEX] || '');
       setCameraOutputDir(loaded[CAMERA_OUTPUT_DIR] || '/tmp');
       setCameraIndex(loaded[CAMERA_INDEX] || '');
+      setChromeHeadless((loaded[CHROME_HEADLESS] || '').trim().toLowerCase() === 'true');
     } catch (loadError) {
       console.error('Failed to load tools settings:', loadError);
       setError(loadError instanceof Error ? loadError.message : 'Failed to load tools settings');
@@ -383,6 +396,41 @@ function ToolsView() {
     void loadBackendCameras();
   }, [hasCameraTool, isLoadingBackendCameras, backendCameras.length]);
 
+  // Load Browser Chrome profile status
+  const loadBrowserChromeProfile = async () => {
+    if (!hasBrowserChromeTool) return;
+    setIsLoadingBrowserChromeProfile(true);
+    try {
+      const status = await getBrowserChromeProfileStatus();
+      setBrowserChromeProfile(status);
+    } catch (err) {
+      console.error('Failed to load browser chrome profile:', err);
+    } finally {
+      setIsLoadingBrowserChromeProfile(false);
+    }
+  };
+
+  const handleLaunchBrowserChrome = async () => {
+    setIsLaunchingBrowserChrome(true);
+    try {
+      const result = await launchBrowserChrome();
+      setSuccess(`Chrome launched with agent profile (PID: ${result.pid})`);
+      // Refresh profile status after launch
+      await loadBrowserChromeProfile();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to launch Chrome');
+    } finally {
+      setIsLaunchingBrowserChrome(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!hasBrowserChromeTool || isLoadingBrowserChromeProfile || browserChromeProfile !== null) {
+      return;
+    }
+    void loadBrowserChromeProfile();
+  }, [hasBrowserChromeTool, isLoadingBrowserChromeProfile, browserChromeProfile]);
+
   useEffect(() => {
     return () => {
       stopCameraPreview();
@@ -499,6 +547,7 @@ function ToolsView() {
     } else {
       payload[CAMERA_INDEX] = camIndex;
     }
+    payload[CHROME_HEADLESS] = chromeHeadless ? 'true' : 'false';
 
     try {
       const saved = await updateSettings(payload);
@@ -787,6 +836,55 @@ function ToolsView() {
                               Saved as <code>AAGENT_WHISPER_TRANSLATE</code>. Turn this off to keep original language output.
                             </div>
                           </label>
+                        </div>
+                      </details>
+                    ) : null}
+                    {skill.name === 'browser_chrome' ? (
+                      <details className="skill-tool-details">
+                        <summary>Configure browser</summary>
+                        <p>Settings for Chrome browser automation.</p>
+                        <div className="settings-group">
+                          <label className="settings-field settings-checkbox">
+                            <span>Headless mode (no GUI)</span>
+                            <input
+                              type="checkbox"
+                              checked={chromeHeadless}
+                              onChange={(event) => setChromeHeadless(event.target.checked)}
+                            />
+                            <div className="settings-help">
+                              Run Chrome without visible window. Faster but cannot see or interact with the browser manually.
+                            </div>
+                          </label>
+                          <div className="settings-field">
+                            <span>Agent Profile</span>
+                            <div className="tool-folder-picker-row">
+                              {isLoadingBrowserChromeProfile ? (
+                                <span>Loading...</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="settings-add-btn"
+                                  onClick={() => void handleLaunchBrowserChrome()}
+                                  disabled={isLaunchingBrowserChrome}
+                                >
+                                  {isLaunchingBrowserChrome ? 'Opening...' : (browserChromeProfile?.exists ? 'Open Agent Profile' : 'Create & Open Agent Profile')}
+                                </button>
+                              )}
+                            </div>
+                            <div className="settings-help" style={{ marginTop: '8px' }}>
+                              Opens a new Chrome window with the agent profile as a separate "person".
+                              You can have both your main profile and agent profile open at the same time.
+                              Log in to websites in the agent window - the agent will use these sessions.
+                            </div>
+                            {browserChromeProfile?.exists ? (
+                              <div className="settings-help" style={{ marginTop: '8px' }}>
+                                <div>Profile exists at: <code>~/Library/Application Support/Google/Chrome/AgentProfile</code></div>
+                                {browserChromeProfile.lastUsed && (
+                                  <div>Last modified: {new Date(browserChromeProfile.lastUsed).toLocaleString()}</div>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       </details>
                     ) : null}

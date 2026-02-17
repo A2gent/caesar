@@ -884,6 +884,57 @@ export async function estimateInstructionPrompt(settings: Record<string, string>
   return response.json();
 }
 
+// --- Browser Chrome API ---
+
+export interface BrowserChromeProfileStatus {
+  exists: boolean;
+  path: string;
+  lastUsed?: string;
+}
+
+export async function getBrowserChromeProfileStatus(): Promise<BrowserChromeProfileStatus> {
+  const response = await fetch(`${getApiBaseUrl()}/browser-chrome/profile-status`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to get browser chrome profile status');
+  }
+  return response.json();
+}
+
+export interface BrowserChromeCreateProfileResponse {
+  success: boolean;
+  message: string;
+  path: string;
+  filesCopied: number;
+  failedFiles: string[];
+}
+
+export async function createBrowserChromeProfile(): Promise<BrowserChromeCreateProfileResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/browser-chrome/create-profile`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to create browser chrome profile');
+  }
+  return response.json();
+}
+
+export interface BrowserChromeLaunchResponse {
+  success: boolean;
+  message: string;
+  pid: number;
+  profile: string;
+}
+
+export async function launchBrowserChrome(): Promise<BrowserChromeLaunchResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/browser-chrome/launch`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to launch browser chrome');
+  }
+  return response.json();
+}
+
 // --- My Mind API ---
 
 export async function getMindConfig(): Promise<MindConfigResponse> {
