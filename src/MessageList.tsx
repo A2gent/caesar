@@ -287,6 +287,59 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     return <div className="message-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
   };
 
+  const extractToolDetails = (toolName: string, input: Record<string, unknown>): string | null => {
+    // Extract key details based on tool name
+    switch (toolName) {
+      case 'glob':
+      case 'mcp_glob':
+        return input.pattern ? `pattern: ${input.pattern}` : null;
+      
+      case 'grep':
+      case 'mcp_grep':
+        if (input.pattern && input.path) {
+          return `"${input.pattern}" in ${input.path}`;
+        }
+        return input.pattern ? `pattern: ${input.pattern}` : null;
+      
+      case 'read':
+      case 'mcp_read':
+        if (input.filePath) {
+          const offset = input.offset ? ` (offset: ${input.offset})` : '';
+          return `${input.filePath}${offset}`;
+        }
+        return null;
+      
+      case 'edit':
+      case 'mcp_edit':
+        return input.filePath ? `${input.filePath}` : null;
+      
+      case 'write':
+      case 'mcp_write':
+        return input.filePath ? `${input.filePath}` : null;
+      
+      case 'bash':
+      case 'mcp_bash':
+        if (input.command && typeof input.command === 'string') {
+          const cmd = input.command.trim();
+          return cmd.length > 60 ? `${cmd.substring(0, 60)}...` : cmd;
+        }
+        return null;
+      
+      case 'task':
+      case 'mcp_task':
+        return input.description ? `${input.description}` : null;
+      
+      default:
+        // For unknown tools, try to extract path/filePath/pattern/query
+        if (input.path) return `path: ${input.path}`;
+        if (input.filePath) return `file: ${input.filePath}`;
+        if (input.pattern) return `pattern: ${input.pattern}`;
+        if (input.query) return `query: ${input.query}`;
+        if (input.url) return `${input.url}`;
+        return null;
+    }
+  };
+
   const renderToolExecutionCard = (toolCall: ToolCall, result: ToolResult | undefined, timestamp: string, key: string) => {
     const provider = integrationProviderForToolName(toolCall.name);
     const filePath = isSupportedFileTool(toolCall.name) ? extractToolFilePath(toolCall.input) : null;
@@ -294,11 +347,11 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const imageUrl = resolveImageUrl(result);
     const keepPreviewVisible = imageUrl !== '' && isPinnedImageToolResult(result, toolCall.name);
     const toolIcon = toolIconForName(toolCall.name);
+    const toolDetails = !filePath ? extractToolDetails(toolCall.name, toolCall.input) : null;
     return (
       <div key={key} className="tool-execution-stack">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result?.is_error ? ' tool-execution-card-error' : ''}`}>
           <summary className="tool-card-summary">
-            <span className="message-role">Tool</span>
             <span className="tool-summary-name">
               {provider ? (
                 <span className="tool-provider-chip">
@@ -331,9 +384,14 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                     {filePath}
                   </Link>
                 </>
+              ) : toolDetails ? (
+                <>
+                  <span className="tool-inline-separator">·</span>
+                  <span className="tool-details">{toolDetails}</span>
+                </>
               ) : null}
             </span>
-            <span className="message-time">{new Date(timestamp).toLocaleTimeString()}</span>
+            <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
           </summary>
           <div className="tool-card-body">
             <div className="tool-execution-block">
@@ -373,11 +431,10 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       <div key={key} className="tool-execution-stack">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result.is_error ? ' tool-execution-card-error' : ''}`}>
           <summary className="tool-card-summary">
-            <span className="message-role">Tool</span>
             <span className="tool-summary-name">
               <span className="tool-name">Tool result</span>
             </span>
-            <span className="message-time">{new Date(timestamp).toLocaleTimeString()}</span>
+            <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
           </summary>
           <div className="tool-card-body">
             <div className="tool-execution-block">
@@ -440,8 +497,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
               className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}`}
             >
               <div className="message-header">
-                <span className="message-role">Tool</span>
-                <span className="message-time">{new Date(message.timestamp).toLocaleTimeString()}</span>
+                <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
               <div className="message-content">{renderMessageContent(message)}</div>
             </div>,
@@ -466,17 +522,11 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
           className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}`}
         >
           <div className="message-header">
-            <span className="message-role">
-              {isCompactionMessage(message)
-                ? 'Compaction'
-                : message.role === 'user'
-                  ? 'You'
-                  : message.role === 'assistant'
-                    ? 'Agent'
-                    : 'System'}
-            </span>
-            <span className="message-time">
-              {new Date(message.timestamp).toLocaleTimeString()}
+            <span 
+              className="message-time" 
+              title={new Date(message.timestamp).toLocaleString()}
+            >
+              🕐
             </span>
           </div>
 
