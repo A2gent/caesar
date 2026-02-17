@@ -329,7 +329,18 @@ function ChatView() {
 
     if (event.type === 'done') {
       setMessages(event.messages);
-      setSession(prev => (prev && prev.id === targetSessionId ? { ...prev, status: event.status } : prev));
+      setSession(prev => {
+        if (!prev || prev.id !== targetSessionId) {
+          return prev;
+        }
+        const updated = { ...prev, status: event.status };
+        if (event.usage) {
+          updated.input_tokens = (prev.input_tokens ?? 0) + event.usage.input_tokens;
+          updated.output_tokens = (prev.output_tokens ?? 0) + event.usage.output_tokens;
+          updated.total_tokens = updated.input_tokens + updated.output_tokens;
+        }
+        return updated;
+      });
       void getSession(targetSessionId)
         .then((fresh) => {
           setSession(prev => (prev && prev.id === targetSessionId ? { ...prev, ...fresh, messages: prev.messages } : prev));
@@ -436,16 +447,26 @@ function ChatView() {
                   </span>
                 ) : null}
                 {(session.input_tokens ?? 0) > 0 || (session.output_tokens ?? 0) > 0 ? (
-                  <span 
-                    className="session-token-stats-chip" 
-                    title={`Input: ${formatTokenCount(session.input_tokens)} tokens, Output: ${formatTokenCount(session.output_tokens)} tokens, Total: ${formatTokenCount(session.total_tokens)} tokens`}
-                  >
-                    <span className="token-stat">↑{formatTokenCount(session.input_tokens)}</span>
-                    <span className="token-stat-separator">|</span>
-                    <span className="token-stat">↓{formatTokenCount(session.output_tokens)}</span>
-                    <span className="token-stat-separator">|</span>
-                    <span className="token-stat token-stat-total">Σ{formatTokenCount(session.total_tokens)}</span>
-                  </span>
+                  <>
+                    <span 
+                      className="session-token-stats-chip" 
+                      title={`Input: ${formatTokenCount(session.input_tokens)} tokens, Output: ${formatTokenCount(session.output_tokens)} tokens, Total: ${formatTokenCount(session.total_tokens)} tokens`}
+                    >
+                      <span className="token-stat">↑{formatTokenCount(session.input_tokens)}</span>
+                      <span className="token-stat-separator">|</span>
+                      <span className="token-stat">↓{formatTokenCount(session.output_tokens)}</span>
+                      <span className="token-stat-separator">|</span>
+                      <span className="token-stat token-stat-total">Σ{formatTokenCount(session.total_tokens)}</span>
+                    </span>
+                    {session.model_context_window && session.model_context_window > 0 && session.current_context_tokens !== undefined ? (
+                      <span 
+                        className="session-context-usage-chip"
+                        title={`Context usage: ${formatTokenCount(session.current_context_tokens)} / ${formatTokenCount(session.model_context_window)} tokens`}
+                      >
+                        {Math.round((session.current_context_tokens / session.model_context_window) * 100)}% context
+                      </span>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
               {session.status === 'failed' && sessionFailureReason ? (

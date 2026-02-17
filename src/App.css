@@ -729,6 +729,18 @@ body.mind-resizing * {
   font-weight: 500;
 }
 
+.session-context-usage-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(103, 58, 183, 0.15);
+  color: #b39ddb;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+  font-weight: 500;
+}
+
 .session-status {
   font-size: 12px;
   padding: 2px 8px;
@@ -1038,14 +1050,34 @@ body.mind-resizing * {
   font-size: 12px;
 }
 
+.message-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
 .message-role {
   font-weight: 600;
   color: #e0e0e0;
 }
 
+.message-tokens {
+  color: #888;
+  font-size: 11px;
+  opacity: 0.6;
+  cursor: help;
+  transition: opacity 0.2s;
+}
+
+.message-tokens:hover {
+  opacity: 1;
+}
+
 .message-time {
   color: #888;
-  margin-left: auto;
   flex-shrink: 0;
   font-size: 14px;
   cursor: help;
@@ -1055,6 +1087,14 @@ body.mind-resizing * {
 
 .message-time:hover {
   opacity: 1;
+}
+
+.message-meta-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .message-content {
@@ -3635,6 +3675,18 @@ body.mind-resizing * {
   border-color: #4b8561;
   color: #b9f0c8;
   background: rgba(62, 128, 85, 0.2);
+}
+
+.skill-card-description {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a8b4c8;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
 }
 
 .ios-switch {

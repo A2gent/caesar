@@ -121,6 +121,8 @@ export interface Session {
   total_tokens?: number;
   input_tokens?: number;
   output_tokens?: number;
+  current_context_tokens?: number;
+  model_context_window?: number;
   run_duration_seconds?: number;
   created_at: string;
   updated_at: string;
@@ -157,12 +159,16 @@ export interface Message {
   tool_results?: ToolResult[];
   metadata?: Record<string, unknown>;
   timestamp: string;
+  input_tokens?: number;
+  output_tokens?: number;
 }
 
 export interface ToolCall {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  input_tokens?: number;
+  output_tokens?: number;
 }
 
 export interface ToolResult {
@@ -261,6 +267,7 @@ export interface SkillBrowseResponse {
 
 export interface SkillFile {
   name: string;
+  description?: string;
   path: string;
   relative_path: string;
 }

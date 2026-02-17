@@ -348,6 +348,8 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const keepPreviewVisible = imageUrl !== '' && isPinnedImageToolResult(result, toolCall.name);
     const toolIcon = toolIconForName(toolCall.name);
     const toolDetails = !filePath ? extractToolDetails(toolCall.name, toolCall.input) : null;
+    const hasTokens = (toolCall.input_tokens ?? 0) > 0 || (toolCall.output_tokens ?? 0) > 0;
+    const totalTokens = (toolCall.input_tokens ?? 0) + (toolCall.output_tokens ?? 0);
     return (
       <div key={key} className="tool-execution-stack">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result?.is_error ? ' tool-execution-card-error' : ''}`}>
@@ -391,7 +393,14 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 </>
               ) : null}
             </span>
-            <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
+            <span className="message-meta-right">
+              {hasTokens ? (
+                <span className="message-tokens" title={`Input: ${toolCall.input_tokens ?? 0} tokens, Output: ${toolCall.output_tokens ?? 0} tokens`}>
+                  {totalTokens} tok
+                </span>
+              ) : null}
+              <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
+            </span>
           </summary>
           <div className="tool-card-body">
             <div className="tool-execution-block">
@@ -491,15 +500,22 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
             nodes.push(renderStandaloneToolResultCard(result, message.timestamp, `tool-result-${index}-${result.tool_call_id}`));
           }
         } else if (message.content.trim() !== '') {
+          const hasTokens = (message.input_tokens ?? 0) > 0 || (message.output_tokens ?? 0) > 0;
+          const totalTokens = (message.input_tokens ?? 0) + (message.output_tokens ?? 0);
           nodes.push(
             <div
               key={index}
               className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}`}
             >
-              <div className="message-header">
+              <div className="message-content">{renderMessageContent(message)}</div>
+              <div className="message-footer">
+                {hasTokens ? (
+                  <span className="message-tokens" title={`Input: ${message.input_tokens ?? 0} tokens, Output: ${message.output_tokens ?? 0} tokens`}>
+                    {totalTokens} tok
+                  </span>
+                ) : null}
                 <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
-              <div className="message-content">{renderMessageContent(message)}</div>
             </div>,
           );
         }
@@ -516,12 +532,26 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         continue;
       }
 
+      const hasTokens = (message.input_tokens ?? 0) > 0 || (message.output_tokens ?? 0) > 0;
+      const totalTokens = (message.input_tokens ?? 0) + (message.output_tokens ?? 0);
+
       nodes.push(
         <div
           key={index}
           className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}`}
         >
-          <div className="message-header">
+          {message.content && (
+            <div className="message-content">
+              {renderMessageContent(message)}
+            </div>
+          )}
+
+          <div className="message-footer">
+            {hasTokens ? (
+              <span className="message-tokens" title={`Input: ${message.input_tokens ?? 0} tokens, Output: ${message.output_tokens ?? 0} tokens`}>
+                {totalTokens} tok
+              </span>
+            ) : null}
             <span 
               className="message-time" 
               title={new Date(message.timestamp).toLocaleString()}
@@ -529,12 +559,6 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
               🕐
             </span>
           </div>
-
-          {message.content && (
-            <div className="message-content">
-              {renderMessageContent(message)}
-            </div>
-          )}
         </div>,
       );
     }
