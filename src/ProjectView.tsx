@@ -1438,18 +1438,20 @@ function ProjectView() {
     <div className="page-shell project-view-shell">
       <div className="page-header project-view-header">
         <div className="project-header-left">
-          <h1>{project.name}</h1>
-          {rootFolder ? (
-            <div className="project-folder-info">
-              <span className="project-folder-path">Folder: {rootFolder}</span>
-              <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
-                Change folder
-              </button>
-            </div>
-          ) : null}
+          <h1>
+            {project.name}
+            {rootFolder ? (
+              <span className="project-folder-path">{rootFolder}</span>
+            ) : null}
+          </h1>
         </div>
-        {!project.is_system && (
-          <div className="project-header-actions">
+        <div className="project-header-actions">
+          {rootFolder ? (
+            <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+              Change folder
+            </button>
+          ) : null}
+          {!project.is_system && (
             <button
               type="button"
               className="project-delete-btn"
@@ -1460,8 +1462,8 @@ function ProjectView() {
             >
               {isDeletingProject ? 'Deleting...' : 'Delete Project'}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {error ? (

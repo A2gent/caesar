@@ -5352,14 +5352,20 @@ input[type="checkbox"]:disabled {
 }
 
 .project-header-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-header-left h1 {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .project-header-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -5391,15 +5397,14 @@ input[type="checkbox"]:disabled {
   cursor: not-allowed;
 }
 
-.project-folder-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .project-folder-path {
-  color: #9a9a9a;
-  font-size: 13px;
+  color: #888;
+  font-size: 14px;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
 }
 
 .project-view-content {
@@ -5474,12 +5479,18 @@ input[type="checkbox"]:disabled {
 }
 
 .project-sessions-composer {
-  padding-top: 8px;
-  border-top: 1px solid #2a2a2a;
+  margin-top: 8px;
 }
 
 .project-sessions-composer .chat-input-container {
   max-width: none;
+  padding: 0;
+  border-top: none;
+  background: transparent;
+}
+
+.project-sessions-composer .chat-input-actions {
+  margin-top: 6px;
 }
 
 /* Files Section */
@@ -5690,11 +5701,19 @@ input[type="checkbox"]:disabled {
     flex-direction: column;
     align-items: flex-start;
   }
-  
-  .project-folder-info {
-    width: 100%;
+
+  .project-header-left h1 {
     flex-direction: column;
     align-items: flex-start;
+    gap: 4px;
+  }
+
+  .project-folder-path {
+    max-width: 100%;
+  }
+
+  .project-header-actions {
+    width: 100%;
   }
   
   .project-sessions-body {
