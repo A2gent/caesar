@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   browseSkillDirectories,
+  deleteSkill,
   discoverSkills,
   getSettings,
   installRegistrySkill,
@@ -52,6 +53,7 @@ function SkillsView() {
 
   const [discoveredSkills, setDiscoveredSkills] = useState<SkillFile[]>([]);
   const [isDiscoveringSkills, setIsDiscoveringSkills] = useState(false);
+  const [deletingSkills, setDeletingSkills] = useState<Set<string>>(new Set());
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<RegistrySkill[]>([]);
@@ -224,6 +226,33 @@ function SkillsView() {
     }
   };
 
+  const handleDelete = async (skill: SkillFile) => {
+    if (!confirm(`Are you sure you want to delete "${skill.name}"?`)) {
+      return;
+    }
+
+    setDeletingSkills(prev => new Set(prev).add(skill.path));
+    setError(null);
+
+    try {
+      await deleteSkill(skill.path);
+      
+      // Refresh discovered skills after deletion
+      if (connectedFolder) {
+        const refreshed = await discoverSkills(connectedFolder);
+        setDiscoveredSkills(refreshed.skills);
+      }
+    } catch (deleteError) {
+      setError(`Failed to delete "${skill.name}": ${deleteError instanceof Error ? deleteError.message : 'Unknown error'}`);
+    } finally {
+      setDeletingSkills(prev => {
+        const next = new Set(prev);
+        next.delete(skill.path);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="page-shell">
       <div className="page-header">
@@ -308,6 +337,14 @@ function SkillsView() {
                             {skill.relative_path}
                           </Link>
                         </div>
+                        <button
+                          type="button"
+                          className="skill-delete-btn"
+                          onClick={() => void handleDelete(skill)}
+                          disabled={deletingSkills.has(skill.path)}
+                        >
+                          {deletingSkills.has(skill.path) ? '🗑️ Deleting...' : '🗑️ Delete'}
+                        </button>
                       </div>
                     ))}
                   </div>

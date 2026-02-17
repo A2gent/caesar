@@ -3869,6 +3869,30 @@ body.mind-resizing * {
   color: #a8f0bb;
 }
 
+.skill-delete-btn {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #9c4b4b;
+  border-radius: 6px;
+  background: rgba(128, 62, 62, 0.15);
+  color: #f0b9b9;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 8px;
+}
+
+.skill-delete-btn:hover:not(:disabled) {
+  background: rgba(128, 62, 62, 0.25);
+  border-color: #b15a5a;
+}
+
+.skill-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .ios-switch {
   width: 50px;
   height: 30px;

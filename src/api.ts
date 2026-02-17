@@ -1055,6 +1055,20 @@ export async function searchRegistrySkills(
   return response.json();
 }
 
+export async function deleteSkill(skillPath: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${getApiBaseUrl()}/skills/delete`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ skill_path: skillPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to delete skill');
+  }
+  return response.json();
+}
+
 export async function installRegistrySkill(skillId: string): Promise<SkillInstallResponse> {
   const response = await fetch(`${getApiBaseUrl()}/skills/registry/install`, {
     method: 'POST',
