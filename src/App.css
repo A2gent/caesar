@@ -3689,6 +3689,146 @@ body.mind-resizing * {
   text-overflow: ellipsis;
 }
 
+/* Clawhub.ai Registry Styles */
+.skills-registry-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #2f3846;
+}
+
+.skills-search-box {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.skills-search-input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #2f3846;
+  border-radius: 6px;
+  background: #151922;
+  color: #d8deea;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.skills-search-input:focus {
+  outline: none;
+  border-color: #506eb0;
+}
+
+.skills-search-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.skills-search-btn {
+  padding: 10px 20px;
+  border: 1px solid #4b608f;
+  border-radius: 6px;
+  background: rgba(80, 110, 176, 0.15);
+  color: #b6c8ff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.skills-search-btn:hover:not(:disabled) {
+  background: rgba(80, 110, 176, 0.25);
+  border-color: #5c74a8;
+}
+
+.skills-search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.skills-registry-results {
+  margin-top: 16px;
+}
+
+.skills-registry-results h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #9ba9c1;
+  font-weight: 500;
+}
+
+.skills-registry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.skill-card-registry {
+  border-color: #4a5d8a;
+  background: rgba(60, 85, 140, 0.05);
+}
+
+.skill-badge-registry {
+  border-color: #4a5d8a;
+  color: #a8c0ff;
+  background: rgba(74, 93, 138, 0.25);
+}
+
+.skill-card-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 0;
+  font-size: 12px;
+  color: #9ba9c1;
+}
+
+.skill-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.skill-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(80, 110, 176, 0.15);
+  color: #8fa4d8;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.skill-install-btn {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #4b8561;
+  border-radius: 6px;
+  background: rgba(62, 128, 85, 0.15);
+  color: #b9f0c8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.skill-install-btn:hover:not(:disabled) {
+  background: rgba(62, 128, 85, 0.25);
+  border-color: #5a9c73;
+}
+
+.skill-install-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .ios-switch {
   width: 50px;
   height: 30px;

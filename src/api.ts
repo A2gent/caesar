@@ -288,6 +288,37 @@ export interface BuiltInSkillsResponse {
   skills: BuiltInSkill[];
 }
 
+export interface RegistrySkill {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  version: string;
+  downloads: number;
+  rating: number;
+  tags: string[] | null;
+  metadata: Record<string, string> | null;
+  download_url: string;
+}
+
+export interface SkillSearchResponse {
+  skills: RegistrySkill[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface SkillInstallRequest {
+  skill_id: string;
+}
+
+export interface SkillInstallResponse {
+  success: boolean;
+  message: string;
+  name: string;
+  path: string;
+}
+
 export interface IntegrationBackedTool {
   name: string;
   description: string;
@@ -991,6 +1022,33 @@ export async function discoverSkills(folder: string): Promise<SkillDiscoverRespo
   const response = await fetch(`${getApiBaseUrl()}/skills/discover?folder=${encodeURIComponent(folder)}`);
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to discover markdown skills');
+  }
+  return response.json();
+}
+
+export async function searchRegistrySkills(query: string, page = 1, limit = 20): Promise<SkillSearchResponse> {
+  const params = new URLSearchParams({
+    q: query,
+    page: page.toString(),
+    limit: limit.toString(),
+  });
+  const response = await fetch(`${getApiBaseUrl()}/skills/registry/search?${params}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to search registry skills');
+  }
+  return response.json();
+}
+
+export async function installRegistrySkill(skillId: string): Promise<SkillInstallResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/skills/registry/install`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ skill_id: skillId } as SkillInstallRequest),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to install skill');
   }
   return response.json();
 }

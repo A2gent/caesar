@@ -4,7 +4,10 @@ import {
   browseSkillDirectories,
   discoverSkills,
   getSettings,
+  installRegistrySkill,
   type MindTreeEntry,
+  type RegistrySkill,
+  searchRegistrySkills,
   type SkillFile,
   updateSettings,
 } from './api';
@@ -49,6 +52,11 @@ function SkillsView() {
 
   const [discoveredSkills, setDiscoveredSkills] = useState<SkillFile[]>([]);
   const [isDiscoveringSkills, setIsDiscoveringSkills] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<RegistrySkill[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [installingSkills, setInstallingSkills] = useState<Set<string>>(new Set());
 
   const loadSettings = async () => {
     try {
@@ -148,6 +156,54 @@ function SkillsView() {
     }
   };
 
+  const handleSearch = async () => {
+    if (searchQuery.trim() === '') {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    setError(null);
+    try {
+      const response = await searchRegistrySkills(searchQuery.trim());
+      setSearchResults(response.skills);
+    } catch (searchError) {
+      setError(searchError instanceof Error ? searchError.message : 'Failed to search skills');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleInstall = async (skill: RegistrySkill) => {
+    if (!connectedFolder) {
+      setError('Please configure skills folder first');
+      return;
+    }
+
+    setInstallingSkills(prev => new Set(prev).add(skill.id));
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await installRegistrySkill(skill.id);
+      setSuccess(response.message);
+      
+      // Refresh discovered skills after installation
+      if (connectedFolder) {
+        const refreshed = await discoverSkills(connectedFolder);
+        setDiscoveredSkills(refreshed.skills);
+      }
+    } catch (installError) {
+      setError(installError instanceof Error ? installError.message : 'Failed to install skill');
+    } finally {
+      setInstallingSkills(prev => {
+        const next = new Set(prev);
+        next.delete(skill.id);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="page-shell">
       <div className="page-header">
@@ -220,6 +276,9 @@ function SkillsView() {
                           <h3>{skill.name}</h3>
                           <span className="skill-badge skill-badge-external">Folder</span>
                         </div>
+                        {skill.description && (
+                          <p className="skill-card-description">{skill.description}</p>
+                        )}
                         <div className="skill-card-meta">
                           <Link
                             to={buildOpenInMyMindUrl(skill.path)}
@@ -233,6 +292,99 @@ function SkillsView() {
                     ))}
                   </div>
                 ) : null}
+              </div>
+
+              <div className="skills-registry-section">
+                <h3>🌐 Install from Clawhub.ai</h3>
+                <p className="settings-help">
+                  Search and install skills from the community registry
+                </p>
+
+                <div className="skills-search-box">
+                  <input
+                    type="text"
+                    className="skills-search-input"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        void handleSearch();
+                      }
+                    }}
+                    placeholder="Search skills (e.g., pdf, python, testing)..."
+                    disabled={!connectedFolder}
+                  />
+                  <button
+                    type="button"
+                    className="skills-search-btn"
+                    onClick={() => void handleSearch()}
+                    disabled={!connectedFolder || isSearching || searchQuery.trim() === ''}
+                  >
+                    {isSearching ? 'Searching...' : '🔍 Search'}
+                  </button>
+                </div>
+
+                {!connectedFolder && (
+                  <p className="settings-help" style={{ color: '#ff9966' }}>
+                    Configure skills folder above to enable skill installation
+                  </p>
+                )}
+
+                {searchResults.length > 0 && (
+                  <div className="skills-registry-results">
+                    <h4>Search Results ({searchResults.length})</h4>
+                    <div className="skills-registry-grid">
+                      {searchResults.map((skill) => (
+                        <div key={skill.id} className="skill-card skill-card-registry">
+                          <div className="skill-card-title-row">
+                            <h3>{skill.name}</h3>
+                            <span className="skill-badge skill-badge-registry">Registry</span>
+                          </div>
+                          <p className="skill-card-description">{skill.description}</p>
+                          <div className="skill-card-meta-row">
+                            <span className="skill-meta-item">
+                              👤 {skill.author}
+                            </span>
+                            <span className="skill-meta-item">
+                              ⭐ {skill.rating.toFixed(1)}
+                            </span>
+                            <span className="skill-meta-item">
+                              ⬇️ {skill.downloads.toLocaleString()}
+                            </span>
+                            <span className="skill-meta-item">
+                              v{skill.version}
+                            </span>
+                          </div>
+                          {skill.tags && skill.tags.length > 0 && (
+                            <div className="skill-tags">
+                              {skill.tags.map((tag) => (
+                                <span key={tag} className="skill-tag">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            className="skill-install-btn"
+                            onClick={() => void handleInstall(skill)}
+                            disabled={installingSkills.has(skill.id)}
+                          >
+                            {installingSkills.has(skill.id) ? 'Installing...' : '📥 Install'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {isSearching && (
+                  <div className="sessions-loading">Searching clawhub.ai...</div>
+                )}
+
+                {!isSearching && searchQuery.trim() !== '' && searchResults.length === 0 && (
+                  <p className="settings-help">No skills found for "{searchQuery}"</p>
+                )}
               </div>
             </div>
 
