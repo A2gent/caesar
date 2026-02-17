@@ -1046,6 +1046,46 @@ export async function deleteMindFile(path: string): Promise<void> {
   }
 }
 
+export async function listProjectTree(projectID: string, path = ''): Promise<MindTreeResponse> {
+  const pathQuery = path.trim() === '' ? '' : `&path=${encodeURIComponent(path)}`;
+  const response = await fetch(`${getApiBaseUrl()}/projects/tree?projectID=${encodeURIComponent(projectID)}${pathQuery}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to list project tree');
+  }
+  return response.json();
+}
+
+export async function getProjectFile(projectID: string, path: string): Promise<MindFileResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/file?projectID=${encodeURIComponent(projectID)}&path=${encodeURIComponent(path)}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load project file');
+  }
+  return response.json();
+}
+
+export async function saveProjectFile(projectID: string, path: string, content: string): Promise<MindFileResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/file?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path, content }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to save project file');
+  }
+  return response.json();
+}
+
+export async function deleteProjectFile(projectID: string, path: string): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/file?projectID=${encodeURIComponent(projectID)}&path=${encodeURIComponent(path)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to delete project file');
+  }
+}
+
 export async function listSpeechVoices(): Promise<ElevenLabsVoice[]> {
   const response = await fetch(`${getApiBaseUrl()}/speech/voices`);
   if (!response.ok) {

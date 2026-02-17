@@ -5,17 +5,17 @@ import {
   browseMindDirectories,
   cancelSessionRun,
   createSession,
-  deleteMindFile,
   deleteProject,
+  deleteProjectFile,
   deleteSession,
   getProject,
+  getProjectFile,
   getSession,
   getSettings,
-  getMindFile,
-  listMindTree,
+  listProjectTree,
   listProviders,
   listSessions,
-  saveMindFile,
+  saveProjectFile,
   sendMessageStream,
   updateProject,
   type LLMProviderType,
@@ -568,11 +568,11 @@ function ProjectView() {
 
   // File tree loading
   const loadTree = useCallback(async (path: string) => {
-    if (!rootFolder) return;
+    if (!rootFolder || !projectId) return;
     
     setLoadingDirs((prev) => new Set(prev).add(path));
     try {
-      const response = await listMindTree(path);
+      const response = await listProjectTree(projectId, path);
       setTreeEntries((prev) => ({
         ...prev,
         [path]: response.entries,
@@ -587,7 +587,7 @@ function ProjectView() {
         return next;
       });
     }
-  }, [rootFolder]);
+  }, [rootFolder, projectId]);
 
   // Load tree when root folder is set
   useEffect(() => {
@@ -607,12 +607,12 @@ function ProjectView() {
 
   // Load selected file content
   useEffect(() => {
-    if (!selectedFilePath || !rootFolder) return;
+    if (!selectedFilePath || !rootFolder || !projectId) return;
     
     const loadFile = async () => {
       setIsLoadingFile(true);
       try {
-        const response = await getMindFile(selectedFilePath);
+        const response = await getProjectFile(projectId, selectedFilePath);
         setSelectedFileContent(response.content || '');
         setSavedFileContent(response.content || '');
       } catch (err) {
@@ -782,11 +782,12 @@ function ProjectView() {
   };
 
   const openFile = useCallback(async (path: string) => {
+    if (!projectId) return;
     setSelectedFilePath(path);
     setMarkdownMode('preview');
     setIsLoadingFile(true);
     try {
-      const response = await getMindFile(path);
+      const response = await getProjectFile(projectId, path);
       setSelectedFileContent(response.content || '');
       setSavedFileContent(response.content || '');
     } catch (err) {
@@ -795,7 +796,7 @@ function ProjectView() {
     } finally {
       setIsLoadingFile(false);
     }
-  }, []);
+  }, [projectId]);
 
   const expandTreePath = useCallback(async (targetPath: string) => {
     const segments = targetPath.split('/').filter((s) => s !== '');
@@ -812,10 +813,10 @@ function ProjectView() {
   }, [expandedDirs, treeEntries, loadTree]);
 
   const saveCurrentFile = async () => {
-    if (!selectedFilePath) return;
+    if (!selectedFilePath || !projectId) return;
     setIsSavingFile(true);
     try {
-      await saveMindFile(selectedFilePath, selectedFileContent);
+      await saveProjectFile(projectId, selectedFilePath, selectedFileContent);
       setSavedFileContent(selectedFileContent);
       setSuccess('File saved successfully.');
     } catch (err) {
@@ -826,12 +827,12 @@ function ProjectView() {
   };
 
   const deleteCurrentFile = async () => {
-    if (!selectedFilePath) return;
+    if (!selectedFilePath || !projectId) return;
     if (!confirm(`Delete "${selectedFilePath}"?`)) return;
     
     setIsDeletingFile(true);
     try {
-      await deleteMindFile(selectedFilePath);
+      await deleteProjectFile(projectId, selectedFilePath);
       const parentDir = dirname(selectedFilePath);
       setSelectedFilePath('');
       setSelectedFileContent('');
@@ -845,6 +846,7 @@ function ProjectView() {
   };
 
   const createNewFile = async () => {
+    if (!projectId) return;
     const name = prompt('New file name (e.g., notes.md):');
     if (!name) return;
     
@@ -852,7 +854,7 @@ function ProjectView() {
     const newPath = parentPath ? `${parentPath}/${name}` : name;
     
     try {
-      await saveMindFile(newPath, '');
+      await saveProjectFile(projectId, newPath, '');
       await loadTree(parentPath || '');
       setSelectedFilePath(newPath);
       setSelectedFileContent('');
