@@ -550,9 +550,6 @@ function ChatView() {
                       : session.provider}
                   </span>
                 ) : null}
-                {session.task_progress ? (
-                  <TaskProgressPanel taskProgress={session.task_progress} />
-                ) : null}
                 {(session.input_tokens ?? 0) > 0 || (session.output_tokens ?? 0) > 0 ? (
                   <>
                     <span 
@@ -576,6 +573,11 @@ function ChatView() {
                   </>
                 ) : null}
               </div>
+              {session.task_progress ? (
+                <div className="session-task-progress-row">
+                  <TaskProgressPanel taskProgress={session.task_progress} />
+                </div>
+              ) : null}
               {session.status === 'failed' && sessionFailureReason ? (
                 <div className="session-failure-reason" title={sessionFailureReason}>
                   Failure reason: {sessionFailureReason}
