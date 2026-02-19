@@ -7,6 +7,9 @@ A modern, responsive web interface for managing AI agent sessions, jobs, tools, 
 Main use-case is having personal knowledge base (Obsidian-style second brain) used by the persistent, self-improving AI agent.
 
 
+[![Showcase](https://img.youtube.com/vi/WlWKugsgGqk/0.jpg)](https://www.youtube.com/watch?v=WlWKugsgGqk)
+
+
 
 ## Features
 
@@ -37,14 +40,6 @@ Main use-case is having personal knowledge base (Obsidian-style second brain) us
 - **Keyboard Navigation** - Full keyboard accessibility support
 - **Auto-refresh** - Real-time polling for session updates
 
-### Screenshots
-
-<img width="600" alt="A2gent Web App Screenshot" src="https://github.com/user-attachments/assets/eba3d49b-f1b3-4e53-be00-e2bb9411a27f" />
-<img width="600" alt="Screenshot 2026-02-16 at 01 30 53" src="https://github.com/user-attachments/assets/ba898a8a-dc5b-48ce-98bd-2ec1a1d35022" />
-<img width="600" alt="Screenshot 2026-02-16 at 01 33 56" src="https://github.com/user-attachments/assets/e015af6d-7469-40ab-9636-fe98b1ec2ae1" />
-<img width="600" alt="Screenshot 2026-02-16 at 01 28 46" src="https://github.com/user-attachments/assets/91914b7d-7e78-4653-af32-be28213858f5" />
-<img width="600" alt="Screenshot 2026-02-16 at 01 27 25" src="https://github.com/user-attachments/assets/8da05bb0-7070-4b45-8f44-2d18e2a5323c" />
-<img width="600" alt="Screenshot 2026-02-16 at 01 27 43" src="https://github.com/user-attachments/assets/8aaeccea-8785-4a41-a044-e0d7993dc2b3" />
 
 ## Architecture
 
