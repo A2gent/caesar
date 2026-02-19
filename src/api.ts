@@ -1174,6 +1174,65 @@ export async function deleteMindFile(path: string): Promise<void> {
   }
 }
 
+export interface MoveFileResponse {
+  root_folder: string;
+  from_path: string;
+  to_path: string;
+}
+
+export async function moveMindFile(fromPath: string, toPath: string): Promise<MoveFileResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/mind/file/move`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to move file');
+  }
+  return response.json();
+}
+
+export interface CreateFolderResponse {
+  root_folder: string;
+  path: string;
+}
+
+export async function createMindFolder(path: string): Promise<CreateFolderResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/mind/folder`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to create folder');
+  }
+  return response.json();
+}
+
+export interface RenameEntryResponse {
+  root_folder: string;
+  old_path: string;
+  new_path: string;
+}
+
+export async function renameMindEntry(oldPath: string, newName: string): Promise<RenameEntryResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/mind/rename`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ old_path: oldPath, new_name: newName }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to rename');
+  }
+  return response.json();
+}
+
 export async function listProjectTree(projectID: string, path = ''): Promise<MindTreeResponse> {
   const pathQuery = path.trim() === '' ? '' : `&path=${encodeURIComponent(path)}`;
   const response = await fetch(`${getApiBaseUrl()}/projects/tree?projectID=${encodeURIComponent(projectID)}${pathQuery}`);
@@ -1212,6 +1271,48 @@ export async function deleteProjectFile(projectID: string, path: string): Promis
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to delete project file');
   }
+}
+
+export async function moveProjectFile(projectID: string, fromPath: string, toPath: string): Promise<MoveFileResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/file/move?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to move project file');
+  }
+  return response.json();
+}
+
+export async function createProjectFolder(projectID: string, path: string): Promise<CreateFolderResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/folder?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to create folder');
+  }
+  return response.json();
+}
+
+export async function renameProjectEntry(projectID: string, oldPath: string, newName: string): Promise<RenameEntryResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/rename?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ old_path: oldPath, new_name: newName }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to rename');
+  }
+  return response.json();
 }
 
 export async function listSpeechVoices(): Promise<ElevenLabsVoice[]> {

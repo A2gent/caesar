@@ -4973,6 +4973,45 @@ input[type="checkbox"]:disabled {
   border-color: #6d90ff;
 }
 
+.mind-tree-row.mind-tree-dragging {
+  opacity: 0.5;
+}
+
+.mind-tree-row.mind-tree-drop-target,
+.mind-tree-panel.mind-tree-drop-target {
+  background: rgba(114, 155, 255, 0.15);
+  border-radius: 4px;
+}
+
+.mind-tree-row.mind-tree-drop-target .mind-tree-item {
+  background: rgba(114, 155, 255, 0.1);
+}
+
+.mind-tree-row[draggable="true"] {
+  cursor: grab;
+}
+
+.mind-tree-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.mind-tree-rename-input {
+  flex: 1;
+  min-width: 0;
+  background: #2a2a2a;
+  border: 1px solid #6d90ff;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 14px;
+  padding: 2px 6px;
+  outline: none;
+}
+
+.mind-tree-rename-input:focus {
+  border-color: #8ea7ff;
+  box-shadow: 0 0 0 2px rgba(114, 155, 255, 0.2);
+}
+
 .mind-viewer-panel {
   display: flex;
   flex-direction: column;

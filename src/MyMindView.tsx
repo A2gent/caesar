@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   browseMindDirectories,
   cancelSessionRun,
+  createMindFolder,
   createProject,
   createSession,
   deleteMindFile,
@@ -14,6 +15,8 @@ import {
   listMindTree,
   listProjects,
   listProviders,
+  moveMindFile,
+  renameMindEntry,
   saveMindFile,
   sendMessageStream,
   type ChatStreamEvent,
@@ -438,6 +441,13 @@ function MyMindView() {
   const [isFileActionsMenuOpen, setIsFileActionsMenuOpen] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [treePanelWidth, setTreePanelWidth] = useState(readStoredTreePanelWidth);
+  const [draggedFilePath, setDraggedFilePath] = useState<string | null>(null);
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
+  const [isMovingFile, setIsMovingFile] = useState(false);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [isRenaming, setIsRenaming] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
   const treeResizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const fileActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const handledOpenFileQueryRef = useRef('');
@@ -789,6 +799,130 @@ function MyMindView() {
       setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete markdown file');
     } finally {
       setIsDeletingFile(false);
+    }
+  };
+
+  const handleFileDrop = async (filePath: string, targetFolderPath: string) => {
+    if (isMovingFile) return;
+    
+    const fileName = filePath.split('/').pop() || '';
+    const newPath = targetFolderPath === '' ? fileName : `${targetFolderPath}/${fileName}`;
+    
+    if (filePath === newPath) {
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setIsMovingFile(true);
+    
+    try {
+      await moveMindFile(filePath, newPath);
+      const oldParent = dirname(filePath);
+      const newParent = dirname(newPath);
+      
+      await loadTree(oldParent);
+      if (oldParent !== newParent) {
+        await loadTree(newParent);
+      }
+      
+      if (selectedFilePath === filePath) {
+        setSelectedFilePath(newPath);
+      }
+      
+;
+    } catch (moveError) {
+      setError(moveError instanceof Error ? moveError.message : 'Failed to move file');
+    } finally {
+      setIsMovingFile(false);
+      setDraggedFilePath(null);
+      setDropTargetPath(null);
+    }
+  };
+
+  const createNewFolder = async () => {
+    const suggestedBase = selectedFilePath ? dirname(selectedFilePath) : '';
+    const suggestedPath = suggestedBase ? `${suggestedBase}/new-folder` : 'new-folder';
+    const input = window.prompt('New folder path (relative to My Mind root):', suggestedPath);
+    if (input === null) {
+      return;
+    }
+
+    const normalizedPath = normalizeMindPath(input.trim());
+    if (normalizedPath === '') {
+      setError('Folder path is required.');
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    try {
+      await createMindFolder(normalizedPath);
+      const parentPath = dirname(normalizedPath);
+      await loadTree(parentPath);
+      setExpandedDirs((prev) => {
+        const next = new Set(prev);
+        next.add(normalizedPath);
+        return next;
+      });
+      setSuccess(`Created folder: ${normalizedPath}`);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Failed to create folder');
+    }
+  };
+
+  const startRename = (path: string, currentName: string) => {
+    setRenamingPath(path);
+    setRenameValue(currentName);
+    setTimeout(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }, 0);
+  };
+
+  const cancelRename = () => {
+    setRenamingPath(null);
+    setRenameValue('');
+  };
+
+  const submitRename = async () => {
+    if (!renamingPath || isRenaming) return;
+    
+    const newName = renameValue.trim();
+    if (newName === '' || newName === renamingPath.split('/').pop()) {
+      cancelRename();
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setIsRenaming(true);
+    
+    try {
+      const result = await renameMindEntry(renamingPath, newName);
+      const parentPath = dirname(renamingPath);
+      await loadTree(parentPath);
+      
+      if (selectedFilePath === renamingPath) {
+        setSelectedFilePath(result.new_path);
+      }
+      
+      if (expandedDirs.has(renamingPath)) {
+        setExpandedDirs((prev) => {
+          const next = new Set(prev);
+          next.delete(renamingPath);
+          next.add(result.new_path);
+          return next;
+        });
+        await loadTree(result.new_path);
+      }
+      
+      setSuccess(`Renamed to: ${newName}`);
+    } catch (renameError) {
+      setError(renameError instanceof Error ? renameError.message : 'Failed to rename');
+    } finally {
+      setIsRenaming(false);
+      cancelRename();
     }
   };
 
@@ -1256,22 +1390,89 @@ function MyMindView() {
     return (
       <div>
         {entries.map((entry) => {
+          const isBeingRenamed = renamingPath === entry.path;
+          
           if (entry.type === 'directory') {
             const isExpanded = expandedDirs.has(entry.path);
             const isLoading = loadingDirs.has(entry.path);
+            const isDropTarget = dropTargetPath === entry.path;
+            const isDraggingFolder = draggedFilePath === entry.path;
+            const isDescendantOfDragged = draggedFilePath && entry.path.startsWith(draggedFilePath + '/');
             return (
               <div key={entry.path}>
-                <div className="mind-tree-row">
-                  <button
-                    type="button"
-                    className="mind-tree-item mind-tree-directory"
-                    style={{ paddingLeft: `${12 + depth * 18}px` }}
-                    onClick={() => void toggleDirectory(entry.path)}
-                  >
-                    <span className="mind-tree-icon" aria-hidden="true">{isExpanded ? '📂' : '📁'}</span>
-                    <span className="mind-tree-label">{entry.name}</span>
-                    {isLoading ? <span className="mind-tree-meta">Loading...</span> : null}
-                  </button>
+                <div
+                  className={`mind-tree-row ${isDropTarget ? 'mind-tree-drop-target' : ''} ${isDraggingFolder ? 'mind-tree-dragging' : ''}`}
+                  draggable={!isBeingRenamed}
+                  onDragStart={(e) => {
+                    if (isBeingRenamed) return;
+                    e.stopPropagation();
+                    setDraggedFilePath(entry.path);
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', entry.path);
+                  }}
+                  onDragEnd={() => {
+                    setDraggedFilePath(null);
+                    setDropTargetPath(null);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (draggedFilePath && draggedFilePath !== entry.path && !isDescendantOfDragged && !entry.path.startsWith(draggedFilePath + '/')) {
+                      setDropTargetPath(entry.path);
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (dropTargetPath === entry.path) {
+                      setDropTargetPath(null);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (draggedFilePath && draggedFilePath !== entry.path && !entry.path.startsWith(draggedFilePath + '/')) {
+                      void handleFileDrop(draggedFilePath, entry.path);
+                    }
+                    setDropTargetPath(null);
+                  }}
+                >
+                  {isBeingRenamed ? (
+                    <div className="mind-tree-item mind-tree-directory" style={{ paddingLeft: `${12 + depth * 18}px` }}>
+                      <span className="mind-tree-icon" aria-hidden="true">{isExpanded ? '📂' : '📁'}</span>
+                      <input
+                        ref={renameInputRef}
+                        type="text"
+                        className="mind-tree-rename-input"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            void submitRename();
+                          } else if (e.key === 'Escape') {
+                            cancelRename();
+                          }
+                        }}
+                        onBlur={() => void submitRename()}
+                        disabled={isRenaming}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="mind-tree-item mind-tree-directory"
+                      style={{ paddingLeft: `${12 + depth * 18}px` }}
+                      onClick={() => void toggleDirectory(entry.path)}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        startRename(entry.path, entry.name);
+                      }}
+                    >
+                      <span className="mind-tree-icon" aria-hidden="true">{isExpanded ? '📂' : '📁'}</span>
+                      <span className="mind-tree-label">{entry.name}</span>
+                      {isLoading ? <span className="mind-tree-meta">Loading...</span> : null}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="mind-tree-session-btn"
@@ -1290,17 +1491,59 @@ function MyMindView() {
             );
           }
 
+          const isDragging = draggedFilePath === entry.path;
           return (
-            <div key={entry.path} className="mind-tree-row">
-              <button
-                type="button"
-                className={`mind-tree-item mind-tree-file ${selectedFilePath === entry.path ? 'active' : ''}`}
-                style={{ paddingLeft: `${12 + depth * 18}px` }}
-                onClick={() => void openFile(entry.path)}
-              >
-                <span className="mind-tree-icon" aria-hidden="true">📄</span>
-                <span className="mind-tree-label">{entry.name}</span>
-              </button>
+            <div
+              key={entry.path}
+              className={`mind-tree-row ${isDragging ? 'mind-tree-dragging' : ''}`}
+              draggable={!isBeingRenamed}
+              onDragStart={(e) => {
+                if (isBeingRenamed) return;
+                e.stopPropagation();
+                setDraggedFilePath(entry.path);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', entry.path);
+              }}
+              onDragEnd={() => {
+                setDraggedFilePath(null);
+                setDropTargetPath(null);
+              }}
+            >
+              {isBeingRenamed ? (
+                <div className="mind-tree-item mind-tree-file" style={{ paddingLeft: `${12 + depth * 18}px` }}>
+                  <span className="mind-tree-icon" aria-hidden="true">📄</span>
+                  <input
+                    ref={renameInputRef}
+                    type="text"
+                    className="mind-tree-rename-input"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        void submitRename();
+                      } else if (e.key === 'Escape') {
+                        cancelRename();
+                      }
+                    }}
+                    onBlur={() => void submitRename()}
+                    disabled={isRenaming}
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={`mind-tree-item mind-tree-file ${selectedFilePath === entry.path ? 'active' : ''}`}
+                  style={{ paddingLeft: `${12 + depth * 18}px` }}
+                  onClick={() => void openFile(entry.path)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    startRename(entry.path, entry.name);
+                  }}
+                >
+                  <span className="mind-tree-icon" aria-hidden="true">📄</span>
+                  <span className="mind-tree-label">{entry.name}</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="mind-tree-session-btn"
@@ -1354,6 +1597,9 @@ function MyMindView() {
               <button type="button" className="settings-add-btn" onClick={() => void createNewFile()} disabled={isSavingFile}>
                 New file
               </button>
+              <button type="button" className="settings-add-btn" onClick={() => void createNewFolder()}>
+                New folder
+              </button>
               <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
                 Change root folder
               </button>
@@ -1393,7 +1639,38 @@ function MyMindView() {
                 } as CSSProperties
               }
             >
-              <div className="mind-tree-panel">{renderTree('')}</div>
+              <div
+                className={`mind-tree-panel ${dropTargetPath === '' ? 'mind-tree-drop-target' : ''}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggedFilePath) {
+                    const targetPath = '';
+                    const draggedDir = dirname(draggedFilePath);
+                    if (draggedDir !== targetPath) {
+                      setDropTargetPath(targetPath);
+                    }
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    if (dropTargetPath === '') {
+                      setDropTargetPath(null);
+                    }
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedFilePath) {
+                    const draggedDir = dirname(draggedFilePath);
+                    if (draggedDir !== '') {
+                      void handleFileDrop(draggedFilePath, '');
+                    }
+                  }
+                  setDropTargetPath(null);
+                }}
+              >
+                {renderTree('')}
+              </div>
               <div
                 className="mind-tree-resize-handle"
                 role="separator"
