@@ -1,11 +1,12 @@
-# A² Brute personal AI agent web-app
+# A²gent/caesar 
 > Et tu, Brute?
- 
-A modern, responsive web interface for managing AI agent sessions, jobs, tools, and knowledge base.
 
+A personal AI agent control web app. Uses [A²gent/brute](https://github.com/A2gent/brute) terminal agent as a backend.
+
+A modern, responsive web interface for managing AI agent sessions, jobs, tools, and knowledge base.
 Main use-case is having personal knowledge base (Obsidian-style second brain) used by the persistent, self-improving AI agent.
 
-Uses [A² Brute terminal agent](https://github.com/A2gent/aagent) as a backend.
+
 
 ## Features
 
