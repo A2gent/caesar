@@ -12,12 +12,7 @@ Main use-case is having personal knowledge base (Obsidian-style second brain) us
 
 ### Core Features
 - **My Mind** - Personal knowledge base and memory management. Navigate .md files, prompt in their context, use as reference for recurring jobs.
-<img width="600" alt="Screenshot 2026-02-16 at 01 30 53" src="https://github.com/user-attachments/assets/ba898a8a-dc5b-48ce-98bd-2ec1a1d35022" />
-
-
 - **Voice Input** - Speech-to-text input support for hands-free interaction
-<img width="600" alt="Screenshot 2026-02-16 at 01 33 56" src="https://github.com/user-attachments/assets/e015af6d-7469-40ab-9636-fe98b1ec2ae1" />
-
 - **Session Management** - Create, browse, and manage AI chat sessions with full conversation history
 - **Real-time Chat** - Interactive chat interface with markdown rendering and streaming responses
 - **Audio Playback** - Text-to-speech notifications with play/pause/stop controls
@@ -27,26 +22,29 @@ Main use-case is having personal knowledge base (Obsidian-style second brain) us
 ### Agent Management
 - **Jobs** - Schedule and monitor background agent tasks
 - **Tools** - Browse and configure agent tools and capabilities
-<img width="600" alt="Screenshot 2026-02-16 at 01 28 46" src="https://github.com/user-attachments/assets/91914b7d-7e78-4653-af32-be28213858f5" />
-
 - **Skills** - Manage agent skills and specialized behaviors
 - **Thinking Process** - Visualize agent reasoning and thought chains
-<img width="600" alt="Screenshot 2026-02-16 at 01 27 25" src="https://github.com/user-attachments/assets/8da05bb0-7070-4b45-8f44-2d18e2a5323c" /><img width="600"  alt="Screenshot 2026-02-16 at 01 27 43" src="https://github.com/user-attachments/assets/8aaeccea-8785-4a41-a044-e0d7993dc2b3" />
-
+- **Todo List** - Track and manage agent task progress in real-time
 
 ### Integrations & Configuration
 - **LLM Providers** - Configure multiple AI providers (OpenAI, Anthropic, Ollama, etc.)
 - **MCP Servers** - Model Context Protocol server management
 - **Integrations** - Third-party service integrations
 
-<img width="600" alt="A2gent Web App Screenshot" src="https://github.com/user-attachments/assets/eba3d49b-f1b3-4e53-be00-e2bb9411a27f" />
-
-
 ### UI Features
 - **Resizable Sidebar** - Draggable sidebar width with persistence
 - **Theme Customization** - Customizable app title and branding
 - **Keyboard Navigation** - Full keyboard accessibility support
 - **Auto-refresh** - Real-time polling for session updates
+
+### Screenshots
+
+<img width="600" alt="A2gent Web App Screenshot" src="https://github.com/user-attachments/assets/eba3d49b-f1b3-4e53-be00-e2bb9411a27f" />
+<img width="600" alt="Screenshot 2026-02-16 at 01 30 53" src="https://github.com/user-attachments/assets/ba898a8a-dc5b-48ce-98bd-2ec1a1d35022" />
+<img width="600" alt="Screenshot 2026-02-16 at 01 33 56" src="https://github.com/user-attachments/assets/e015af6d-7469-40ab-9636-fe98b1ec2ae1" />
+<img width="600" alt="Screenshot 2026-02-16 at 01 28 46" src="https://github.com/user-attachments/assets/91914b7d-7e78-4653-af32-be28213858f5" />
+<img width="600" alt="Screenshot 2026-02-16 at 01 27 25" src="https://github.com/user-attachments/assets/8da05bb0-7070-4b45-8f44-2d18e2a5323c" />
+<img width="600" alt="Screenshot 2026-02-16 at 01 27 43" src="https://github.com/user-attachments/assets/8aaeccea-8785-4a41-a044-e0d7993dc2b3" />
 
 ## Architecture
 
@@ -83,56 +81,6 @@ flowchart TB
     Agent --> LLM
     Agent --> MCP
     API --> TTS
-```
-
-### Component Architecture
-
-```mermaid
-flowchart TB
-    subgraph App["App.tsx (Root)"]
-        Router[BrowserRouter]
-        Layout[AppLayout]
-    end
-    
-    subgraph LayoutComponents["Layout Components"]
-        Sidebar[Sidebar<br/>Navigation]
-        Main[Main Content Area]
-        Notifications[Notification Panel]
-    end
-    
-    subgraph Views["View Components"]
-        Sessions[SessionsList]
-        Chat[ChatView]
-        Jobs[JobsList/JobDetail]
-        Tools[ToolsView]
-        Skills[SkillsView]
-        Integrations[IntegrationsView]
-        MCP[MCPServersView]
-        Providers[ProvidersView]
-        MyMind[MyMindView]
-        Thinking[ThinkingView]
-        Settings[SettingsView]
-    end
-    
-    subgraph Shared["Shared Components"]
-        ChatInput[ChatInput]
-        MessageList[MessageList]
-        SettingsPanel[SettingsPanel]
-        IntegrationsPanel[IntegrationsPanel]
-    end
-    
-    subgraph Services["Service Layer"]
-        API[api.ts<br/>HTTP Client]
-        Audio[audioPlayback.ts]
-        Markdown[markdown.ts]
-        Events[toolResultEvents.ts]
-    end
-    
-    App --> LayoutComponents
-    LayoutComponents --> Views
-    Views --> Shared
-    Views --> Services
-    Shared --> Services
 ```
 
 ### Session Lifecycle Flow
@@ -372,13 +320,6 @@ The app implements a polling-based notification system:
 - Detects terminal states (`completed`, `failed`)
 - Supports rich notifications with images and audio
 - Auto-plays speech notifications when available
-
-## Browser Support
-
-- Chrome/Edge 90+
-- Firefox 88+
-- Safari 14+
-- Mobile Safari/Chrome (iOS/Android)
 
 ## Tech Stack
 
