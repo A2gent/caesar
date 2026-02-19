@@ -1576,79 +1576,80 @@ function ProjectView() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+        </div>
 
-              <div className="project-sessions-composer">
-                {sessionContextMessage && (
-                  <div className="session-context-section">
-                    {isSessionContextExpanded ? (
-                      <textarea
-                        className="mind-session-textarea context-textarea"
-                        value={sessionContextMessage}
-                        onChange={(event) => setSessionContextMessage(event.target.value)}
-                        disabled={isCreatingSession}
-                        placeholder="Generated context"
-                      />
-                    ) : null}
-                    <div className="session-context-controls">
-                      {sessionTargetLabel && (
-                        <span className="session-target-label">
-                          Creating session for {sessionTargetLabel}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className="mind-session-context-toggle"
-                        onClick={() => setIsSessionContextExpanded((prev) => !prev)}
-                        disabled={isCreatingSession}
-                      >
-                        {isSessionContextExpanded ? 'Hide context' : 'Show context'}
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-remove-btn"
-                        onClick={() => {
-                          setSessionContextMessage('');
-                          setSessionTargetLabel('');
-                          setIsSessionContextExpanded(false);
-                        }}
-                        disabled={isCreatingSession}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <ChatInput
-                  onSend={handleStartSession}
+        {/* Sessions Composer - Always visible at bottom */}
+        <div className="project-sessions-composer">
+          {sessionContextMessage && (
+            <div className="session-context-section">
+              {isSessionContextExpanded ? (
+                <textarea
+                  className="mind-session-textarea context-textarea"
+                  value={sessionContextMessage}
+                  onChange={(event) => setSessionContextMessage(event.target.value)}
                   disabled={isCreatingSession}
-                  autoFocus={!rootFolder}
-                  placeholder={sessionTargetLabel
-                    ? `Describe the task for ${sessionTargetLabel}...`
-                    : 'Start a new chat...'}
-                  actionControls={
-                    providers.length > 0 ? (
-                      <div className="sessions-new-chat-controls">
-                        <label className="chat-provider-select">
-                          <select
-                            value={selectedProvider}
-                            onChange={(e) => setSelectedProvider(e.target.value as LLMProviderType)}
-                            title="Provider"
-                            aria-label="Provider"
-                          >
-                            {providers.map((provider) => (
-                              <option key={provider.type} value={provider.type}>
-                                {provider.display_name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    ) : null
-                  }
+                  placeholder="Generated context"
                 />
+              ) : null}
+              <div className="session-context-controls">
+                {sessionTargetLabel && (
+                  <span className="session-target-label">
+                    Creating session for {sessionTargetLabel}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="mind-session-context-toggle"
+                  onClick={() => setIsSessionContextExpanded((prev) => !prev)}
+                  disabled={isCreatingSession}
+                >
+                  {isSessionContextExpanded ? 'Hide context' : 'Show context'}
+                </button>
+                <button
+                  type="button"
+                  className="settings-remove-btn"
+                  onClick={() => {
+                    setSessionContextMessage('');
+                    setSessionTargetLabel('');
+                    setIsSessionContextExpanded(false);
+                  }}
+                  disabled={isCreatingSession}
+                >
+                  Clear
+                </button>
               </div>
             </div>
           )}
+          <ChatInput
+            onSend={handleStartSession}
+            disabled={isCreatingSession}
+            autoFocus={!rootFolder}
+            placeholder={sessionTargetLabel
+              ? `Describe the task for ${sessionTargetLabel}...`
+              : 'Start a new chat...'}
+            actionControls={
+              providers.length > 0 ? (
+                <div className="sessions-new-chat-controls">
+                  <label className="chat-provider-select">
+                    <select
+                      value={selectedProvider}
+                      onChange={(e) => setSelectedProvider(e.target.value as LLMProviderType)}
+                      title="Provider"
+                      aria-label="Provider"
+                    >
+                      {providers.map((provider) => (
+                        <option key={provider.type} value={provider.type}>
+                          {provider.display_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : null
+            }
+          />
         </div>
       </div>
 
