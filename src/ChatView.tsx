@@ -305,17 +305,32 @@ function ChatView() {
 
   const sendMessageWithStreaming = async (targetSessionId: string, message: string) => {
     setActiveRequestSessionId(targetSessionId);
-    const userMessage: Message = {
-      role: 'user',
-      content: message,
-      timestamp: new Date().toISOString(),
-    };
-    const assistantMessage: Message = {
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, userMessage, assistantMessage]);
+    
+    // Check if the message already exists (e.g., for queued sessions)
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    const messageAlreadyExists = lastUserMessage?.content === message;
+    
+    if (!messageAlreadyExists) {
+      const userMessage: Message = {
+        role: 'user',
+        content: message,
+        timestamp: new Date().toISOString(),
+      };
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: '',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, userMessage, assistantMessage]);
+    } else {
+      // Just add placeholder for assistant response
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: '',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+    }
     setIsLoading(true);
     setError(null);
     const controller = new AbortController();
@@ -330,7 +345,9 @@ function ChatView() {
       if (!isAbort) {
         console.error('Failed to send message:', err);
         setError(normalizeFailureReason(err instanceof Error ? err.message : 'Failed to send message'));
-        setMessages(prev => prev.slice(0, -2));
+        // Remove the placeholder assistant message (and user message if we added it)
+        const removeCount = messageAlreadyExists ? 1 : 2;
+        setMessages(prev => prev.slice(0, -removeCount));
       }
     } finally {
       setIsLoading(false);
