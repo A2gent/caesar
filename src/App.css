@@ -6750,3 +6750,118 @@ input[type="checkbox"]:disabled {
     max-width: 100%;
   }
 }
+
+/* Task Progress Panel Styles */
+.task-progress-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-progress-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+  font-size: 12px;
+  color: #a5a5a5;
+}
+
+.task-progress-header:hover {
+  background: rgba(0, 122, 255, 0.1);
+  border-color: #007aff;
+  color: #007aff;
+}
+
+.task-progress-icon {
+  font-size: 14px;
+}
+
+.task-progress-bar-container {
+  width: 60px;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.task-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #4caf50, #8bc34a);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.task-progress-text {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.task-progress-toggle {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.task-progress-toggle.expanded {
+  transform: rotate(180deg);
+}
+
+.task-progress-details {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.task-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.task-tree ul {
+  list-style: none;
+  margin: 4px 0 0 0;
+  padding-left: 20px;
+}
+
+.task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.task-checkbox {
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: -1px;
+}
+
+.task-completed .task-checkbox {
+  color: #4caf50;
+}
+
+.task-pending .task-checkbox {
+  color: #666;
+}
+
+.task-text {
+  color: #d0d0d0;
+  flex: 1;
+}
+
+.task-completed .task-text {
+  color: #888;
+  text-decoration: line-through;
+}

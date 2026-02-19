@@ -617,15 +617,21 @@ export function parseTaskProgress(content?: string): TaskProgressStats {
     return { total: 0, completed: 0, progressPct: 0 };
   }
 
-  const lines = content.split('\n');
+  // Normalize line endings
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
   let total = 0;
   let completed = 0;
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed.startsWith('[ ]')) {
+    // Handle "- [ ] Task" format (remove "- " prefix first)
+    let checkLine = trimmed;
+    if (checkLine.startsWith('- ')) {
+      checkLine = checkLine.slice(2);
+    }
+    if (checkLine.startsWith('[ ]')) {
       total++;
-    } else if (trimmed.startsWith('[x]') || trimmed.startsWith('[X]')) {
+    } else if (checkLine.startsWith('[x]') || checkLine.startsWith('[X]')) {
       total++;
       completed++;
     }
@@ -634,6 +640,78 @@ export function parseTaskProgress(content?: string): TaskProgressStats {
   const progressPct = total > 0 ? Math.round((completed * 100) / total) : 0;
 
   return { total, completed, progressPct };
+}
+
+export interface TaskItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  level: number;
+  children: TaskItem[];
+}
+
+export interface TaskProgressDetails {
+  tasks: TaskItem[];
+  total: number;
+  completed: number;
+  progressPct: number;
+}
+
+export function parseTaskProgressDetails(content?: string): TaskProgressDetails {
+  if (!content) {
+    return { tasks: [], total: 0, completed: 0, progressPct: 0 };
+  }
+
+  // Normalize line endings and split
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+  const rootTasks: TaskItem[] = [];
+  const stack: TaskItem[] = [];
+  let total = 0;
+  let completed = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Match "- [ ] Task" or "- [x] Task" format with optional indentation
+    // Format: optional spaces, dash, space, bracket, space/x, bracket, space, text
+    const match = line.match(/^(\s*)-\s*\[([ xX])\]\s*(.*)$/);
+    if (!match) continue;
+
+    const indent = match[1].length;
+    const isCompleted = match[2].toLowerCase() === 'x';
+    const text = match[3].trim();
+    if (!text) continue; // Skip empty tasks
+
+    // 2 spaces = 1 level
+    const level = Math.floor(indent / 2);
+
+    total++;
+    if (isCompleted) completed++;
+
+    const task: TaskItem = {
+      id: `task-${i}`,
+      text,
+      completed: isCompleted,
+      level,
+      children: [],
+    };
+
+    // Find parent based on indentation level
+    while (stack.length > 0 && stack[stack.length - 1].level >= level) {
+      stack.pop();
+    }
+
+    if (stack.length === 0) {
+      rootTasks.push(task);
+    } else {
+      stack[stack.length - 1].children.push(task);
+    }
+
+    stack.push(task);
+  }
+
+  const progressPct = total > 0 ? Math.round((completed * 100) / total) : 0;
+
+  return { tasks: rootTasks, total, completed, progressPct };
 }
 
 export async function createSession(request: CreateSessionRequest = {}): Promise<CreateSessionResponse> {
