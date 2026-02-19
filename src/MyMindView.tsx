@@ -1167,7 +1167,22 @@ function MyMindView() {
     handledOpenFileQueryRef.current = requestedOpenPath;
 
     if (relativePath === '') {
-      setError('Requested file is outside of My Mind root folder.');
+      // File is outside root folder - open it directly by absolute path
+      const openAbsoluteFromQuery = async () => {
+        try {
+          const response = await getMindFile(requestedOpenPath);
+          setSelectedFilePath(requestedOpenPath);
+          setSelectedFileContent(response.content);
+          setSavedFileContent(response.content);
+          
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.delete('openFile');
+          setSearchParams(nextParams, { replace: true });
+        } catch (loadError) {
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load file');
+        }
+      };
+      void openAbsoluteFromQuery();
       return;
     }
 

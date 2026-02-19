@@ -10,7 +10,7 @@
   --primary-hover: #5b76e5;
   --danger: #f25f5c;
 
-  font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   line-height: 1.5;
   font-weight: 400;
   color: var(--text-1);

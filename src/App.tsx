@@ -16,6 +16,7 @@ import ProjectView from './ProjectView';
 import ThinkingView from './ThinkingView';
 import SkillsView from './SkillsView';
 import ToolsView from './ToolsView';
+import NotificationsView from './NotificationsView';
 import { buildImageAssetUrl, fetchSpeechClip, getAppTitle, getSession, listSessions, setAppTitle as persistAppTitle } from './api';
 import { THINKING_PROJECT_ID } from './thinking';
 import { SYSTEM_PROJECT_KB_ID, SYSTEM_PROJECT_AGENT_ID } from './Sidebar';
@@ -41,7 +42,7 @@ interface CompletionNotification {
   audioClipId?: string;
 }
 
-type NotificationAudioState = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
+
 
 const readStoredWidth = () => {
   const rawWidth = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
@@ -89,11 +90,11 @@ function AppLayout() {
   const hasInitializedCompletionPollRef = useRef(false);
   const seenWebAppNotificationIDsRef = useRef<Set<string>>(new Set());
   const [notifications, setNotifications] = useState<CompletionNotification[]>([]);
-  const [notificationAudioStates, setNotificationAudioStates] = useState<Record<string, NotificationAudioState>>({});
   const notificationAudioMapRef = useRef<Map<string, { audio: HTMLAudioElement; objectUrl: string }>>(new Map());
   const [appTitle, setAppTitle] = useState(() => getAppTitle());
-  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
   const [newestNotificationID, setNewestNotificationID] = useState<string | null>(null);
+  const [toastNotifications, setToastNotifications] = useState<CompletionNotification[]>([]);
+  const toastTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const isSidebarOpen = isMobile ? isMobileSidebarOpen : isDesktopSidebarOpen;
 
@@ -116,13 +117,6 @@ function AppLayout() {
     };
   }, []);
 
-  const setNotificationAudioState = useCallback((id: string, next: NotificationAudioState) => {
-    setNotificationAudioStates((prev) => ({
-      ...prev,
-      [id]: next,
-    }));
-  }, []);
-
   const pushNotification = useCallback((notification: CompletionNotification) => {
     let inserted = false;
     setNotifications((prev) => {
@@ -137,7 +131,20 @@ function AppLayout() {
       return;
     }
     setNewestNotificationID(notification.id);
-    setIsNotificationPanelOpen(true);
+    
+    // Add to toast notifications for bottom-left display
+    setToastNotifications(prev => {
+      const newToasts = [notification, ...prev].slice(0, 5); // Max 5 toasts
+      return newToasts;
+    });
+    
+    // Set up auto-dismiss timer for this notification
+    const timeoutId = window.setTimeout(() => {
+      setToastNotifications(prev => prev.filter(n => n.id !== notification.id));
+      toastTimeoutsRef.current.delete(notification.id);
+    }, 10000); // 10 seconds
+    
+    toastTimeoutsRef.current.set(notification.id, timeoutId);
   }, []);
 
   const stopOtherNotificationAudio = useCallback((exceptID: string) => {
@@ -147,9 +154,8 @@ function AppLayout() {
       }
       entry.audio.pause();
       entry.audio.currentTime = 0;
-      setNotificationAudioState(id, 'idle');
     }
-  }, [setNotificationAudioState]);
+  }, []);
 
   const ensureNotificationAudio = useCallback(async (id: string, clipID: string): Promise<HTMLAudioElement> => {
     const existing = notificationAudioMapRef.current.get(id);
@@ -157,79 +163,36 @@ function AppLayout() {
       return existing.audio;
     }
 
-    setNotificationAudioState(id, 'loading');
     const blob = await fetchSpeechClip(clipID);
     const objectUrl = URL.createObjectURL(blob);
     const audio = new Audio(objectUrl);
     audio.onended = () => {
       audio.currentTime = 0;
-      setNotificationAudioState(id, 'idle');
-    };
-    audio.onpause = () => {
-      if (!audio.ended && audio.currentTime > 0) {
-        setNotificationAudioState(id, 'paused');
-      }
-    };
-    audio.onerror = () => {
-      setNotificationAudioState(id, 'error');
     };
     notificationAudioMapRef.current.set(id, { audio, objectUrl });
     return audio;
-  }, [setNotificationAudioState]);
+  }, []);
 
   const playNotificationAudio = useCallback(async (id: string, clipID: string) => {
     try {
       stopOtherNotificationAudio(id);
       const audio = await ensureNotificationAudio(id, clipID);
       await audio.play();
-      setNotificationAudioState(id, 'playing');
     } catch (error) {
       console.error('Failed to play notification audio:', error);
-      setNotificationAudioState(id, 'error');
     }
-  }, [ensureNotificationAudio, setNotificationAudioState, stopOtherNotificationAudio]);
-
-  const pauseNotificationAudio = useCallback((id: string) => {
-    const entry = notificationAudioMapRef.current.get(id);
-    if (!entry) {
-      return;
-    }
-    entry.audio.pause();
-    setNotificationAudioState(id, 'paused');
-  }, [setNotificationAudioState]);
-
-  const stopNotificationAudio = useCallback((id: string) => {
-    const entry = notificationAudioMapRef.current.get(id);
-    if (!entry) {
-      return;
-    }
-    entry.audio.pause();
-    entry.audio.currentTime = 0;
-    setNotificationAudioState(id, 'idle');
-  }, [setNotificationAudioState]);
+  }, [ensureNotificationAudio, stopOtherNotificationAudio]);
 
   const disposeNotificationAudio = useCallback((id: string) => {
     const entry = notificationAudioMapRef.current.get(id);
     if (!entry) {
-      setNotificationAudioStates((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
       return;
     }
 
     entry.audio.pause();
     entry.audio.onended = null;
-    entry.audio.onpause = null;
-    entry.audio.onerror = null;
     URL.revokeObjectURL(entry.objectUrl);
     notificationAudioMapRef.current.delete(id);
-    setNotificationAudioStates((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
   }, []);
 
   useEffect(() => {
@@ -472,6 +435,11 @@ function AppLayout() {
       for (const id of ids) {
         disposeNotificationAudio(id);
       }
+      // Clear all toast timeouts
+      for (const timeoutId of toastTimeoutsRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      toastTimeoutsRef.current.clear();
     };
   }, [disposeNotificationAudio]);
 
@@ -510,14 +478,18 @@ function AppLayout() {
     navigate(`/chat/${sessionId}`);
   };
 
-  const removeNotification = (id: string) => {
-    disposeNotificationAudio(id);
-    setNotifications((prev) => prev.filter((item) => item.id !== id));
+  const dismissToast = (id: string) => {
+    const timeoutId = toastTimeoutsRef.current.get(id);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      toastTimeoutsRef.current.delete(id);
+    }
+    setToastNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   return (
     <div
-      className={`app-container ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isMobile ? 'mobile-layout' : 'desktop-layout'} ${isNotificationPanelOpen ? 'notifications-panel-open' : 'notifications-panel-collapsed'}`}
+      className={`app-container ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isMobile ? 'mobile-layout' : 'desktop-layout'}`}
       style={
         {
           '--sidebar-width': `${sidebarWidth}px`,
@@ -546,7 +518,12 @@ function AppLayout() {
       ) : null}
 
       <div className="sidebar-shell">
-        <Sidebar title={appTitle} onTitleChange={handleAppTitleChange} onNavigate={handleSidebarNavigate} />
+        <Sidebar 
+          title={appTitle} 
+          onTitleChange={handleAppTitleChange} 
+          onNavigate={handleSidebarNavigate}
+          notificationCount={notifications.length}
+        />
       </div>
 
       {!isMobile ? (
@@ -570,107 +547,66 @@ function AppLayout() {
         </div>
       ) : null}
 
-      <div className={`notification-panel ${isNotificationPanelOpen ? 'is-open' : 'is-collapsed'}`}>
-        <div className="notification-panel-handle">
-          <button
-            type="button"
-            className="sidebar-toggle notification-panel-toggle-btn"
-            onClick={() => setIsNotificationPanelOpen((isOpen) => !isOpen)}
-            aria-label={isNotificationPanelOpen ? 'Collapse notifications panel' : 'Expand notifications panel'}
-            title={isNotificationPanelOpen ? 'Collapse notifications panel' : 'Expand notifications panel'}
+      {/* Toast Notifications Container */}
+      <div className="toast-notifications-container">
+        {toastNotifications.map((notification, index) => (
+          <div
+            key={notification.id}
+            className={`toast-notification ${notification.id === newestNotificationID ? 'is-new' : ''}`}
+            style={{ '--toast-index': index } as CSSProperties}
           >
-            {isNotificationPanelOpen ? '▶' : '◀'}
-          </button>
-        </div>
-        <section className="notification-panel-content" aria-live="polite" aria-atomic="false">
-          <header className="notification-panel-header">
-            <strong>Notifications</strong>
-            <span className="notification-panel-count">{notifications.length}</span>
-          </header>
-          <div className="notification-panel-list">
-            {notifications.length === 0 ? (
-              <div className="notification-panel-empty">No notifications yet.</div>
-            ) : (
-              notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className={`completion-notification-card ${notification.id === newestNotificationID ? 'is-new' : ''}`}
-                >
-                  {(() => {
-                    const audioState = notificationAudioStates[notification.id] || 'idle';
-                    const hasAudio = typeof notification.audioClipId === 'string' && notification.audioClipId.trim() !== '';
-                    return (
-                      <>
-                        <div className="completion-notification-title-row">
-                          <strong>{notification.title}</strong>
-                          <span className={`completion-notification-status status-${notification.status}`}>
-                            {notification.status}
-                          </span>
-                        </div>
-                        <div className="completion-notification-meta">
-                          {new Date(notification.createdAt).toLocaleTimeString()}
-                        </div>
-                        {notification.message ? <div className="completion-notification-meta">{notification.message}</div> : null}
-                        {notification.imageUrl ? (
-                          <img className="completion-notification-image" src={notification.imageUrl} alt="Notification" loading="lazy" />
-                        ) : null}
-                        {hasAudio ? (
-                          <div className="completion-notification-meta">Audio: {audioState}</div>
-                        ) : null}
-                        <div className="completion-notification-actions">
-                          {notification.sessionId ? (
-                            <button type="button" className="settings-add-btn" onClick={() => openNotificationSession(notification.sessionId)}>
-                              Open
-                            </button>
-                          ) : null}
-                          {hasAudio ? (
-                            <button
-                              type="button"
-                              className="settings-add-btn"
-                              onClick={() => void playNotificationAudio(notification.id, notification.audioClipId || '')}
-                              disabled={audioState === 'loading' || audioState === 'playing'}
-                              aria-label={audioState === 'paused' ? 'Resume audio' : 'Play audio'}
-                              title={audioState === 'paused' ? 'Resume audio' : 'Play audio'}
-                            >
-                              {audioState === 'loading' ? '...' : '▶'}
-                            </button>
-                          ) : null}
-                          {hasAudio ? (
-                            <button
-                              type="button"
-                              className="settings-add-btn"
-                              onClick={() => pauseNotificationAudio(notification.id)}
-                              disabled={audioState !== 'playing'}
-                              aria-label="Pause audio"
-                              title="Pause audio"
-                            >
-                              ⏸
-                            </button>
-                          ) : null}
-                          {hasAudio ? (
-                            <button
-                              type="button"
-                              className="settings-add-btn"
-                              onClick={() => stopNotificationAudio(notification.id)}
-                              disabled={audioState !== 'playing' && audioState !== 'paused'}
-                              aria-label="Stop audio"
-                              title="Stop audio"
-                            >
-                              ■
-                            </button>
-                          ) : null}
-                          <button type="button" className="settings-remove-btn" onClick={() => removeNotification(notification.id)}>
-                            Dismiss
-                          </button>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              ))
-            )}
+            <button
+              type="button"
+              className="toast-dismiss-btn"
+              onClick={() => dismissToast(notification.id)}
+              aria-label="Dismiss notification"
+            >
+              ×
+            </button>
+            <div className="toast-content">
+              <div className="toast-title-row">
+                <strong className="toast-title">{notification.title}</strong>
+                <span className={`toast-status status-${notification.status}`}>
+                  {notification.status}
+                </span>
+              </div>
+              {notification.message ? (
+                <div className="toast-message">{notification.message}</div>
+              ) : null}
+              {notification.imageUrl ? (
+                <img 
+                  className="toast-image" 
+                  src={notification.imageUrl} 
+                  alt="Notification" 
+                  loading="lazy" 
+                />
+              ) : null}
+              <div className="toast-actions">
+                {notification.sessionId ? (
+                  <button 
+                    type="button" 
+                    className="toast-action-btn"
+                    onClick={() => {
+                      openNotificationSession(notification.sessionId);
+                      dismissToast(notification.id);
+                    }}
+                  >
+                    Open
+                  </button>
+                ) : null}
+                {notification.audioClipId ? (
+                  <button
+                    type="button"
+                    className="toast-action-btn"
+                    onClick={() => void playNotificationAudio(notification.id, notification.audioClipId || '')}
+                  >
+                    ▶
+                  </button>
+                ) : null}
+              </div>
+            </div>
           </div>
-        </section>
+        ))}
       </div>
 
       <div className="main-content">
@@ -692,6 +628,7 @@ function AppLayout() {
           <Route path="/providers/fallback-aggregates/new" element={<FallbackAggregateCreateView />} />
           <Route path="/providers/:providerType" element={<ProviderEditView />} />
           <Route path="/tools" element={<ToolsView />} />
+          <Route path="/notifications" element={<NotificationsView />} />
           <Route path="/skills" element={<SkillsView />} />
           <Route path="/settings" element={<SettingsView />} />
           <Route path="/projects/:projectId" element={<ProjectView />} />

@@ -16,6 +16,7 @@ interface SidebarProps {
   title: string;
   onTitleChange: (title: string) => void;
   onNavigate?: () => void;
+  notificationCount?: number;
 }
 
 interface NavSection {
@@ -45,7 +46,7 @@ const navSections: NavSection[] = [
   },
 ];
 
-function Sidebar({ title, onTitleChange, onNavigate }: SidebarProps) {
+function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0 }: SidebarProps) {
   const location = useLocation();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
@@ -226,6 +227,18 @@ function Sidebar({ title, onTitleChange, onNavigate }: SidebarProps) {
                   </Link>
                 </li>
               ))}
+              {/* Notifications in Agent section */}
+              {section.id === 'agent' && (
+                <li className="nav-item">
+                  <Link
+                    to="/notifications"
+                    className={`nav-link ${location.pathname === '/notifications' ? 'active' : ''}`}
+                    onClick={onNavigate}
+                  >
+                    🔔 Notifications {notificationCount ? `(${notificationCount})` : '(0)'}
+                  </Link>
+                </li>
+              )}
             </ul>
           </div>
         ))}

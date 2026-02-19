@@ -323,7 +323,15 @@ function SkillsView() {
                       <div key={skill.path} className="skill-card skill-card-external">
                         <div className="skill-card-title-row">
                           <h3>{skill.name}</h3>
-                          <span className="skill-badge skill-badge-external">Folder</span>
+                          <button
+                            type="button"
+                            className="skill-delete-btn"
+                            onClick={() => void handleDelete(skill)}
+                            disabled={deletingSkills.has(skill.path)}
+                            title={deletingSkills.has(skill.path) ? 'Deleting...' : 'Delete skill'}
+                          >
+                            🗑️
+                          </button>
                         </div>
                         {skill.description && (
                           <p className="skill-card-description">{skill.description}</p>
@@ -337,14 +345,6 @@ function SkillsView() {
                             {skill.relative_path}
                           </Link>
                         </div>
-                        <button
-                          type="button"
-                          className="skill-delete-btn"
-                          onClick={() => void handleDelete(skill)}
-                          disabled={deletingSkills.has(skill.path)}
-                        >
-                          {deletingSkills.has(skill.path) ? '🗑️ Deleting...' : '🗑️ Delete'}
-                        </button>
                       </div>
                     ))}
                   </div>

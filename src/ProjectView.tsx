@@ -1352,6 +1352,151 @@ function ProjectView() {
       ) : null}
 
       <div className="page-content project-view-content">
+        {/* Files Section */}
+        <div className="project-files-section">
+          {!rootFolder ? (
+            <div className="project-files-empty">
+              <p>No folder configured for this project.</p>
+              <p>Configure a folder to browse and edit files.</p>
+              <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+                Configure folder
+              </button>
+            </div>
+          ) : (
+            <div
+              className="mind-layout"
+              style={
+                {
+                  '--mind-tree-width': `${treePanelWidth}px`,
+                } as CSSProperties
+              }
+            >
+              <div className="mind-tree-panel">
+                <div className="mind-tree-toolbar">
+                  <button type="button" className="settings-add-btn" onClick={() => void createNewFile()} disabled={isSavingFile}>
+                    New file
+                  </button>
+                </div>
+                {renderTree('')}
+              </div>
+              <div
+                className="mind-tree-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize file tree panel"
+                onPointerDown={handleStartTreeResize}
+              />
+              <div className="mind-viewer-panel">
+                <div className="mind-viewer-header">
+                  <div className="mind-viewer-path">{selectedFilePath || 'Select a file from the tree'}</div>
+                  <div className="mind-viewer-mode">
+                    {selectedFilePath ? (
+                      <button
+                        type="button"
+                        className="mind-create-session-btn"
+                        onClick={() => openSessionDialogForPath('file', selectedFilePath)}
+                        title="Create session for this file"
+                      >
+                        💭 Session
+                      </button>
+                    ) : null}
+                    {selectedFilePath ? (
+                      <div className="mind-file-actions-menu" ref={fileActionsMenuRef}>
+                        <button
+                          type="button"
+                          className="mind-file-actions-trigger"
+                          onClick={() => setIsFileActionsMenuOpen((prev) => !prev)}
+                          title="Use this file..."
+                          aria-haspopup="menu"
+                          aria-expanded={isFileActionsMenuOpen}
+                        >
+                          ⋯
+                        </button>
+                        {isFileActionsMenuOpen ? (
+                          <div className="mind-file-actions-dropdown" role="menu">
+                            <button
+                              type="button"
+                              className="mind-file-actions-item"
+                              onClick={() => void addSelectedFileToAgentInstructions()}
+                              disabled={isAddingAgentInstructionFile || isSelectedFileAgentInstruction}
+                              title="Add this file as a global Agent Instructions file block"
+                            >
+                              {isAddingAgentInstructionFile
+                                ? 'Adding...'
+                                : isSelectedFileAgentInstruction
+                                  ? 'In Agent Instructions'
+                                  : 'Use for Agent Instructions'}
+                            </button>
+                            <button
+                              type="button"
+                              className="mind-file-actions-item"
+                              onClick={addSelectedFileToRecurringJob}
+                              title="Create a recurring job prefilled to use this file"
+                            >
+                              Use in Recurring Job
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {selectedFilePath && hasUnsavedChanges ? (
+                      <button
+                        type="button"
+                        className="settings-save-btn"
+                        onClick={() => void saveCurrentFile()}
+                        disabled={isLoadingFile || isSavingFile || isDeletingFile}
+                        title="Save changes"
+                      >
+                        {isSavingFile ? 'Saving...' : 'Save'}
+                      </button>
+                    ) : null}
+                    {selectedFilePath ? (
+                      <button
+                        type="button"
+                        className="mind-delete-file-btn"
+                        onClick={() => void deleteCurrentFile()}
+                        disabled={isLoadingFile || isSavingFile || isDeletingFile}
+                        title="Delete this file"
+                      >
+                        {isDeletingFile ? 'Deleting...' : 'Delete'}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={`mind-mode-toggle ${markdownMode === 'source' ? 'source' : 'preview'}`}
+                      onClick={() => setMarkdownMode((prev) => (prev === 'preview' ? 'source' : 'preview'))}
+                      disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
+                      title={markdownMode === 'preview' ? 'Switch to source view' : 'Switch to preview mode'}
+                    >
+                      <span className="mind-mode-toggle-label">{markdownMode === 'preview' ? 'Preview' : 'Source'}</span>
+                      <span className="mind-mode-toggle-switch" aria-hidden="true">
+                        <span className="mind-mode-toggle-thumb" />
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mind-viewer-body">
+                  {isLoadingFile ? <div className="sessions-loading">Loading file...</div> : null}
+                  {!isLoadingFile && !selectedFilePath ? <div className="sessions-empty">No file selected.</div> : null}
+                  {!isLoadingFile && selectedFilePath && markdownMode === 'source' ? (
+                    <textarea
+                      className="mind-markdown-editor"
+                      value={selectedFileContent}
+                      onChange={(event) => setSelectedFileContent(event.target.value)}
+                      disabled={isSavingFile}
+                      spellCheck={false}
+                    />
+                  ) : null}
+                  {!isLoadingFile && selectedFilePath && markdownMode === 'preview' ? (
+                    <div className="mind-markdown-preview" onClick={(event) => void handlePreviewClick(event)} dangerouslySetInnerHTML={{ __html: markdownHtml }} />
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Sessions Section (Collapsible) */}
         <div className={`project-sessions-section ${sessionsCollapsed ? 'collapsed' : ''}`}>
           <button
@@ -1501,151 +1646,6 @@ function ProjectView() {
                     ) : null
                   }
                 />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Files Section */}
-        <div className="project-files-section">
-          {!rootFolder ? (
-            <div className="project-files-empty">
-              <p>No folder configured for this project.</p>
-              <p>Configure a folder to browse and edit files.</p>
-              <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
-                Configure folder
-              </button>
-            </div>
-          ) : (
-            <div
-              className="mind-layout"
-              style={
-                {
-                  '--mind-tree-width': `${treePanelWidth}px`,
-                } as CSSProperties
-              }
-            >
-              <div className="mind-tree-panel">
-                <div className="mind-tree-toolbar">
-                  <button type="button" className="settings-add-btn" onClick={() => void createNewFile()} disabled={isSavingFile}>
-                    New file
-                  </button>
-                </div>
-                {renderTree('')}
-              </div>
-              <div
-                className="mind-tree-resize-handle"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize file tree panel"
-                onPointerDown={handleStartTreeResize}
-              />
-              <div className="mind-viewer-panel">
-                <div className="mind-viewer-header">
-                  <div className="mind-viewer-path">{selectedFilePath || 'Select a file from the tree'}</div>
-                  <div className="mind-viewer-mode">
-                    {selectedFilePath ? (
-                      <button
-                        type="button"
-                        className="mind-create-session-btn"
-                        onClick={() => openSessionDialogForPath('file', selectedFilePath)}
-                        title="Create session for this file"
-                      >
-                        💭 Session
-                      </button>
-                    ) : null}
-                    {selectedFilePath ? (
-                      <div className="mind-file-actions-menu" ref={fileActionsMenuRef}>
-                        <button
-                          type="button"
-                          className="mind-file-actions-trigger"
-                          onClick={() => setIsFileActionsMenuOpen((prev) => !prev)}
-                          title="Use this file..."
-                          aria-haspopup="menu"
-                          aria-expanded={isFileActionsMenuOpen}
-                        >
-                          ⋯
-                        </button>
-                        {isFileActionsMenuOpen ? (
-                          <div className="mind-file-actions-dropdown" role="menu">
-                            <button
-                              type="button"
-                              className="mind-file-actions-item"
-                              onClick={() => void addSelectedFileToAgentInstructions()}
-                              disabled={isAddingAgentInstructionFile || isSelectedFileAgentInstruction}
-                              title="Add this file as a global Agent Instructions file block"
-                            >
-                              {isAddingAgentInstructionFile
-                                ? 'Adding...'
-                                : isSelectedFileAgentInstruction
-                                  ? 'In Agent Instructions'
-                                  : 'Use for Agent Instructions'}
-                            </button>
-                            <button
-                              type="button"
-                              className="mind-file-actions-item"
-                              onClick={addSelectedFileToRecurringJob}
-                              title="Create a recurring job prefilled to use this file"
-                            >
-                              Use in Recurring Job
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {selectedFilePath && hasUnsavedChanges ? (
-                      <button
-                        type="button"
-                        className="settings-save-btn"
-                        onClick={() => void saveCurrentFile()}
-                        disabled={isLoadingFile || isSavingFile || isDeletingFile}
-                        title="Save changes"
-                      >
-                        {isSavingFile ? 'Saving...' : 'Save'}
-                      </button>
-                    ) : null}
-                    {selectedFilePath ? (
-                      <button
-                        type="button"
-                        className="mind-delete-file-btn"
-                        onClick={() => void deleteCurrentFile()}
-                        disabled={isLoadingFile || isSavingFile || isDeletingFile}
-                        title="Delete this file"
-                      >
-                        {isDeletingFile ? 'Deleting...' : 'Delete'}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className={`mind-mode-toggle ${markdownMode === 'source' ? 'source' : 'preview'}`}
-                      onClick={() => setMarkdownMode((prev) => (prev === 'preview' ? 'source' : 'preview'))}
-                      disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
-                      title={markdownMode === 'preview' ? 'Switch to source view' : 'Switch to preview mode'}
-                    >
-                      <span className="mind-mode-toggle-label">{markdownMode === 'preview' ? 'Preview' : 'Source'}</span>
-                      <span className="mind-mode-toggle-switch" aria-hidden="true">
-                        <span className="mind-mode-toggle-thumb" />
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mind-viewer-body">
-                  {isLoadingFile ? <div className="sessions-loading">Loading file...</div> : null}
-                  {!isLoadingFile && !selectedFilePath ? <div className="sessions-empty">No file selected.</div> : null}
-                  {!isLoadingFile && selectedFilePath && markdownMode === 'source' ? (
-                    <textarea
-                      className="mind-markdown-editor"
-                      value={selectedFileContent}
-                      onChange={(event) => setSelectedFileContent(event.target.value)}
-                      disabled={isSavingFile}
-                      spellCheck={false}
-                    />
-                  ) : null}
-                  {!isLoadingFile && selectedFilePath && markdownMode === 'preview' ? (
-                    <div className="mind-markdown-preview" onClick={(event) => void handlePreviewClick(event)} dangerouslySetInnerHTML={{ __html: markdownHtml }} />
-                  ) : null}
-                </div>
               </div>
             </div>
           )}

@@ -9,8 +9,6 @@
 
 .app-container {
   --sidebar-width: 280px;
-  --notification-panel-width: 360px;
-  --notification-panel-collapsed-width: 14px;
   display: flex;
   height: 100vh;
   width: 100vw;
@@ -118,14 +116,6 @@ body.mind-resizing * {
   min-width: 0;
   overflow: auto;
   transition: margin-right 0.22s ease;
-}
-
-.desktop-layout.notifications-panel-open .main-content {
-  margin-right: min(var(--notification-panel-width), calc(100vw - 24px));
-}
-
-.desktop-layout.notifications-panel-collapsed .main-content {
-  margin-right: 0;
 }
 
 .mobile-layout .main-content {
@@ -976,7 +966,7 @@ body.mind-resizing * {
 .message-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
 }
 
 .message {
@@ -989,6 +979,9 @@ body.mind-resizing * {
   background-color: #2a4a7a;
   align-self: flex-end;
   margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
 }
 
 .message-assistant {
@@ -1076,6 +1069,17 @@ body.mind-resizing * {
   font-size: 11px;
 }
 
+.message-user .message-footer {
+  margin-top: 0;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.message-user .message-content {
+  flex: 1;
+  min-width: 0;
+}
+
 .message-role {
   font-weight: 600;
   color: #e0e0e0;
@@ -1115,7 +1119,7 @@ body.mind-resizing * {
 }
 
 .message-content {
-  line-height: 1.4;
+  line-height: 1.3;
   white-space: normal;
   word-break: break-word;
 }
@@ -1330,14 +1334,14 @@ body.mind-resizing * {
 .tool-execution-stack {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .tool-card-summary {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 4px 6px;
   cursor: pointer;
 }
 
@@ -1352,13 +1356,13 @@ body.mind-resizing * {
 .tool-summary-name {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
   flex: 1 1 auto;
 }
 
 .tool-card-body {
-  padding: 0 10px 10px;
+  padding: 0 6px 6px;
 }
 
 .tool-card-collapsed[open] .tool-card-summary {
@@ -1378,7 +1382,7 @@ body.mind-resizing * {
 }
 
 .tool-execution-block + .tool-execution-block {
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .tool-execution-label {
@@ -1386,7 +1390,7 @@ body.mind-resizing * {
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   color: #a7b1c2;
 }
 
@@ -1433,7 +1437,7 @@ body.mind-resizing * {
 .tool-input,
 .tool-result-content {
   background-color: #0a0a0a;
-  padding: 8px;
+  padding: 4px 6px;
   border-radius: 4px;
   overflow-x: auto;
   font-size: 12px;
@@ -3897,26 +3901,23 @@ body.mind-resizing * {
 }
 
 .skill-delete-btn {
-  width: 100%;
-  padding: 6px 10px;
-  border: 1px solid #9c4b4b;
-  border-radius: 6px;
-  background: rgba(128, 62, 62, 0.15);
-  color: #f0b9b9;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 16px;
   cursor: pointer;
   transition: all 0.2s;
-  margin-top: 8px;
+  opacity: 0.5;
 }
 
 .skill-delete-btn:hover:not(:disabled) {
-  background: rgba(128, 62, 62, 0.25);
-  border-color: #b15a5a;
+  opacity: 1;
+  background: rgba(128, 62, 62, 0.2);
 }
 
 .skill-delete-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
@@ -4134,14 +4135,6 @@ body.mind-resizing * {
 .sidebar-closed .global-playback-bar,
 .mobile-layout .global-playback-bar {
   left: 16px;
-}
-
-.desktop-layout.notifications-panel-open .global-playback-bar {
-  right: calc(min(var(--notification-panel-width), calc(100vw - 24px)) + 24px);
-}
-
-.desktop-layout.notifications-panel-collapsed .global-playback-bar {
-  right: 20px;
 }
 
 .global-playback-main {
@@ -6182,4 +6175,270 @@ input[type="checkbox"]:disabled {
   outline: none;
   border-color: #646cff;
   background: #1a1d24;
+}
+
+/* Toast Notifications Container - Bottom Left */
+.toast-notifications-container {
+  position: fixed;
+  bottom: 20px;
+  left: calc(var(--sidebar-width, 280px) + 20px);
+  z-index: 1500;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  pointer-events: none;
+  max-width: 400px;
+}
+
+.sidebar-closed .toast-notifications-container,
+.mobile-layout .toast-notifications-container {
+  left: 20px;
+}
+
+/* Individual Toast Notification */
+.toast-notification {
+  pointer-events: auto;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  position: relative;
+  animation: toast-enter 0.3s ease-out;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.toast-notification.is-new {
+  animation: toast-enter 0.3s ease-out;
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toast-notification.is-exiting {
+  animation: toast-exit 0.3s ease-in forwards;
+}
+
+@keyframes toast-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+/* Toast Dismiss Button */
+.toast-dismiss-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.toast-dismiss-btn:hover {
+  color: #e5e7eb;
+}
+
+/* Toast Content */
+.toast-content {
+  padding-right: 20px;
+}
+
+.toast-title-row {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.toast-title {
+  font-size: 14px;
+  color: #f3f4f6;
+}
+
+.toast-status {
+  text-transform: capitalize;
+  font-size: 11px;
+  border: 1px solid #4b5563;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #d1d5db;
+}
+
+.toast-status.status-completed {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.toast-status.status-failed {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.toast-status.status-info {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.toast-status.status-success {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.toast-status.status-warning {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.toast-status.status-error {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.toast-message {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.toast-image {
+  display: block;
+  width: 100%;
+  max-height: 150px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  margin-bottom: 8px;
+}
+
+.toast-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toast-action-btn {
+  padding: 4px 10px;
+  background: #374151;
+  border: none;
+  border-radius: 4px;
+  color: #e5e7eb;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.toast-action-btn:hover {
+  background: #4b5563;
+}
+
+/* Notification Panel Styles - Now used in toast system */
+.completion-notification-card {
+  border: none;
+  background: #202327;
+  border-radius: 0;
+  padding: 10px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.completion-notification-card.is-new {
+  animation: notification-enter-from-top 320ms ease-out;
+}
+
+@keyframes notification-enter-from-top {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.completion-notification-title-row {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.completion-notification-status {
+  text-transform: capitalize;
+  font-size: 11px;
+  border: 1px solid #4b5563;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.completion-notification-meta {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.completion-notification-error {
+  color: #f87171;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.completion-notification-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.completion-notification-image {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  margin-bottom: 8px;
+}
+
+/* Remove right-side notification panel styles */
+.notification-panel {
+  display: none;
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 900px) {
+  .toast-notifications-container {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    max-width: none;
+  }
+
+  .toast-notification {
+    max-width: 100%;
+  }
 }
