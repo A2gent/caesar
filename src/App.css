@@ -1064,6 +1064,9 @@ body.mind-resizing * {
 .message-assistant {
   background-color: #2a2a2a;
   align-self: flex-start;
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
 }
 
 .message-tool {
@@ -1155,6 +1158,17 @@ body.mind-resizing * {
 .message-user .message-content {
   flex: 1;
   min-width: 0;
+}
+
+.message-assistant .message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.message-assistant .message-footer {
+  margin-top: 0;
+  align-items: flex-end;
+  flex-shrink: 0;
 }
 
 .message-role {
@@ -2338,6 +2352,23 @@ body.mind-resizing * {
   color: #a5a5a5;
   font-size: 12px;
   cursor: help;
+}
+
+.session-task-progress {
+  background: none;
+  border: none;
+  color: #a5a5a5;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.session-task-progress:hover {
+  background: rgba(0, 122, 255, 0.1);
+  color: #007aff;
 }
 
 .session-card .session-delete-btn,
