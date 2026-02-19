@@ -7,6 +7,7 @@ import {
   listProjects,
   listProviders,
   listSessions,
+  startSession,
   type LLMProviderType,
   type Project,
   type ProviderConfig,
@@ -26,7 +27,9 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [isQueuingSession, setIsQueuingSession] = useState(false);
   const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
+  const [startingSessionID, setStartingSessionID] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
@@ -149,6 +152,42 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
     }
   };
 
+  const handleQueueSession = async (message: string) => {
+    setIsQueuingSession(true);
+    setError(null);
+
+    try {
+      await createSession({
+        agent_id: 'build',
+        task: message,
+        provider: selectedProvider || undefined,
+        project_id: projectId || undefined,
+        queued: true,
+      });
+      await loadSessions();
+    } catch (err) {
+      console.error('Failed to queue session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to queue session');
+    } finally {
+      setIsQueuingSession(false);
+    }
+  };
+
+  const handleStartQueuedSession = async (session: Session) => {
+    setStartingSessionID(session.id);
+    setError(null);
+
+    try {
+      await startSession(session.id);
+      onSelectSession(session.id);
+    } catch (err) {
+      console.error('Failed to start queued session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start session');
+    } finally {
+      setStartingSessionID((current) => (current === session.id ? null : current));
+    }
+  };
+
   const handleDuplicateSession = async (sourceSession: Session) => {
     setDuplicatingSessionID(sourceSession.id);
     setError(null);
@@ -237,8 +276,12 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
     return project?.name || null;
   };
 
-  // Sort sessions by updated_at descending (most recent first)
+  // Sort sessions: queued first, then by updated_at descending (most recent first)
   const sortedSessions = [...sessions].sort((a, b) => {
+    const aIsQueued = a.status === 'queued';
+    const bIsQueued = b.status === 'queued';
+    if (aIsQueued && !bIsQueued) return -1;
+    if (!aIsQueued && bIsQueued) return 1;
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
   });
 
@@ -271,61 +314,81 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
             </EmptyState>
           ) : (
             <div className="sessions-list">
-              {sortedSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="session-card"
-                  onClick={() => onSelectSession(session.id)}
-                >
-                  <div className="session-card-row">
-                    <div className="session-name-wrap">
-                      <span
-                        className={`session-status-dot status-${session.status}`}
-                        title={`Status: ${formatStatusLabel(session.status)}`}
-                        aria-label={`Status: ${formatStatusLabel(session.status)}`}
-                      />
-                      <h3 className="session-name">{formatSessionTitle(session)}</h3>
-                    </div>
-                    <div className="session-row-right">
-                      <div className="session-meta">
-                        {session.provider ? <span className="session-provider-chip">{session.provider}</span> : null}
+              {sortedSessions.map((session) => {
+                const isQueued = session.status === 'queued';
+                return (
+                  <div
+                    key={session.id}
+                    className={`session-card ${isQueued ? 'session-queued' : ''}`}
+                    onClick={() => onSelectSession(session.id)}
+                  >
+                    <div className="session-card-row">
+                      <div className="session-name-wrap">
                         <span
-                          className="session-token-count"
-                          title={`Ran for ${formatDurationSeconds(session.run_duration_seconds ?? 0)}`}
-                        >
-                          {formatTokenCount(session.total_tokens ?? 0)}
-                        </span>
-                        <span className="session-date">{formatDate(session.updated_at)}</span>
+                          className={`session-status-dot status-${session.status}`}
+                          title={`Status: ${formatStatusLabel(session.status)}`}
+                          aria-label={`Status: ${formatStatusLabel(session.status)}`}
+                        />
+                        <h3 className="session-name">{formatSessionTitle(session)}</h3>
                       </div>
-                      <div className="session-actions">
-                        <button
-                          className="session-duplicate-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleDuplicateSession(session);
-                          }}
-                          title="Duplicate session"
-                          aria-label={`Duplicate ${formatSessionTitle(session)}`}
-                          disabled={duplicatingSessionID === session.id}
-                        >
-                          ↻
-                        </button>
-                        <button
-                          className="session-delete-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleDeleteSession(session.id);
-                          }}
-                          title="Delete session"
-                          aria-label={`Delete ${formatSessionTitle(session)}`}
-                        >
-                          Delete
-                        </button>
+                      <div className="session-row-right">
+                        <div className="session-meta">
+                          {session.provider ? <span className="session-provider-chip">{session.provider}</span> : null}
+                          {!isQueued && (
+                            <span
+                              className="session-token-count"
+                              title={`Ran for ${formatDurationSeconds(session.run_duration_seconds ?? 0)}`}
+                            >
+                              {formatTokenCount(session.total_tokens ?? 0)}
+                            </span>
+                          )}
+                          <span className="session-date">{formatDate(session.updated_at)}</span>
+                        </div>
+                        <div className="session-actions">
+                          {isQueued ? (
+                            <button
+                              className="session-play-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleStartQueuedSession(session);
+                              }}
+                              title="Start session"
+                              aria-label={`Start ${formatSessionTitle(session)}`}
+                              disabled={startingSessionID === session.id}
+                            >
+                              ▶
+                            </button>
+                          ) : (
+                            <button
+                              className="session-duplicate-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleDuplicateSession(session);
+                              }}
+                              title="Duplicate session"
+                              aria-label={`Duplicate ${formatSessionTitle(session)}`}
+                              disabled={duplicatingSessionID === session.id}
+                            >
+                              ↻
+                            </button>
+                          )}
+                          <button
+                            className="session-delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleDeleteSession(session.id);
+                            }}
+                            title="Delete session"
+                            aria-label={`Delete ${formatSessionTitle(session)}`}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -334,8 +397,10 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
           <div className="page-content sessions-composer-inner">
             <ChatInput
               onSend={handleStartSession}
-              disabled={isCreatingSession}
+              onQueue={handleQueueSession}
+              disabled={isCreatingSession || isQueuingSession}
               autoFocus
+              showQueueButton={true}
               actionControls={
                 providers.length > 0 ? (
                   <div className="sessions-new-chat-controls">

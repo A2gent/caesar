@@ -3,6 +3,7 @@ import { transcribeSpeech } from './api';
 
 interface ChatInputProps {
   onSend?: (message: string) => void;
+  onQueue?: (message: string) => void;
   onStop?: () => void;
   disabled?: boolean;
   autoFocus?: boolean;
@@ -12,6 +13,7 @@ interface ChatInputProps {
   placeholder?: string;
   value?: string;
   onValueChange?: (value: string) => void;
+  showQueueButton?: boolean;
 }
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -148,6 +150,7 @@ function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
 
 const ChatInput: React.FC<ChatInputProps> = ({
   onSend,
+  onQueue,
   onStop,
   disabled = false,
   autoFocus = false,
@@ -157,6 +160,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   placeholder,
   value: externalValue,
   onValueChange,
+  showQueueButton = false,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -455,6 +459,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, [disabled, onSend, value]);
 
+  const handleQueue = useCallback(() => {
+    if (disabled) return;
+    const messageToSend = value.trim();
+    if (messageToSend && onQueue) {
+      onQueue(messageToSend);
+      setValue('');
+    }
+  }, [disabled, onQueue, value]);
+
   const startRecording = useCallback(async () => {
     if (disabled || isRecording || isTranscribing) {
       return;
@@ -725,18 +738,35 @@ const ChatInput: React.FC<ChatInputProps> = ({
             </svg>
           </button>
         ) : (
-          <button
-            type="button"
-            className="send-button"
-            onClick={handleSend}
-            disabled={disabled || !value.trim()}
-            title="Send message"
-            aria-label="Send message"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" className="send-icon" aria-hidden="true">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-            </svg>
-          </button>
+          <>
+            {showQueueButton && (
+              <button
+                type="button"
+                className="queue-button"
+                onClick={handleQueue}
+                disabled={disabled || !value.trim()}
+                title="Queue for later (create without starting)"
+                aria-label="Queue for later"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="send-icon" aria-hidden="true">
+                  <rect x="6" y="4" width="4" height="16" fill="currentColor" />
+                  <rect x="14" y="4" width="4" height="16" fill="currentColor" />
+                </svg>
+              </button>
+            )}
+            <button
+              type="button"
+              className="send-button"
+              onClick={handleSend}
+              disabled={disabled || !value.trim()}
+              title="Send message"
+              aria-label="Send message"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="send-icon" aria-hidden="true">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              </svg>
+            </button>
+          </>
         )}
       </div>
     </div>

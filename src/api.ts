@@ -201,9 +201,25 @@ export interface ChatResponse {
   };
 }
 
+export interface StreamToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface StreamToolResult {
+  tool_call_id: string;
+  name: string;
+  content: string;
+  is_error: boolean;
+}
+
 export type ChatStreamEvent =
   | { type: 'status'; status: string }
   | { type: 'assistant_delta'; delta: string }
+  | { type: 'tool_executing'; step: number; tool_calls: StreamToolCall[] }
+  | { type: 'tool_completed'; step: number; messages: Message[]; status: string }
+  | { type: 'step_completed'; step: number }
   | { type: 'done'; content: string; messages: Message[]; status: string; usage?: { input_tokens: number; output_tokens: number } }
   | { type: 'error'; error: string; status?: string };
 
@@ -213,6 +229,7 @@ export interface CreateSessionRequest {
   provider?: string;
   model?: string;
   project_id?: string;
+  queued?: boolean;
 }
 
 export interface CreateSessionResponse {
@@ -594,6 +611,16 @@ export async function deleteSession(sessionId: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to delete session: ${response.statusText}`);
   }
+}
+
+export async function startSession(sessionId: string): Promise<Session> {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/start`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to start session');
+  }
+  return response.json();
 }
 
 export async function sendMessage(sessionId: string, message: string): Promise<ChatResponse> {

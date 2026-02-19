@@ -18,6 +18,7 @@ import {
   moveProjectFile,
   renameProjectEntry,
   saveProjectFile,
+  startSession,
   updateProject,
   type LLMProviderType,
   type MindTreeEntry,
@@ -424,7 +425,9 @@ function ProjectView() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [isQueuingSession, setIsQueuingSession] = useState(false);
   const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
+  const [startingSessionID, setStartingSessionID] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(readStoredSessionsCollapsed);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
@@ -761,6 +764,58 @@ function ProjectView() {
       setError(err instanceof Error ? err.message : 'Failed to create session');
     } finally {
       setIsCreatingSession(false);
+    }
+  };
+
+  const handleQueueSession = async (message: string) => {
+    setIsQueuingSession(true);
+    setError(null);
+
+    try {
+      const combinedMessage = sessionContextMessage
+        ? `${sessionContextMessage}\n\n---\n\n${message}`
+        : message;
+
+      await createSession({
+        agent_id: 'build',
+        task: combinedMessage,
+        provider: selectedProvider || undefined,
+        project_id: projectId || undefined,
+        queued: true,
+      });
+      
+      setSessionContextMessage('');
+      setSessionTargetLabel('');
+      setIsSessionContextExpanded(false);
+      
+      await loadSessions();
+    } catch (err) {
+      console.error('Failed to queue session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to queue session');
+    } finally {
+      setIsQueuingSession(false);
+    }
+  };
+
+  const handleStartQueuedSession = async (session: Session) => {
+    setStartingSessionID(session.id);
+    setError(null);
+
+    try {
+      // Get full session with messages to find initial task
+      const fullSession = await getSession(session.id);
+      const firstUserMessage = (fullSession.messages || [])
+        .find((msg) => msg.role === 'user' && msg.content.trim() !== '')
+        ?.content.trim();
+
+      await startSession(session.id);
+      // Pass the initial message so ChatView will send it to the agent
+      handleSelectSession(session.id, firstUserMessage);
+    } catch (err) {
+      console.error('Failed to start queued session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start session');
+    } finally {
+      setStartingSessionID((current) => (current === session.id ? null : current));
     }
   };
 
@@ -1830,18 +1885,33 @@ function ProjectView() {
                             <span className="session-date">{formatDate(session.updated_at)}</span>
                           </div>
                           <div className="session-actions">
-                            <button
-                              className="session-duplicate-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleDuplicateSession(session);
-                              }}
-                              title="Duplicate session"
-                              aria-label={`Duplicate ${formatSessionTitle(session)}`}
-                              disabled={duplicatingSessionID === session.id}
-                            >
-                              ↻
-                            </button>
+                            {session.status === 'queued' ? (
+                              <button
+                                className="session-play-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleStartQueuedSession(session);
+                                }}
+                                title="Start session"
+                                aria-label={`Start ${formatSessionTitle(session)}`}
+                                disabled={startingSessionID === session.id}
+                              >
+                                ▶
+                              </button>
+                            ) : (
+                              <button
+                                className="session-duplicate-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleDuplicateSession(session);
+                                }}
+                                title="Duplicate session"
+                                aria-label={`Duplicate ${formatSessionTitle(session)}`}
+                                disabled={duplicatingSessionID === session.id}
+                              >
+                                ↻
+                              </button>
+                            )}
                             <button
                               className="session-delete-btn"
                               onClick={(e) => {
@@ -1908,8 +1978,10 @@ function ProjectView() {
           )}
           <ChatInput
             onSend={handleStartSession}
-            disabled={isCreatingSession}
+            onQueue={handleQueueSession}
+            disabled={isCreatingSession || isQueuingSession}
             autoFocus={!rootFolder}
+            showQueueButton={true}
             placeholder={sessionTargetLabel
               ? `Describe the task for ${sessionTargetLabel}...`
               : 'Start a new chat...'}

@@ -600,6 +600,73 @@ body.mind-resizing * {
   border-color: #f44336;
 }
 
+/* Play button for queued sessions */
+.session-play-btn {
+  border: 1px solid #4caf50;
+  background: #2f2f2f;
+  color: #4caf50;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 4px;
+  padding: 6px 10px;
+  min-height: 28px;
+  min-width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.session-play-btn:hover {
+  background-color: #4caf50;
+  color: white;
+}
+
+.session-play-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Queue button in chat input */
+.queue-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #2f2f2f;
+  color: #9e9e9e;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.queue-button:hover:not(:disabled) {
+  background: #3a3a3a;
+  color: #fff;
+  border-color: #666;
+}
+
+.queue-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.queue-button .send-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Queued session card styling */
+.session-card.session-queued {
+  border-left: 3px solid #9e9e9e;
+  background: linear-gradient(to right, rgba(158, 158, 158, 0.05), transparent);
+}
+
 /* Top bar updates */
 .top-bar {
   display: flex;
@@ -2192,6 +2259,11 @@ body.mind-resizing * {
 .session-status-dot.status-input_required {
   background-color: #9c27b0;
   animation: pulse 2s ease-in-out infinite;
+}
+
+.session-status-dot.status-queued {
+  background-color: transparent;
+  border: 2px solid #9e9e9e;
 }
 
 @keyframes session-status-spin {
