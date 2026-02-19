@@ -10,6 +10,7 @@ const TOOL_ICONS_BY_NAME: Record<string, string> = {
   take_screenshot_tool: '📸',
   take_camera_photo_tool: '📷',
   recurring_jobs_tool: '🕒',
+  session_task_progress: '📋',
   task: '🧠',
   google_calendar_query: '🗓️',
   brave_search_query: '🌐',
@@ -119,6 +120,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   bash: 'system',
   // Task Management
   recurring_jobs_tool: 'task-management',
+  session_task_progress: 'task-management',
   task: 'task-management',
   // Notifications
   notify_webapp: 'notifications',
