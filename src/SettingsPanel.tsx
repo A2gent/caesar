@@ -95,6 +95,8 @@ function ensureManagedInstructionBlocks(blocks: InstructionBlock[]): Instruction
   return normalizedBlocks;
 }
 
+const AGENT_NAME_SETTING_KEY = 'AAGENT_NAME';
+
 const MANAGED_KEYS = [
   ...SKILLS_MANAGED_SETTING_KEYS,
   CONTEXT_COMPACTION_TRIGGER_PERCENT,
@@ -104,6 +106,7 @@ const MANAGED_KEYS = [
   AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
   'SAG_VOICE_ID',
   'AAGENT_SAY_VOICE',
+  AGENT_NAME_SETTING_KEY,
 ] as const;
 
 const HIDDEN_CUSTOM_KEYS = new Set<string>([...MANAGED_KEYS]);

@@ -11,7 +11,11 @@ import {
   updateSettings,
 } from './api';
 
-function SettingsView() {
+interface SettingsViewProps {
+  onAgentNameRefresh?: () => void | Promise<void>;
+}
+
+function SettingsView({ onAgentNameRefresh }: SettingsViewProps) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -51,6 +55,9 @@ function SettingsView() {
       setApiBaseUrlHistory(getApiBaseUrlHistory());
       setApiBaseUrlMessage(`Connected to agent at: ${normalized}`);
       await loadSettings();
+      if (onAgentNameRefresh) {
+        await onAgentNameRefresh();
+      }
     } catch (err) {
       console.error('Failed to update API base URL:', err);
       setApiBaseUrlMessage('Failed to update backend URL');
@@ -63,6 +70,9 @@ function SettingsView() {
     setApiBaseUrlInput(normalized);
     setApiBaseUrlMessage(`Reset to default: ${normalized}`);
     await loadSettings();
+    if (onAgentNameRefresh) {
+      await onAgentNameRefresh();
+    }
   };
 
   const handleRemoveUrlFromHistory = (url: string) => {

@@ -3,9 +3,6 @@
 const API_BASE_URL_STORAGE_KEY = 'a2gent.api_base_url';
 const API_BASE_URL_HISTORY_KEY = 'a2gent.api_base_url_history';
 const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-const APP_TITLE_STORAGE_KEY = 'a2gent.app_title';
-const DEFAULT_APP_TITLE = '🤖 A2';
-
 function normalizeApiBaseUrl(url: string): string {
   return url.trim().replace(/\/$/, '');
 }
@@ -101,43 +98,6 @@ export function removeApiBaseUrlFromHistory(url: string): void {
   const history = getApiBaseUrlHistory();
   const filtered = history.filter((u) => u !== normalized);
   window.localStorage.setItem(API_BASE_URL_HISTORY_KEY, JSON.stringify(filtered));
-}
-
-function normalizeAppTitle(title: string): string {
-  return title.trim();
-}
-
-export function getDefaultAppTitle(): string {
-  return DEFAULT_APP_TITLE;
-}
-
-export function getAppTitle(): string {
-  if (typeof window === 'undefined') {
-    return DEFAULT_APP_TITLE;
-  }
-
-  const stored = window.localStorage.getItem(APP_TITLE_STORAGE_KEY);
-  const normalized = normalizeAppTitle(stored || '');
-  if (normalized !== '') {
-    return normalized;
-  }
-
-  return DEFAULT_APP_TITLE;
-}
-
-export function setAppTitle(title: string): string {
-  if (typeof window === 'undefined') {
-    return DEFAULT_APP_TITLE;
-  }
-
-  const normalized = normalizeAppTitle(title);
-  if (normalized === '') {
-    window.localStorage.removeItem(APP_TITLE_STORAGE_KEY);
-    return DEFAULT_APP_TITLE;
-  }
-
-  window.localStorage.setItem(APP_TITLE_STORAGE_KEY, normalized);
-  return normalized;
 }
 
 // Types matching the Go server responses
@@ -952,6 +912,9 @@ export async function answerQuestion(sessionId: string, answer: string): Promise
   }
 }
 
+const AGENT_NAME_SETTING_KEY = 'AAGENT_NAME';
+const DEFAULT_APP_TITLE_FALLBACK = '🤖 A2';
+
 export async function healthCheck(): Promise<boolean> {
   try {
     const response = await fetch(`${getApiBaseUrl()}/health`);
@@ -959,6 +922,26 @@ export async function healthCheck(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function fetchAgentName(): Promise<string> {
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/health`);
+    if (!response.ok) {
+      return DEFAULT_APP_TITLE_FALLBACK;
+    }
+    const data = await response.json() as { agent_name?: string };
+    return data.agent_name?.trim() || DEFAULT_APP_TITLE_FALLBACK;
+  } catch {
+    return DEFAULT_APP_TITLE_FALLBACK;
+  }
+}
+
+export async function saveAgentName(name: string): Promise<void> {
+  const trimmed = name.trim();
+  const settings = await getSettings();
+  const updated = { ...settings, [AGENT_NAME_SETTING_KEY]: trimmed };
+  await updateSettings(updated);
 }
 
 // --- Recurring Jobs API ---

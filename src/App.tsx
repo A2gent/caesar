@@ -17,7 +17,7 @@ import ThinkingView from './ThinkingView';
 import SkillsView from './SkillsView';
 import ToolsView from './ToolsView';
 import NotificationsView from './NotificationsView';
-import { buildImageAssetUrl, fetchSpeechClip, getAppTitle, getSession, listSessions, setAppTitle as persistAppTitle } from './api';
+import { buildImageAssetUrl, fetchAgentName, fetchSpeechClip, getSession, listSessions, saveAgentName } from './api';
 import { THINKING_PROJECT_ID } from './thinking';
 import { SYSTEM_PROJECT_KB_ID, SYSTEM_PROJECT_AGENT_ID } from './Sidebar';
 import { readWebAppNotification } from './toolResultEvents';
@@ -91,12 +91,21 @@ function AppLayout() {
   const seenWebAppNotificationIDsRef = useRef<Set<string>>(new Set());
   const [notifications, setNotifications] = useState<CompletionNotification[]>([]);
   const notificationAudioMapRef = useRef<Map<string, { audio: HTMLAudioElement; objectUrl: string }>>(new Map());
-  const [appTitle, setAppTitle] = useState(() => getAppTitle());
+  const [appTitle, setAppTitle] = useState('🤖 A2');
   const [newestNotificationID, setNewestNotificationID] = useState<string | null>(null);
   const [toastNotifications, setToastNotifications] = useState<CompletionNotification[]>([]);
   const toastTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const isSidebarOpen = isMobile ? isMobileSidebarOpen : isDesktopSidebarOpen;
+
+  const refreshAgentName = useCallback(async () => {
+    const name = await fetchAgentName();
+    setAppTitle(name);
+  }, []);
+
+  useEffect(() => {
+    void refreshAgentName();
+  }, [refreshAgentName]);
 
   useEffect(() => {
     document.title = appTitle;
@@ -524,8 +533,9 @@ function AppLayout() {
   };
 
   const handleAppTitleChange = useCallback((nextTitle: string) => {
-    const savedTitle = persistAppTitle(nextTitle);
-    setAppTitle(savedTitle);
+    const trimmed = nextTitle.trim() || '🤖 A2';
+    setAppTitle(trimmed);
+    void saveAgentName(trimmed);
   }, []);
 
   const openNotificationSession = (sessionId: string) => {
@@ -684,7 +694,7 @@ function AppLayout() {
           <Route path="/tools" element={<ToolsView />} />
           <Route path="/notifications" element={<NotificationsView notifications={notifications} onClearAll={clearAllNotifications} onDismiss={dismissNotification} />} />
           <Route path="/skills" element={<SkillsView />} />
-          <Route path="/settings" element={<SettingsView />} />
+          <Route path="/settings" element={<SettingsView onAgentNameRefresh={refreshAgentName} />} />
           <Route path="/projects/:projectId" element={<ProjectView />} />
         </Routes>
       </div>
