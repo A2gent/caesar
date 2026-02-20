@@ -35,6 +35,7 @@ const navSections: NavSection[] = [
     id: 'agent',
     label: '🤖 Agent',
     items: [
+      { id: 'source', label: '📁 Source', path: '/projects/system-agent' },
       { id: 'thinking', label: '🤔 Thinking', path: '/thinking' },
       { id: 'jobs', label: '🗓️ Recurring jobs', path: '/agent/jobs' },
       { id: 'tools', label: '🧰 Tools', path: '/tools' },
@@ -132,9 +133,6 @@ function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refr
     if (project.id === SYSTEM_PROJECT_AGENT_ID) return '🤖';
     return '📁';
   };
-
-  // Check if agent project is active
-  const isAgentProjectActive = location.pathname.startsWith(`/projects/${SYSTEM_PROJECT_AGENT_ID}`);
 
   return (
     <div className="sidebar">
@@ -245,18 +243,6 @@ function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refr
                   </Link>
                 </li>
               ))}
-              {/* Source code link in Agent section */}
-              {section.id === 'agent' && (
-                <li className="nav-item">
-                  <Link
-                    to={`/projects/${SYSTEM_PROJECT_AGENT_ID}`}
-                    className={`nav-link ${isAgentProjectActive ? 'active' : ''}`}
-                    onClick={onNavigate}
-                  >
-                    📁 Source code
-                  </Link>
-                </li>
-              )}
               {/* Notifications in Agent section */}
               {section.id === 'agent' && (
                 <li className="nav-item">

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { estimateInstructionPrompt, type SystemPromptSnapshot } from './api';
+import { browseSkillDirectories, estimateInstructionPrompt, type MindTreeEntry, type SystemPromptSnapshot } from './api';
 import InstructionBlocksEditor from './InstructionBlocksEditor';
 import {
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
@@ -33,6 +33,8 @@ interface CustomRow {
 const CONTEXT_COMPACTION_TRIGGER_PERCENT = 'AAGENT_CONTEXT_COMPACTION_TRIGGER_PERCENT';
 const CONTEXT_COMPACTION_PROMPT = 'AAGENT_CONTEXT_COMPACTION_PROMPT';
 const LLM_RETRIES = 'AAGENT_LLM_RETRIES';
+const SESSIONS_FOLDER = 'AAGENT_SESSIONS_FOLDER';
+const REPEAT_INITIAL_PROMPT = 'AAGENT_REPEAT_INITIAL_PROMPT';
 const DEFAULT_COMPACTION_TRIGGER = '80';
 const DEFAULT_COMPACTION_PROMPT = 'Create a concise continuation summary preserving goals, progress, constraints, and next actions.';
 const DEFAULT_LLM_RETRIES = '3';
@@ -102,6 +104,8 @@ const MANAGED_KEYS = [
   CONTEXT_COMPACTION_TRIGGER_PERCENT,
   CONTEXT_COMPACTION_PROMPT,
   LLM_RETRIES,
+  SESSIONS_FOLDER,
+  REPEAT_INITIAL_PROMPT,
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
   AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
   'SAG_VOICE_ID',
@@ -168,6 +172,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   );
   const [compactionPrompt, setCompactionPrompt] = useState(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
   const [llmRetries, setLlmRetries] = useState(settings[LLM_RETRIES] || DEFAULT_LLM_RETRIES);
+  const [sessionsFolder, setSessionsFolder] = useState(settings[SESSIONS_FOLDER] || '');
+  const [repeatInitialPrompt, setRepeatInitialPrompt] = useState(settings[REPEAT_INITIAL_PROMPT] !== 'false');
+  const [isSessionsFolderPickerOpen, setIsSessionsFolderPickerOpen] = useState(false);
+  const [sessionsFolderBrowsePath, setSessionsFolderBrowsePath] = useState('');
+  const [sessionsFolderBrowseEntries, setSessionsFolderBrowseEntries] = useState<MindTreeEntry[]>([]);
+  const [isSessionsFolderBrowseLoading, setIsSessionsFolderBrowseLoading] = useState(false);
   const [agentInstructionBlocks, setAgentInstructionBlocks] = useState<InstructionBlock[]>(
     ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')),
   );
@@ -190,6 +200,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setCompactionTriggerPercent(normalizeCompactionTriggerPercent(settings[CONTEXT_COMPACTION_TRIGGER_PERCENT] || DEFAULT_COMPACTION_TRIGGER));
     setCompactionPrompt(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
     setLlmRetries(settings[LLM_RETRIES] || DEFAULT_LLM_RETRIES);
+    setSessionsFolder(settings[SESSIONS_FOLDER] || '');
     setAgentInstructionBlocks(ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')));
   }, [settings]);
 
@@ -303,6 +314,32 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setCustomRows((prev) => prev.filter((row) => row.id !== id));
   };
 
+  const loadSessionsFolderBrowse = async (path: string) => {
+    setIsSessionsFolderBrowseLoading(true);
+    try {
+      const response = await browseSkillDirectories(path);
+      setSessionsFolderBrowsePath(response.path);
+      setSessionsFolderBrowseEntries(response.entries);
+    } catch {
+      // silently ignore browse errors
+    } finally {
+      setIsSessionsFolderBrowseLoading(false);
+    }
+  };
+
+  const openSessionsFolderPicker = async () => {
+    setIsSessionsFolderPickerOpen(true);
+    await loadSessionsFolderBrowse(sessionsFolder || '');
+  };
+
+  const getParentPath = (path: string): string => {
+    const trimmed = path.replace(/[\\/]+$/, '');
+    if (trimmed === '' || trimmed === '/') return '/';
+    const separatorIndex = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+    if (separatorIndex <= 0) return '/';
+    return trimmed.slice(0, separatorIndex);
+  };
+
   const handleSave = async () => {
     setSaveError(null);
     setSaveSuccess(null);
@@ -336,6 +373,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       return;
     }
     payload[LLM_RETRIES] = String(retriesValue);
+
+    const trimmedSessionsFolder = sessionsFolder.trim();
+    if (trimmedSessionsFolder !== '') {
+      payload[SESSIONS_FOLDER] = trimmedSessionsFolder;
+    }
+
+    const trimmedRepeatInitialPrompt = repeatInitialPrompt;
+    payload[REPEAT_INITIAL_PROMPT] = trimmedRepeatInitialPrompt ? 'true' : 'false';
 
     const draftSettings = buildInstructionSettingsDraft();
     payload[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] = draftSettings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '';
@@ -462,6 +507,83 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       </div>
 
       <div className="settings-panel">
+        <h2>Session logs</h2>
+        <p className="settings-help">
+          Save every session as a JSONL file. Each session gets its own file named{' '}
+          <code>&lt;session-id&gt;.jsonl</code>. New messages and tool-call results are
+          appended as they happen. Leave blank to disable.
+        </p>
+        <div className="settings-group">
+          <label className="settings-field">
+            <span>Sessions folder</span>
+            <div className="tool-folder-picker-row">
+              <input
+                type="text"
+                value={sessionsFolder}
+                onChange={(e) => setSessionsFolder(e.target.value)}
+                placeholder="~/.local/share/aagent/sessions (default)"
+                autoComplete="off"
+              />
+              <button type="button" className="settings-add-btn" onClick={() => void openSessionsFolderPicker()}>
+                Browse
+              </button>
+            </div>
+            <span className="settings-field-hint">
+              Folder where per-session JSONL log files are stored. Defaults to the <code>sessions/</code> subfolder next to the SQLite database (<code>~/.local/share/aagent/sessions</code>).
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {isSessionsFolderPickerOpen ? (
+        <div className="mind-picker-overlay" role="dialog" aria-modal="true" aria-label="Choose sessions folder">
+          <div className="mind-picker-dialog">
+            <h2>Choose sessions folder</h2>
+            <div className="mind-picker-path">{sessionsFolderBrowsePath || 'Loading...'}</div>
+            <div className="mind-picker-actions">
+              <button
+                type="button"
+                className="settings-add-btn"
+                onClick={() => void loadSessionsFolderBrowse(getParentPath(sessionsFolderBrowsePath))}
+                disabled={isSessionsFolderBrowseLoading || sessionsFolderBrowsePath === '' || getParentPath(sessionsFolderBrowsePath) === sessionsFolderBrowsePath}
+              >
+                Up
+              </button>
+              <button
+                type="button"
+                className="settings-save-btn"
+                onClick={() => {
+                  setSessionsFolder(sessionsFolderBrowsePath);
+                  setIsSessionsFolderPickerOpen(false);
+                }}
+                disabled={isSessionsFolderBrowseLoading || sessionsFolderBrowsePath.trim() === ''}
+              >
+                Use this folder
+              </button>
+              <button type="button" className="settings-remove-btn" onClick={() => setIsSessionsFolderPickerOpen(false)}>
+                Cancel
+              </button>
+            </div>
+            <div className="mind-picker-list">
+              {!isSessionsFolderBrowseLoading && sessionsFolderBrowseEntries.length === 0 ? (
+                <div className="sessions-empty">No sub-folders found.</div>
+              ) : null}
+              {sessionsFolderBrowseEntries.map((entry) => (
+                <button
+                  type="button"
+                  key={entry.path}
+                  className="mind-picker-item"
+                  onClick={() => void loadSessionsFolderBrowse(entry.path)}
+                >
+                  📁 {entry.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="settings-panel">
         <h2>Context compaction</h2>
         <p className="settings-help">
           Automatically compact conversation context when usage is high, then continue from a fresh context window.
@@ -497,6 +619,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               placeholder="How the model should summarize before resetting context"
               rows={6}
             />
+          </label>
+        </div>
+      </div>
+
+      <div className="settings-panel">
+        <h2>User prompt</h2>
+        <p className="settings-help">
+          Configure behavior for user prompts.
+        </p>
+        <div className="settings-group">
+          <label className="settings-field settings-field-checkbox">
+            <input
+              type="checkbox"
+              checked={repeatInitialPrompt}
+              onChange={(e) => setRepeatInitialPrompt(e.target.checked)}
+            />
+            <span>Repeat initial prompt</span>
+            <span className="settings-field-hint">
+              When enabled and the initial prompt is under 600 characters, repeat the query at the start of each new session. Research shows this improves model behavior.
+              {' '}
+              <a href="https://arxiv.org/pdf/2512.14982" target="_blank" rel="noopener noreferrer">
+                Why this matters
+              </a>
+            </span>
           </label>
         </div>
       </div>
