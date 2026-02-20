@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { deleteProvider, listProviders, setActiveProvider, type LLMProviderType, type ProviderConfig } from './api';
+import {
+  deleteProvider,
+  listProviders,
+  setActiveProvider,
+  testAllProviders,
+  type LLMProviderType,
+  type ProviderConfig,
+  type ProviderTestResult,
+} from './api';
 
 function isFallbackProvider(type: LLMProviderType): boolean {
   return type === 'fallback_chain' || type.startsWith('fallback_chain:');
@@ -33,11 +41,20 @@ function formatNodeLabel(provider: LLMProviderType, model?: string): string {
   return modelLabel ? `${providerLabel} / ${modelLabel}` : providerLabel;
 }
 
+interface TestStatus {
+  success: boolean | null;
+  message: string;
+  durationMs: number | null;
+  isTesting: boolean;
+}
+
 function ProvidersView() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTestingAll, setIsTestingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testStatuses, setTestStatuses] = useState<Record<string, TestStatus>>({});
 
   const loadProviders = async () => {
     try {
@@ -91,6 +108,113 @@ function ProvidersView() {
     }
   };
 
+  const handleTestAll = async () => {
+    try {
+      setIsTestingAll(true);
+      setError(null);
+      // Initialize testing state for all providers
+      const initialStatuses: Record<string, TestStatus> = {};
+      providers.forEach((p) => {
+        if (!isFallbackProvider(p.type) && p.type !== 'automatic_router') {
+          initialStatuses[p.type] = {
+            success: null,
+            message: '',
+            durationMs: null,
+            isTesting: p.configured,
+          };
+        }
+      });
+      setTestStatuses(initialStatuses);
+
+      const response = await testAllProviders();
+
+      // Update statuses with results
+      const newStatuses: Record<string, TestStatus> = {};
+      response.results.forEach((result: ProviderTestResult) => {
+        newStatuses[result.provider] = {
+          success: result.success,
+          message: result.message,
+          durationMs: result.duration_ms,
+          isTesting: false,
+        };
+      });
+
+      // Mark non-tested providers (not configured)
+      providers.forEach((p) => {
+        if (!isFallbackProvider(p.type) && p.type !== 'automatic_router' && !newStatuses[p.type]) {
+          newStatuses[p.type] = {
+            success: null,
+            message: 'Not configured',
+            durationMs: null,
+            isTesting: false,
+          };
+        }
+      });
+
+      setTestStatuses(newStatuses);
+    } catch (err) {
+      console.error('Failed to test providers:', err);
+      setError(err instanceof Error ? err.message : 'Failed to test providers');
+      // Clear testing state on error
+      const clearedStatuses: Record<string, TestStatus> = {};
+      providers.forEach((p) => {
+        if (!isFallbackProvider(p.type) && p.type !== 'automatic_router') {
+          clearedStatuses[p.type] = {
+            success: null,
+            message: '',
+            durationMs: null,
+            isTesting: false,
+          };
+        }
+      });
+      setTestStatuses(clearedStatuses);
+    } finally {
+      setIsTestingAll(false);
+    }
+  };
+
+  const renderTestIndicator = (provider: ProviderConfig) => {
+    if (isFallbackProvider(provider.type) || provider.type === 'automatic_router') {
+      return null;
+    }
+
+    const status = testStatuses[provider.type];
+    if (!status) {
+      return <span className="provider-test-indicator pending" />;
+    }
+
+    if (status.isTesting) {
+      return <span className="provider-test-indicator testing" title="Testing..." />;
+    }
+
+    if (status.success === null) {
+      return <span className="provider-test-indicator pending" title="Not tested" />;
+    }
+
+    const durationText = status.durationMs !== null ? ` (${status.durationMs}ms)` : '';
+    const title = `${status.success ? 'Success' : 'Failed'}${durationText}: ${status.message}`;
+
+    return (
+      <span
+        className={`provider-test-indicator ${status.success ? 'success' : 'error'}`}
+        title={title}
+      />
+    );
+  };
+
+  const renderTestDuration = (provider: ProviderConfig) => {
+    if (isFallbackProvider(provider.type) || provider.type === 'automatic_router') {
+      return null;
+    }
+
+    const status = testStatuses[provider.type];
+    if (!status || status.durationMs === null) {
+      return null;
+    }
+
+    return <span className="provider-test-duration">{status.durationMs}ms</span>;
+  };
+
   if (isLoading) {
     return <div className="sessions-loading">Loading providers...</div>;
   }
@@ -113,6 +237,17 @@ function ProvidersView() {
       )}
 
       <div className="page-content page-content-narrow provider-list-view">
+        <div className="settings-actions" style={{ marginBottom: '16px' }}>
+          <button
+            type="button"
+            className="settings-add-btn"
+            onClick={handleTestAll}
+            disabled={isTestingAll}
+          >
+            {isTestingAll ? 'Testing all...' : 'Test all providers'}
+          </button>
+        </div>
+
         <h3>Automatic Router</h3>
         <p className="thinking-note">
           Automatic router is for intent-based model selection: a lightweight router model reads the prompt and your plain-text mapping rules,
@@ -268,7 +403,11 @@ function ProvidersView() {
         {regularProviders.map((provider) => (
           <div key={provider.type} className={`provider-list-item ${provider.is_active ? 'active' : ''}`}>
             <div className="provider-list-main">
-              <h3>{provider.display_name}</h3>
+              <div className="provider-list-header">
+                {renderTestIndicator(provider)}
+                <h3>{provider.display_name}</h3>
+                {renderTestDuration(provider)}
+              </div>
               <div className="provider-list-meta">
                 <span className={`status-badge ${provider.configured ? 'status-completed' : 'status-paused'}`}>
                   {provider.configured ? 'Configured' : 'Not configured'}

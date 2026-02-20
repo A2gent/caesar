@@ -1774,6 +1774,27 @@ export async function testProvider(providerType: LLMProviderType): Promise<Provi
   return data;
 }
 
+export interface ProviderTestResult {
+  provider: string;
+  success: boolean;
+  message: string;
+  duration_ms: number;
+}
+
+export interface TestAllProvidersResponse {
+  results: ProviderTestResult[];
+}
+
+export async function testAllProviders(): Promise<TestAllProvidersResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/providers/test-all`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to test providers: ${response.statusText}`);
+  }
+  return response.json();
+}
+
 // --- Integrations API ---
 
 export async function listIntegrations(): Promise<Integration[]> {

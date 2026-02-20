@@ -6995,3 +6995,59 @@ input[type="checkbox"]:disabled {
   color: #888;
   text-decoration: line-through;
 }
+
+/* Provider test indicators */
+.provider-list-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.provider-list-header h3 {
+  margin: 0;
+}
+
+.provider-test-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.provider-test-indicator.pending {
+  background-color: #6c757d;
+  opacity: 0.5;
+}
+
+.provider-test-indicator.testing {
+  background-color: #ffc107;
+  animation: pulse 1.5s infinite;
+}
+
+.provider-test-indicator.success {
+  background-color: #28a745;
+}
+
+.provider-test-indicator.error {
+  background-color: #dc3545;
+}
+
+.provider-test-duration {
+  font-size: 12px;
+  color: #888;
+  margin-left: auto;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
