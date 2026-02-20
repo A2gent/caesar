@@ -472,8 +472,8 @@ function ProviderEditView() {
   };
 
   const handleCompleteOAuth = async () => {
-    if (!oauthAuthCode.trim() || !oauthVerifier) {
-      setError('Missing authorization code or verifier');
+    if (!oauthAuthCode.trim()) {
+      setError('Please paste the authorization code');
       return;
     }
     try {
@@ -592,11 +592,16 @@ function ProviderEditView() {
                       Disconnect
                     </button>
                   </div>
-                  {oauthExpiresAt ? (
-                    <span className="thinking-note" style={{ margin: 0 }}>
-                      Token expires: {new Date(oauthExpiresAt * 1000).toLocaleString()}
-                    </span>
-                  ) : null}
+                  {oauthExpiresAt ? (() => {
+                    const isExpired = Date.now() / 1000 > oauthExpiresAt;
+                    return (
+                      <span className="thinking-note" style={{ margin: 0, color: isExpired ? '#ef4444' : undefined }}>
+                        {isExpired
+                          ? `⚠ Token expired: ${new Date(oauthExpiresAt * 1000).toLocaleString()} — will auto-refresh on next request, or reconnect below`
+                          : `Token expires: ${new Date(oauthExpiresAt * 1000).toLocaleString()}`}
+                      </span>
+                    );
+                  })() : null}
                 </div>
               ) : isOAuthFlow ? (
                 <div className="provider-oauth-flow">
