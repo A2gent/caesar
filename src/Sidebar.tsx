@@ -46,6 +46,14 @@ const navSections: NavSection[] = [
       { id: 'settings', label: '⚙️ Settings', path: '/settings' },
     ],
   },
+  {
+    id: 'a2a',
+    label: '🌐 A2A',
+    items: [
+      { id: 'a2a-registry', label: '📡 Registry', path: '/a2a' },
+      { id: 'a2a-my-agent', label: '🤖 My agent', path: '/a2a/my-agent' },
+    ],
+  },
 ];
 
 function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refreshKey }: SidebarProps) {

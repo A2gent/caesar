@@ -469,7 +469,8 @@ export type IntegrationProvider =
   | 'elevenlabs'
   | 'perplexity'
   | 'brave_search'
-  | 'exa';
+  | 'exa'
+  | 'a2_registry';
 export type IntegrationMode = 'notify_only' | 'duplex';
 
 export interface Integration {

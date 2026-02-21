@@ -11,6 +11,7 @@ const INTEGRATION_PROVIDER_LABELS: Record<IntegrationProvider, string> = {
   perplexity: 'Perplexity',
   brave_search: 'Brave Search',
   exa: 'Exa',
+  a2_registry: 'A2 Registry',
 };
 
 const TOOL_PROVIDER_BY_NAME: Partial<Record<string, IntegrationProvider>> = {
@@ -143,6 +144,17 @@ export function IntegrationProviderIcon({ provider, label }: { provider: string;
         <span className="integration-provider-icon integration-provider-icon-exa" title={title}>
           <svg {...commonProps}>
             <path d="M12 2L2 19.8h11.8l2.9-5.2 2.9 5.2H22L12 2zm0 4.4l7.1 12.4H4.9L12 6.4z" />
+          </svg>
+        </span>
+      );
+    case 'a2_registry':
+      return (
+        <span className="integration-provider-icon integration-provider-icon-a2-registry" title={title}>
+          <svg {...commonProps}>
+            <circle cx="12" cy="12" r="3.2" fill="currentColor" />
+            <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M6.3 6.3 7.9 7.9M16.1 16.1l1.6 1.6M17.7 6.3l-1.6 1.6M7.9 16.1l-1.6 1.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
         </span>
       );

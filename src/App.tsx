@@ -17,6 +17,8 @@ import ThinkingView from './ThinkingView';
 import SkillsView from './SkillsView';
 import ToolsView from './ToolsView';
 import NotificationsView from './NotificationsView';
+import A2ARegistryView from './A2ARegistryView';
+import A2AMyAgentView from './A2AMyAgentView';
 import { buildImageAssetUrl, fetchAgentName, fetchSpeechClip, getSession, listSessions, saveAgentName } from './api';
 import { THINKING_PROJECT_ID } from './thinking';
 import { SYSTEM_PROJECT_KB_ID, SYSTEM_PROJECT_AGENT_ID } from './Sidebar';
@@ -713,6 +715,8 @@ function AppLayout() {
           <Route path="/skills" element={<SkillsView />} />
           <Route path="/settings" element={<SettingsView onAgentNameRefresh={handleBackendChange} />} />
           <Route path="/projects/:projectId" element={<ProjectView />} />
+          <Route path="/a2a" element={<A2ARegistryView />} />
+          <Route path="/a2a/my-agent" element={<A2AMyAgentView />} />
         </Routes>
       </div>
     </div>

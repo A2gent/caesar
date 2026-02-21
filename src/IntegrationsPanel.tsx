@@ -180,6 +180,16 @@ const PROVIDERS: ProviderSpec[] = [
       { key: 'api_key', label: 'API key', placeholder: 'exa-...', secret: true },
     ],
   },
+  {
+    provider: 'a2_registry',
+    label: 'A2 Registry',
+    description: 'Connect your agent to the Square A2A network. Once enabled and authenticated, other agents can discover and contact yours.',
+    flow: 'bidirectional',
+    modes: ['duplex'],
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: 'a2r-...', secret: true },
+    ],
+  },
 ];
 
 function providerById(provider: IntegrationProvider): ProviderSpec {
