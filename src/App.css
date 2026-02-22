@@ -5267,13 +5267,38 @@ input[type="checkbox"]:disabled {
   transition: opacity 0.15s ease, border-color 0.15s ease;
 }
 
+.mind-tree-commit-btn {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #3f3f3f;
+  border-radius: 6px;
+  background: #233024;
+  color: #c9f7cc;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+
+.mind-tree-commit-icon {
+  width: 13px;
+  height: 13px;
+}
+
 .mind-tree-row:hover .mind-tree-session-btn,
-.mind-tree-row:focus-within .mind-tree-session-btn {
+.mind-tree-row:focus-within .mind-tree-session-btn,
+.mind-tree-row:hover .mind-tree-commit-btn,
+.mind-tree-row:focus-within .mind-tree-commit-btn {
   opacity: 1;
   pointer-events: auto;
 }
 
-.mind-tree-session-btn:hover {
+.mind-tree-session-btn:hover,
+.mind-tree-commit-btn:hover {
   border-color: #6d90ff;
 }
 
@@ -6000,6 +6025,140 @@ input[type="checkbox"]:disabled {
   align-items: center;
 }
 
+.project-commit-dialog {
+  width: min(720px, 92vw);
+}
+
+.project-commit-summary {
+  margin: 0;
+  font-size: 13px;
+  color: #9aa7b8;
+}
+
+.project-commit-target {
+  margin: 0;
+  font-size: 12px;
+  color: #8ea0b8;
+}
+
+.project-commit-message {
+  width: 100%;
+  resize: vertical;
+  min-height: 92px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #3c4555;
+  background: #11151d;
+  color: #e7edf6;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-commit-message:focus {
+  outline: none;
+  border-color: #5b8cff;
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.2);
+}
+
+.project-commit-files {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid #2c3443;
+  border-radius: 8px;
+  background: #0d1117;
+  padding: 6px;
+}
+
+.project-commit-empty {
+  padding: 12px;
+  color: #8b95a7;
+  font-size: 13px;
+}
+
+.project-commit-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.project-commit-file.staged {
+  background: rgba(54, 108, 72, 0.2);
+}
+
+.project-commit-file.unstaged {
+  background: rgba(86, 92, 107, 0.15);
+}
+
+.project-commit-file.untracked {
+  border: 1px dashed #9b7f3a;
+}
+
+.project-commit-file:hover {
+  background: #151d28;
+}
+
+.project-commit-status {
+  min-width: 28px;
+  color: #95f2b2;
+}
+
+.project-commit-path {
+  flex: 1;
+  color: #d7deea;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.project-commit-state-badge {
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid #445167;
+  color: #b8c4d9;
+  background: rgba(68, 81, 103, 0.2);
+}
+
+.project-commit-state-badge.staged {
+  border-color: #3f8f56;
+  color: #bef4cb;
+  background: rgba(52, 122, 74, 0.25);
+}
+
+.project-commit-state-badge.not-staged {
+  border-color: #5f6675;
+  color: #c4cad8;
+  background: rgba(78, 87, 104, 0.2);
+}
+
+.project-commit-state-badge.untracked {
+  border-color: #9b7f3a;
+  color: #f3dc9f;
+  background: rgba(120, 97, 42, 0.25);
+}
+
+.project-commit-toggle-btn {
+  border: 1px solid #4a5470;
+  background: #1c2433;
+  color: #d2ddf2;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.project-commit-toggle-btn:hover:not(:disabled) {
+  border-color: #6f8ed2;
+}
+
+.project-commit-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .project-delete-btn {
   border: 1px solid #444;
   background: #2f2f2f;
@@ -6044,7 +6203,6 @@ input[type="checkbox"]:disabled {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
   gap: 0;
 }
 

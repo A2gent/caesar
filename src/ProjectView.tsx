@@ -3,6 +3,7 @@ import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent } f
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   browseMindDirectories,
+  commitProjectGit,
   createProjectFolder,
   createSession,
   deleteProject,
@@ -10,6 +11,7 @@ import {
   deleteSession,
   getProject,
   getProjectFile,
+  getProjectGitStatus,
   getSession,
   getSettings,
   listProjectTree,
@@ -19,10 +21,13 @@ import {
   parseTaskProgress,
   renameProjectEntry,
   saveProjectFile,
+  stageProjectGitFile,
   startSession,
+  unstageProjectGitFile,
   updateProject,
   type LLMProviderType,
   type MindTreeEntry,
+  type ProjectGitChangedFile,
   type Project,
   type ProviderConfig,
   type Session,
@@ -421,6 +426,17 @@ function ProjectView() {
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isGitRepo, setIsGitRepo] = useState(false);
+  const [gitChangedFiles, setGitChangedFiles] = useState<ProjectGitChangedFile[]>([]);
+  const [firstLayerGitChangeCounts, setFirstLayerGitChangeCounts] = useState<Record<string, number>>({});
+  const [isLoadingGitStatus, setIsLoadingGitStatus] = useState(false);
+  const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [commitRepoPath, setCommitRepoPath] = useState('');
+  const [commitRepoLabel, setCommitRepoLabel] = useState('');
+  const [commitDialogFiles, setCommitDialogFiles] = useState<ProjectGitChangedFile[]>([]);
+  const [commitMessage, setCommitMessage] = useState('');
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [gitFileActionPath, setGitFileActionPath] = useState<string | null>(null);
 
   // Sessions state
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -527,6 +543,61 @@ function ProjectView() {
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
+
+  const loadGitStatus = useCallback(async () => {
+    if (!projectId || !rootFolder) {
+      setIsGitRepo(false);
+      setGitChangedFiles([]);
+      setFirstLayerGitChangeCounts({});
+      return;
+    }
+
+    setIsLoadingGitStatus(true);
+    try {
+      const rootEntries = treeEntries[''] || [];
+      const firstLayerDirectories = rootEntries
+        .filter((entry) => entry.type === 'directory')
+        .map((entry) => entry.path);
+
+      const [status, firstLayerStatuses] = await Promise.all([
+        getProjectGitStatus(projectId),
+        Promise.all(
+          firstLayerDirectories.map(async (folderPath) => {
+            try {
+              const folderStatus = await getProjectGitStatus(projectId, folderPath);
+              return { folderPath, status: folderStatus };
+            } catch (err) {
+              console.error(`Failed to load git status for ${folderPath}:`, err);
+              return { folderPath, status: null };
+            }
+          }),
+        ),
+      ]);
+
+      setIsGitRepo(status.has_git);
+      setGitChangedFiles(status.files || []);
+      const nextCounts: Record<string, number> = {};
+      firstLayerStatuses.forEach(({ folderPath, status: folderStatus }) => {
+        if (!folderStatus || !folderStatus.has_git || !Array.isArray(folderStatus.files)) return;
+        if (folderStatus.files.length > 0) {
+          nextCounts[folderPath] = folderStatus.files.length;
+        }
+      });
+      setFirstLayerGitChangeCounts(nextCounts);
+    } catch (err) {
+      console.error('Failed to load git status:', err);
+      setIsGitRepo(false);
+      setGitChangedFiles([]);
+      setFirstLayerGitChangeCounts({});
+      setError(err instanceof Error ? err.message : 'Failed to load git status');
+    } finally {
+      setIsLoadingGitStatus(false);
+    }
+  }, [projectId, rootFolder, treeEntries]);
+
+  useEffect(() => {
+    void loadGitStatus();
+  }, [loadGitStatus]);
 
   // Load providers
   useEffect(() => {
@@ -663,6 +734,12 @@ function ProjectView() {
       writeStoredSelectedFile(projectId, selectedFilePath);
     }
   }, [selectedFilePath, projectId]);
+
+  useEffect(() => {
+    if (!isGitRepo && commitRepoPath === '') {
+      setIsCommitDialogOpen(false);
+    }
+  }, [isGitRepo, commitRepoPath]);
 
   // Persist tree panel width
   useEffect(() => {
@@ -901,6 +978,7 @@ function ProjectView() {
       await saveProjectFile(projectId, selectedFilePath, selectedFileContent);
       setSavedFileContent(selectedFileContent);
       setSuccess('File saved successfully.');
+      await loadGitStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save file');
     } finally {
@@ -920,6 +998,7 @@ function ProjectView() {
       setSelectedFileContent('');
       setSavedFileContent('');
       await loadTree(parentDir || '');
+      await loadGitStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete file');
     } finally {
@@ -954,6 +1033,7 @@ function ProjectView() {
       if (selectedFilePath === filePath) {
         setSelectedFilePath(newPath);
       }
+      await loadGitStatus();
       
 
     } catch (moveError) {
@@ -980,6 +1060,7 @@ function ProjectView() {
       setSelectedFileContent('');
       setSavedFileContent('');
       setMarkdownMode('source');
+      await loadGitStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create file');
     }
@@ -1012,6 +1093,7 @@ function ProjectView() {
         return next;
       });
       setSuccess(`Created folder: ${normalizedPath}`);
+      await loadGitStatus();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Failed to create folder');
     }
@@ -1064,6 +1146,7 @@ function ProjectView() {
       }
       
       setSuccess(`Renamed to: ${newName}`);
+      await loadGitStatus();
     } catch (renameError) {
       setError(renameError instanceof Error ? renameError.message : 'Failed to rename');
     } finally {
@@ -1159,6 +1242,85 @@ function ProjectView() {
     }
   };
 
+  const openCommitDialog = async (repoPath = '', repoLabel = project?.name || 'Project') => {
+    if (!projectId) return;
+    setError(null);
+    try {
+      const status = await getProjectGitStatus(projectId, repoPath);
+      if (!status.has_git) {
+        setError('Selected folder is not a Git repository.');
+        return;
+      }
+      setCommitRepoPath(repoPath);
+      setCommitRepoLabel(repoLabel);
+      setCommitDialogFiles(status.files || []);
+      setCommitMessage('');
+      setIsCommitDialogOpen(true);
+    } catch (gitError) {
+      setError(gitError instanceof Error ? gitError.message : 'Failed to load git status');
+    }
+  };
+
+  const closeCommitDialog = () => {
+    if (isCommitting) return;
+    setIsCommitDialogOpen(false);
+    setCommitDialogFiles([]);
+    setCommitRepoPath('');
+    setCommitRepoLabel('');
+    setGitFileActionPath(null);
+  };
+
+  const refreshCommitDialogFiles = useCallback(async () => {
+    if (!projectId) return;
+    const status = await getProjectGitStatus(projectId, commitRepoPath);
+    setCommitDialogFiles(status.files || []);
+  }, [projectId, commitRepoPath]);
+
+  const handleToggleGitFileStage = async (file: ProjectGitChangedFile) => {
+    if (!projectId || isCommitting || gitFileActionPath === file.path) return;
+    setError(null);
+    setGitFileActionPath(file.path);
+    try {
+      if (file.staged) {
+        await unstageProjectGitFile(projectId, file.path, commitRepoPath);
+      } else {
+        await stageProjectGitFile(projectId, file.path, commitRepoPath);
+      }
+      await refreshCommitDialogFiles();
+      await loadGitStatus();
+    } catch (gitError) {
+      setError(gitError instanceof Error ? gitError.message : 'Failed to update file staging');
+    } finally {
+      setGitFileActionPath(null);
+    }
+  };
+
+  const handleCommitChanges = async () => {
+    if (!projectId) return;
+
+    const message = commitMessage.trim();
+    if (message === '') {
+      setError('Commit message is required.');
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setIsCommitting(true);
+    try {
+      const result = await commitProjectGit(projectId, message, commitRepoPath);
+      setSuccess(`Committed ${result.files_committed} file(s) as ${result.commit}.`);
+      setCommitMessage('');
+      setIsCommitDialogOpen(false);
+      setCommitDialogFiles([]);
+      await loadGitStatus();
+    } catch (commitError) {
+      setError(commitError instanceof Error ? commitError.message : 'Failed to commit changes');
+    } finally {
+      setIsCommitting(false);
+    }
+  };
+
   // File session dialog handlers
   const openSessionDialogForPath = (type: 'folder' | 'file', path: string) => {
     const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, path) : path;
@@ -1182,6 +1344,7 @@ function ProjectView() {
   // Computed values
   const hasUnsavedChanges = selectedFileContent !== savedFileContent;
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
+  const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
   
   const selectedFilePathNormalized = normalizeMindPath(selectedFilePath);
   const selectedFileAbsolutePath = rootFolder && selectedFilePath
@@ -1364,6 +1527,7 @@ function ProjectView() {
             const isDropTarget = dropTargetPath === entry.path;
             const isDraggingFolder = draggedFilePath === entry.path;
             const isDescendantOfDragged = draggedFilePath && entry.path.startsWith(draggedFilePath + '/');
+            const firstLayerGitChanges = depth === 0 ? (firstLayerGitChangeCounts[entry.path] || 0) : 0;
             return (
               <div key={entry.path}>
                 <div
@@ -1439,6 +1603,25 @@ function ProjectView() {
                       {isLoading ? <span className="mind-tree-meta">Loading...</span> : null}
                     </button>
                   )}
+                  {firstLayerGitChanges > 0 ? (
+                    <button
+                      type="button"
+                      className="mind-tree-commit-btn"
+                      title={`Commit changes in ${entry.name}`}
+                      aria-label={`Commit changes in folder ${entry.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void openCommitDialog(entry.path, entry.name);
+                      }}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true" className="mind-tree-commit-icon">
+                        <path
+                          fill="currentColor"
+                          d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38c0-.19-.01-.82-.01-1.49C4 14.09 3.48 13.22 3.32 12.77c-.09-.23-.48-.94-.82-1.13c-.28-.15-.68-.52-.01-.53c.63-.01 1.08.58 1.23.82c.72 1.21 1.87.87 2.33.66c.07-.52.28-.87.5-1.07c-1.78-.2-3.64-.89-3.64-3.95c0-.87.31-1.59.82-2.15c-.08-.2-.36-1.02.08-2.12c0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 4.82c.68 0 1.37.09 2.01.27c1.53-1.04 2.2-.82 2.2-.82c.44 1.1.16 1.92.08 2.12c.51.56.82 1.27.82 2.15c0 3.07-1.87 3.75-3.65 3.95c.29.25.54.73.54 1.48c0 1.07-.01 1.93-.01 2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                        />
+                      </svg>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="mind-tree-session-btn"
@@ -1624,6 +1807,17 @@ function ProjectView() {
           {rootFolder ? (
             <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
               Change folder
+            </button>
+          ) : null}
+          {rootFolder && isGitRepo ? (
+            <button
+              type="button"
+              className="settings-save-btn"
+              onClick={() => void openCommitDialog()}
+              disabled={isLoadingGitStatus || isCommitting}
+              title="Commit changed files"
+            >
+              {isLoadingGitStatus ? 'Loading Git...' : `Commit (${gitChangedFiles.length})`}
             </button>
           ) : null}
           {!project.is_system && (
@@ -2022,6 +2216,73 @@ function ProjectView() {
           />
         </div>
       </div>
+
+      {/* Git Commit Dialog */}
+      {isCommitDialogOpen ? (
+        <div className="mind-picker-overlay" role="dialog" aria-modal="true" aria-label="Commit changes">
+          <div className="mind-picker-dialog project-commit-dialog">
+            <h2>Commit Changes</h2>
+            {commitRepoLabel ? <p className="project-commit-target">Repository: {commitRepoLabel}</p> : null}
+            <p className="project-commit-summary">
+              {commitDialogFiles.length > 0
+                ? `${commitDialogFiles.length} changed file(s), ${stagedCommitFilesCount} staged`
+                : 'No changed files.'}
+            </p>
+            <textarea
+              className="project-commit-message"
+              value={commitMessage}
+              onChange={(event) => setCommitMessage(event.target.value)}
+              placeholder="Commit message"
+              rows={4}
+              disabled={isCommitting}
+            />
+            <div className="project-commit-files">
+              {commitDialogFiles.length === 0 ? (
+                <div className="project-commit-empty">Working tree is clean.</div>
+              ) : (
+                commitDialogFiles.map((file) => (
+                  <div
+                    key={`${file.status}-${file.path}`}
+                    className={`project-commit-file ${file.staged ? 'staged' : 'unstaged'} ${file.untracked ? 'untracked' : ''}`}
+                  >
+                    <code className="project-commit-status">{file.status || '??'}</code>
+                    <span className="project-commit-path">{file.path}</span>
+                    <span className={`project-commit-state-badge ${file.staged ? 'staged' : 'not-staged'}`}>
+                      {file.staged ? 'Staged' : 'Not staged'}
+                    </span>
+                    {file.untracked ? <span className="project-commit-state-badge untracked">Untracked</span> : null}
+                    <button
+                      type="button"
+                      className="project-commit-toggle-btn"
+                      onClick={() => void handleToggleGitFileStage(file)}
+                      disabled={isCommitting || gitFileActionPath === file.path}
+                    >
+                      {gitFileActionPath === file.path
+                        ? 'Updating...'
+                        : file.staged
+                          ? 'Remove'
+                          : 'Add'}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mind-picker-actions">
+              <button
+                type="button"
+                className="settings-save-btn"
+                onClick={() => void handleCommitChanges()}
+                disabled={isCommitting || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
+              >
+                {isCommitting ? 'Committing...' : 'Commit'}
+              </button>
+              <button type="button" className="settings-remove-btn" onClick={closeCommitDialog} disabled={isCommitting}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Folder Picker Dialog */}
       {isPickerOpen ? (

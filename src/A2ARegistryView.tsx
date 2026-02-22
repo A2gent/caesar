@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 const A2A_REGISTRY_URL_KEY = 'a2gent.a2a_registry_url';
 const DEFAULT_REGISTRY_URL = 'http://localhost:5174';
@@ -150,7 +150,7 @@ function A2ARegistryView() {
     setUsingMock(false);
   };
 
-  const handleListAgents = async () => {
+  const handleListAgents = useCallback(async () => {
     setLoading(true);
     setError(null);
     setResult(null);
@@ -187,7 +187,12 @@ function A2ARegistryView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [registryUrl, search, filterType, filterStatus]);
+
+  useEffect(() => {
+    void handleListAgents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registryUrl]);
 
   const agents = result?.agents ?? [];
 

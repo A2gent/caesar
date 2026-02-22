@@ -1500,6 +1500,76 @@ export async function listProjectTree(projectID: string, path = ''): Promise<Min
   return response.json();
 }
 
+export interface ProjectGitChangedFile {
+  path: string;
+  status: string;
+  index_status: string;
+  worktree_status: string;
+  staged: boolean;
+  untracked: boolean;
+}
+
+export interface ProjectGitStatusResponse {
+  root_folder: string;
+  has_git: boolean;
+  files: ProjectGitChangedFile[];
+}
+
+export interface ProjectGitCommitResponse {
+  root_folder: string;
+  commit: string;
+  files_committed: number;
+}
+
+export async function getProjectGitStatus(projectID: string, repoPath = ''): Promise<ProjectGitStatusResponse> {
+  const repoQuery = repoPath.trim() === '' ? '' : `&repoPath=${encodeURIComponent(repoPath)}`;
+  const response = await fetch(`${getApiBaseUrl()}/projects/git/status?projectID=${encodeURIComponent(projectID)}${repoQuery}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load git status');
+  }
+  return response.json();
+}
+
+export async function commitProjectGit(projectID: string, message: string, repoPath = ''): Promise<ProjectGitCommitResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/git/commit?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message, repo_path: repoPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to commit changes');
+  }
+  return response.json();
+}
+
+export async function stageProjectGitFile(projectID: string, path: string, repoPath = ''): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/git/stage?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path, repo_path: repoPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to stage file');
+  }
+}
+
+export async function unstageProjectGitFile(projectID: string, path: string, repoPath = ''): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/git/unstage?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path, repo_path: repoPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to unstage file');
+  }
+}
+
 export async function getProjectFile(projectID: string, path: string): Promise<MindFileResponse> {
   const response = await fetch(`${getApiBaseUrl()}/projects/file?projectID=${encodeURIComponent(projectID)}&path=${encodeURIComponent(path)}`);
   if (!response.ok) {
