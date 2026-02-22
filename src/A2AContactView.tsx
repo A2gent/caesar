@@ -11,6 +11,8 @@ import {
   type Session,
 } from './api';
 
+const A2A_CONTACT_SESSION_KEY_PREFIX = 'a2gent.a2a_contact_session';
+
 type ContactLocationState = {
   agent?: {
     id: string;
@@ -47,11 +49,32 @@ function A2AContactView() {
       try {
         setIsPreparing(true);
         setError(null);
+        const storageKey = `${A2A_CONTACT_SESSION_KEY_PREFIX}:${targetAgentID}`;
+        const existingSessionID = localStorage.getItem(storageKey)?.trim() || '';
+        if (existingSessionID) {
+          try {
+            const existing = await getSession(existingSessionID);
+            if (
+              existing.a2a_outbound &&
+              (existing.a2a_target_agent_id || '').trim() === targetAgentID
+            ) {
+              if (!cancelled) {
+                setSession(existing);
+                setMessages(existing.messages || []);
+                setIsPreparing(false);
+              }
+              return;
+            }
+          } catch {
+            // stale session ID; continue and create a new one
+          }
+        }
         const created = await createA2AOutboundSession({
           target_agent_id: targetAgentID,
           target_agent_name: targetAgentName || undefined,
         });
         if (cancelled) return;
+        localStorage.setItem(storageKey, created.id);
         setSession(created);
         setMessages(created.messages || []);
       } catch (err) {
