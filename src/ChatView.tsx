@@ -158,7 +158,7 @@ function formatProviderTrace(event: Extract<ChatStreamEvent, { type: 'provider_t
   const maxAttempts = trace.max_attempts ?? 0;
   const nodeIndex = trace.node_index ?? 0;
   const totalNodes = trace.total_nodes ?? 0;
-  const reason = (trace.reason || '').trim();
+  const reason = summarizeTraceReason(trace.reason || '');
   const providerLabel = provider ? (model ? `${provider}/${model}` : provider) : 'provider';
 
   switch (trace.phase) {
@@ -189,6 +189,15 @@ function formatProviderTrace(event: Extract<ChatStreamEvent, { type: 'provider_t
     default:
       return reason ? `${providerLabel}: ${reason}` : providerLabel;
   }
+}
+
+function summarizeTraceReason(reason: string): string {
+  const { summary } = formatFailureReasonForMessage(reason);
+  const normalized = summary.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 260) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 257)}...`;
 }
 
 function formatProviderFailure(item: ProviderFailure): string {
@@ -282,17 +291,75 @@ function isProviderFailurePhase(phase: string | undefined): boolean {
 }
 
 function providerFailureToMessage(item: ProviderFailure): Message {
+  const { summary, prettyJson } = formatFailureReasonForMessage(item.reason || '');
+  const content = `Provider failure: ${formatProviderFailure({ ...item, reason: summary || item.reason })}`;
   return {
     role: 'system',
-    content: `Provider failure: ${formatProviderFailure(item)}`,
+    content,
     timestamp: item.timestamp || new Date().toISOString(),
     metadata: {
       provider_failure: true,
+      provider_failure_json: prettyJson,
       phase: item.phase || '',
       provider: item.provider || '',
       model: item.model || '',
     },
   };
+}
+
+function formatFailureReasonForMessage(reason: string): { summary: string; prettyJson: string } {
+  const trimmed = reason.trim();
+  if (trimmed === '') {
+    return { summary: '', prettyJson: '' };
+  }
+  const idxObject = trimmed.indexOf('{');
+  const idxArray = trimmed.indexOf('[');
+  let idx = -1;
+  if (idxObject >= 0 && idxArray >= 0) {
+    idx = Math.min(idxObject, idxArray);
+  } else if (idxObject >= 0) {
+    idx = idxObject;
+  } else if (idxArray >= 0) {
+    idx = idxArray;
+  }
+  if (idx < 0) {
+    return { summary: trimmed, prettyJson: '' };
+  }
+
+  const prefix = trimmed.slice(0, idx).trim().replace(/\s+/g, ' ');
+  const jsonPart = trimmed.slice(idx).trim();
+  try {
+    const parsed = JSON.parse(jsonPart) as unknown;
+    return {
+      summary: prefix || trimmed,
+      prettyJson: JSON.stringify(parsed, null, 2),
+    };
+  } catch {
+    return { summary: trimmed, prettyJson: '' };
+  }
+}
+
+function dedupeProviderFailures(items: ProviderFailure[]): ProviderFailure[] {
+  const out: ProviderFailure[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const key = [
+      item.phase || '',
+      item.provider || '',
+      item.model || '',
+      item.attempt || 0,
+      item.max_attempts || 0,
+      item.reason || '',
+      item.fallback_to || '',
+      item.fallback_model || '',
+    ].join('|');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }
 
 function ChatView() {
@@ -329,16 +396,17 @@ function ChatView() {
   );
   const systemPromptSnapshot = session?.system_prompt_snapshot;
   const routedTarget = useMemo(() => routedTargetLabel(session), [session]);
-  const providerFailures = useMemo(() => (session?.provider_failures || []).slice(-8), [session?.provider_failures]);
+  const providerFailures = useMemo(() => dedupeProviderFailures(session?.provider_failures || []), [session?.provider_failures]);
+  const latestProviderFailure = useMemo(() => (providerFailures.length > 0 ? providerFailures[providerFailures.length - 1] : null), [providerFailures]);
   const messagesWithProviderFailures = useMemo(() => {
     const base = Array.isArray(messages) ? [...messages] : [];
-    const failures = session?.provider_failures || [];
+    const failures = providerFailures;
     if (failures.length === 0) {
       return base;
     }
     const synthetic = failures.map(providerFailureToMessage);
     return [...base, ...synthetic].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  }, [messages, session?.provider_failures]);
+  }, [messages, providerFailures]);
 
   useEffect(() => {
     if (activeSessionId) {
@@ -847,17 +915,11 @@ function ChatView() {
                   {providerTrace}
                 </div>
               ) : null}
-              {providerFailures.length > 0 ? (
+              {latestProviderFailure && !providerTrace ? (
                 <div className="session-provider-failures">
-                  {providerFailures.map((item, idx) => {
-                    const text = formatProviderFailure(item);
-                    const key = `${item.timestamp || 'ts'}-${idx}`;
-                    return (
-                      <div key={key} className="session-provider-failure-row" title={text}>
-                        {text}
-                      </div>
-                    );
-                  })}
+                  <div className="session-provider-failure-row" title={formatProviderFailure(latestProviderFailure)}>
+                    {formatProviderFailure(latestProviderFailure)}
+                  </div>
                 </div>
               ) : null}
               </div>

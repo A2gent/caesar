@@ -319,6 +319,21 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
   }, [messages]);
 
   const renderMessageContent = (message: Message) => {
+    if (message.metadata?.provider_failure === true) {
+      const payload = message.metadata?.provider_failure_json;
+      const jsonPayload = typeof payload === 'string' ? payload.trim() : '';
+      if (jsonPayload !== '') {
+        return (
+          <div className="message-provider-failure-content">
+            <div className="message-markdown">{message.content}</div>
+            <details className="provider-failure-json">
+              <summary>Show error JSON</summary>
+              <pre>{jsonPayload}</pre>
+            </details>
+          </div>
+        );
+      }
+    }
     const html = renderMarkdownToHtml(message.content);
     return <div className="message-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
   };
@@ -515,6 +530,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       const message = messages[index];
       const toolCalls = message.tool_calls ?? [];
       const toolResults = message.tool_results ?? [];
+      const isProviderFailure = message.metadata?.provider_failure === true;
 
       if (message.role === 'assistant' && toolCalls.length > 0) {
         // First, render the assistant's text content if present
@@ -535,6 +551,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                     {totalTokens} tok
                   </span>
                 ) : null}
+                <CopyButton text={message.content || ''} />
                 <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
             </div>,
@@ -577,6 +594,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                     {totalTokens} tok
                   </span>
                 ) : null}
+                <CopyButton text={message.content || ''} />
                 <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
             </div>,
@@ -601,7 +619,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       nodes.push(
         <div
           key={index}
-          className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}`}
+          className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}${isProviderFailure ? ' message-provider-failure' : ''}`}
         >
           {message.content && (
             <div className="message-content">
@@ -615,6 +633,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 {totalTokens} tok
               </span>
             ) : null}
+            <CopyButton text={message.content || ''} />
             <span 
               className="message-time" 
               title={new Date(message.timestamp).toLocaleString()}

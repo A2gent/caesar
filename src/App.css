@@ -1150,6 +1150,54 @@ body.mind-resizing * {
   align-self: flex-start;
 }
 
+.message-provider-failure {
+  background-color: rgba(120, 74, 27, 0.28);
+  border: 1px solid rgba(255, 166, 77, 0.38);
+  color: #ffd6ad;
+}
+
+.message-provider-failure .message-content {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.message-provider-failure .message-markdown pre {
+  margin-top: 8px;
+  background: rgba(28, 20, 11, 0.9);
+  border: 1px solid rgba(255, 166, 77, 0.26);
+  color: #ffd6ad;
+  font-size: 11px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.provider-failure-json {
+  margin-top: 8px;
+}
+
+.provider-failure-json > summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: #ffbf80;
+  user-select: none;
+}
+
+.provider-failure-json > summary:hover {
+  color: #ffd5a6;
+}
+
+.provider-failure-json > pre {
+  margin-top: 8px;
+  background: rgba(28, 20, 11, 0.9);
+  border: 1px solid rgba(255, 166, 77, 0.26);
+  color: #ffd6ad;
+  font-size: 11px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 6px;
+}
+
 .message-compaction {
   background-color: #3a341d;
   border: 1px solid #c9a227;
@@ -1222,6 +1270,20 @@ body.mind-resizing * {
 }
 
 .message-time:hover {
+  opacity: 1;
+}
+
+.message-copy {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.message-copy:hover {
   opacity: 1;
 }
 
