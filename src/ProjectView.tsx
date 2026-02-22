@@ -21,6 +21,7 @@ import {
   listSessions,
   moveProjectFile,
   parseTaskProgress,
+  pushProjectGit,
   renameProjectEntry,
   saveProjectFile,
   stageProjectGitFile,
@@ -443,6 +444,7 @@ function ProjectView() {
   const [selectedCommitFileDiff, setSelectedCommitFileDiff] = useState('');
   const [isLoadingCommitFileDiff, setIsLoadingCommitFileDiff] = useState(false);
   const [isGeneratingCommitMessage, setIsGeneratingCommitMessage] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
 
   // Sessions state
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -1271,7 +1273,7 @@ function ProjectView() {
   };
 
   const closeCommitDialog = () => {
-    if (isCommitting) return;
+    if (isCommitting || isPushing) return;
     setIsCommitDialogOpen(false);
     setCommitDialogFiles([]);
     setCommitRepoPath('');
@@ -1280,6 +1282,7 @@ function ProjectView() {
     setSelectedCommitFilePath('');
     setSelectedCommitFileDiff('');
     setIsGeneratingCommitMessage(false);
+    setIsPushing(false);
   };
 
   const refreshCommitDialogFiles = useCallback(async () => {
@@ -1379,6 +1382,22 @@ function ProjectView() {
     }
   };
 
+  const handlePushChanges = async () => {
+    if (!projectId || isPushing || isCommitting) return;
+    setError(null);
+    setSuccess(null);
+    setIsPushing(true);
+    try {
+      const output = await pushProjectGit(projectId, commitRepoPath);
+      setSuccess(output ? `Push completed: ${output}` : 'Push completed.');
+      await loadGitStatus();
+    } catch (pushError) {
+      setError(pushError instanceof Error ? pushError.message : 'Failed to push');
+    } finally {
+      setIsPushing(false);
+    }
+  };
+
   // File session dialog handlers
   const openSessionDialogForPath = (type: 'folder' | 'file', path: string) => {
     const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, path) : path;
@@ -1403,6 +1422,7 @@ function ProjectView() {
   const hasUnsavedChanges = selectedFileContent !== savedFileContent;
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
   const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
+  const commitDiffLines = useMemo(() => selectedCommitFileDiff.split('\n'), [selectedCommitFileDiff]);
 
   useEffect(() => {
     if (!isCommitDialogOpen) return;
@@ -2301,14 +2321,14 @@ function ProjectView() {
               onChange={(event) => setCommitMessage(event.target.value)}
               placeholder="Commit message"
               rows={4}
-              disabled={isCommitting || isGeneratingCommitMessage}
+              disabled={isCommitting || isPushing || isGeneratingCommitMessage}
             />
             <div className="project-commit-controls">
               <button
                 type="button"
                 className="settings-add-btn"
                 onClick={() => void handleGenerateCommitMessage()}
-                disabled={isCommitting || isGeneratingCommitMessage || commitDialogFiles.length === 0}
+                disabled={isCommitting || isPushing || isGeneratingCommitMessage || commitDialogFiles.length === 0}
               >
                 {isGeneratingCommitMessage ? 'Generating...' : 'Suggest message'}
               </button>
@@ -2345,7 +2365,7 @@ function ProjectView() {
                           event.stopPropagation();
                           void handleToggleGitFileStage(file);
                         }}
-                        disabled={isCommitting || gitFileActionPath === file.path}
+                        disabled={isCommitting || isPushing || gitFileActionPath === file.path}
                       >
                         {gitFileActionPath === file.path
                           ? 'Updating...'
@@ -2364,20 +2384,50 @@ function ProjectView() {
                 {isLoadingCommitFileDiff ? (
                   <div className="project-commit-diff-empty">Loading diff...</div>
                 ) : (
-                  <pre className="project-commit-diff-body">{selectedCommitFileDiff || 'No diff preview.'}</pre>
+                  <div className="project-commit-diff-body">
+                    {selectedCommitFileDiff ? (
+                      commitDiffLines.map((line, index) => {
+                        let lineClass = 'context';
+                        if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff --git') || line.startsWith('index ')) {
+                          lineClass = 'meta';
+                        } else if (line.startsWith('@@')) {
+                          lineClass = 'hunk';
+                        } else if (line.startsWith('+')) {
+                          lineClass = 'add';
+                        } else if (line.startsWith('-')) {
+                          lineClass = 'remove';
+                        }
+                        return (
+                          <div key={`diff-line-${index}`} className={`project-commit-diff-line ${lineClass}`}>
+                            {line || ' '}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="project-commit-diff-empty">No diff preview.</div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
             <div className="mind-picker-actions">
               <button
                 type="button"
+                className="settings-add-btn"
+                onClick={() => void handlePushChanges()}
+                disabled={isPushing || isCommitting}
+              >
+                {isPushing ? 'Pushing...' : 'Push'}
+              </button>
+              <button
+                type="button"
                 className="settings-save-btn"
                 onClick={() => void handleCommitChanges()}
-                disabled={isCommitting || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
+                disabled={isCommitting || isPushing || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
               >
                 {isCommitting ? 'Committing...' : 'Commit'}
               </button>
-              <button type="button" className="settings-remove-btn" onClick={closeCommitDialog} disabled={isCommitting}>
+              <button type="button" className="settings-remove-btn" onClick={closeCommitDialog} disabled={isCommitting || isPushing}>
                 Cancel
               </button>
             </div>

@@ -1644,6 +1644,21 @@ export async function generateProjectGitCommitMessage(projectID: string, repoPat
   return message !== '' ? message : null;
 }
 
+export async function pushProjectGit(projectID: string, repoPath = ''): Promise<string> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/git/push?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ repo_path: repoPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to push');
+  }
+  const data = await response.json() as { output?: string };
+  return (data.output || '').trim();
+}
+
 export async function getProjectFile(projectID: string, path: string): Promise<MindFileResponse> {
   const response = await fetch(`${getApiBaseUrl()}/projects/file?projectID=${encodeURIComponent(projectID)}&path=${encodeURIComponent(path)}`);
   if (!response.ok) {
