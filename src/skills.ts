@@ -9,6 +9,8 @@ export const CAMERA_OUTPUT_DIR = 'AAGENT_CAMERA_OUTPUT_DIR';
 export const CAMERA_INDEX = 'AAGENT_CAMERA_INDEX';
 export const SKILLS_FOLDER_KEY = 'AAGENT_SKILLS_FOLDER';
 export const CHROME_HEADLESS = 'CHROME_HEADLESS';
+export const GIT_COMMIT_PROVIDER = 'AAGENT_GIT_COMMIT_PROVIDER';
+export const GIT_COMMIT_PROMPT_TEMPLATE = 'AAGENT_GIT_COMMIT_PROMPT_TEMPLATE';
 export function speedToOptionIndex(speed: string): number {
   const ELEVENLABS_SPEED_OPTIONS = ['0.5', '0.8', '1.0', '1.5', '2.0'] as const;
   const parsed = Number.parseFloat(speed);
@@ -43,4 +45,6 @@ export const SKILLS_MANAGED_SETTING_KEYS = [
   CAMERA_INDEX,
   SKILLS_FOLDER_KEY,
   CHROME_HEADLESS,
+  GIT_COMMIT_PROVIDER,
+  GIT_COMMIT_PROMPT_TEMPLATE,
 ] as const;

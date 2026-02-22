@@ -59,6 +59,48 @@ const PROVIDERS: ProviderSpec[] = [
         required: false,
       },
       {
+        key: 'transcribe_voice_messages',
+        label: 'Voice message transcription',
+        kind: 'select',
+        options: [
+          { value: 'true', label: 'Enabled (voice/audio -> prompt)' },
+          { value: 'false', label: 'Disabled (ignore audio)' },
+        ],
+      },
+      {
+        key: 'transcribe_language',
+        label: 'Transcription language (optional)',
+        kind: 'select',
+        required: false,
+        options: [
+          { value: '', label: 'Auto-detect' },
+          { value: 'en', label: 'English' },
+          { value: 'ru', label: 'Russian' },
+          { value: 'uk', label: 'Ukrainian' },
+          { value: 'de', label: 'German' },
+          { value: 'fr', label: 'French' },
+          { value: 'es', label: 'Spanish' },
+          { value: 'it', label: 'Italian' },
+          { value: 'pt', label: 'Portuguese' },
+          { value: 'pl', label: 'Polish' },
+          { value: 'tr', label: 'Turkish' },
+          { value: 'ja', label: 'Japanese' },
+          { value: 'ko', label: 'Korean' },
+          { value: 'zh', label: 'Chinese' },
+        ],
+      },
+      {
+        key: 'transcribe_translate_to_english',
+        label: 'Translate transcript to English',
+        kind: 'select',
+        required: false,
+        options: [
+          { value: '', label: 'Use whisper default setting' },
+          { value: 'true', label: 'Always translate to English' },
+          { value: 'false', label: 'Keep original language' },
+        ],
+      },
+      {
         key: 'web_app_base_url',
         label: 'Web app base URL (optional)',
         placeholder: 'https://your-app.example.com',
@@ -241,6 +283,8 @@ function defaultConfigForProvider(provider: IntegrationProvider): Record<string,
   }
   return {
     session_scope: 'topic',
+    transcribe_voice_messages: 'true',
+    transcribe_translate_to_english: '',
   };
 }
 

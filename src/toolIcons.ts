@@ -24,6 +24,7 @@ const TOOL_ICONS_BY_NAME: Record<string, string> = {
   mcp_manage: '🔌',
   fetch_url: '📡',
   exa_search: '🔬',
+  git_integration: '🌿',
 };
 
 // Tool categories for grouping in the UI
@@ -118,6 +119,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   fetch_url: 'web-network',
   // System
   bash: 'system',
+  git_integration: 'system',
   // Task Management
   recurring_jobs_tool: 'task-management',
   session_task_progress: 'task-management',
