@@ -1221,6 +1221,14 @@ body.mind-resizing * {
   font-size: 11px;
 }
 
+.message-audio-wrap {
+  margin-top: 10px;
+}
+
+.message-audio-player {
+  width: min(520px, 100%);
+}
+
 .message-user .message-footer {
   margin-top: 0;
   align-items: flex-end;

@@ -53,6 +53,14 @@ export function buildImageAssetUrl(path: string): string {
   return `${getApiBaseUrl()}/assets/images?path=${encodeURIComponent(normalized)}`;
 }
 
+export function buildSpeechClipUrl(clipID: string): string {
+  const normalized = clipID.trim();
+  if (normalized === '') {
+    return '';
+  }
+  return `${getApiBaseUrl()}/speech/clips/${encodeURIComponent(normalized)}`;
+}
+
 export function setApiBaseUrl(url: string): void {
   if (typeof window === 'undefined') {
     return;

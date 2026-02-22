@@ -68,6 +68,16 @@ const PROVIDERS: ProviderSpec[] = [
         ],
       },
       {
+        key: 'reply_mode',
+        label: 'Reply format',
+        kind: 'select',
+        options: [
+          { value: 'text', label: 'Text only' },
+          { value: 'voice', label: 'Audio only' },
+          { value: 'both', label: 'Text + audio' },
+        ],
+      },
+      {
         key: 'transcribe_language',
         label: 'Transcription language (optional)',
         kind: 'select',
@@ -285,6 +295,7 @@ function defaultConfigForProvider(provider: IntegrationProvider): Record<string,
     session_scope: 'topic',
     transcribe_voice_messages: 'true',
     transcribe_translate_to_english: '',
+    reply_mode: 'text',
   };
 }
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { buildImageAssetUrl, type Message, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
+import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
 import { IntegrationProviderIcon, integrationProviderForToolName, integrationProviderLabel } from './integrationMeta';
 import { renderMarkdownToHtml } from './markdown';
 import { buildOpenInMyMindUrl, extractToolFilePath, isSupportedFileTool } from './myMindNavigation';
@@ -338,6 +338,37 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     return <div className="message-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
   };
 
+  const messageAudioClipUrl = (message: Message): string => {
+    const directClip = (message.metadata?.audio_clip ?? null) as Record<string, unknown> | null;
+    if (directClip) {
+      const clipID = typeof directClip.clip_id === 'string' ? directClip.clip_id.trim() : '';
+      if (clipID !== '') {
+        return buildSpeechClipUrl(clipID);
+      }
+    }
+    const clip = (message.metadata?.inbound_audio_clip ?? null) as Record<string, unknown> | null;
+    if (!clip) {
+      return '';
+    }
+    const clipID = typeof clip.clip_id === 'string' ? clip.clip_id.trim() : '';
+    if (clipID === '') {
+      return '';
+    }
+    return buildSpeechClipUrl(clipID);
+  };
+
+  const toolResultAudioClipUrl = (result: ToolResult | undefined): string => {
+    const clip = (result?.metadata?.audio_clip ?? null) as Record<string, unknown> | null;
+    if (!clip) {
+      return '';
+    }
+    const clipID = typeof clip.clip_id === 'string' ? clip.clip_id.trim() : '';
+    if (clipID === '') {
+      return '';
+    }
+    return buildSpeechClipUrl(clipID);
+  };
+
   const extractToolDetails = (toolName: string, input: Record<string, unknown>): string | null => {
     // Extract key details based on tool name
     switch (toolName) {
@@ -401,6 +432,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const toolDetails = !filePath ? extractToolDetails(toolCall.name, toolCall.input) : null;
     const hasTokens = (toolCall.input_tokens ?? 0) > 0 || (toolCall.output_tokens ?? 0) > 0;
     const totalTokens = (toolCall.input_tokens ?? 0) + (toolCall.output_tokens ?? 0);
+    const toolAudioClipUrl = toolResultAudioClipUrl(result);
     return (
       <div key={key} className="tool-execution-stack">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result?.is_error ? ' tool-execution-card-error' : ''}`}>
@@ -466,6 +498,11 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 {result?.is_error ? 'Error' : 'Result'}
               </div>
               <pre className="tool-result-content">{result?.content || 'Waiting for result...'}</pre>
+              {toolAudioClipUrl ? (
+                <div className="message-audio-wrap">
+                  <audio className="message-audio-player" controls preload="metadata" src={toolAudioClipUrl} />
+                </div>
+              ) : null}
             </div>
             {imageUrl && !keepPreviewVisible ? (
               <div className="tool-execution-block">
@@ -488,6 +525,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
   const renderStandaloneToolResultCard = (result: ToolResult, timestamp: string, key: string) => {
     const imageUrl = resolveImageUrl(result);
     const keepPreviewVisible = imageUrl !== '' && isPinnedImageToolResult(result);
+    const toolAudioClipUrl = toolResultAudioClipUrl(result);
     return (
       <div key={key} className="tool-execution-stack">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result.is_error ? ' tool-execution-card-error' : ''}`}>
@@ -504,6 +542,11 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 {result.is_error ? 'Error' : 'Result'}
               </div>
               <pre className="tool-result-content">{result.content}</pre>
+              {toolAudioClipUrl ? (
+                <div className="message-audio-wrap">
+                  <audio className="message-audio-player" controls preload="metadata" src={toolAudioClipUrl} />
+                </div>
+              ) : null}
             </div>
             {imageUrl && !keepPreviewVisible ? (
               <div className="tool-execution-block">
@@ -615,15 +658,21 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
 
       const hasTokens = (message.input_tokens ?? 0) > 0 || (message.output_tokens ?? 0) > 0;
       const totalTokens = (message.input_tokens ?? 0) + (message.output_tokens ?? 0);
+      const clipUrl = messageAudioClipUrl(message);
 
       nodes.push(
         <div
           key={index}
           className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}${isProviderFailure ? ' message-provider-failure' : ''}`}
         >
-          {message.content && (
+          {(message.content || clipUrl) && (
             <div className="message-content">
-              {renderMessageContent(message)}
+              {message.content ? renderMessageContent(message) : null}
+              {clipUrl ? (
+                <div className="message-audio-wrap">
+                  <audio className="message-audio-player" controls preload="metadata" src={clipUrl} />
+                </div>
+              ) : null}
             </div>
           )}
 
