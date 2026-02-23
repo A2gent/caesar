@@ -9,11 +9,13 @@ import {
   listA2AInboundSessions,
   listIntegrations,
   listProjects,
+  listSubAgents,
   updateIntegration,
   updateSettings,
   type Integration,
   type Project,
   type Session,
+  type SubAgent,
   type TunnelLogEntry,
   type TunnelState,
   type TunnelStatus,
@@ -161,6 +163,8 @@ function A2AMyAgentView() {
   // Projects + inbound project setting
   const [projects, setProjects] = useState<Project[]>([]);
   const [inboundProjectID, setInboundProjectID] = useState<string>('');
+  const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
+  const [inboundSubAgentID, setInboundSubAgentID] = useState<string>('');
   const [savingProject, setSavingProject] = useState(false);
 
   // Inbound sessions
@@ -190,9 +194,11 @@ function A2AMyAgentView() {
   // ---- Load projects + inbound project setting ----
   const loadProjectsAndSettings = useCallback(async () => {
     try {
-      const [projs, settings] = await Promise.all([listProjects(), getSettings()]);
+      const [projs, sas, settings] = await Promise.all([listProjects(), listSubAgents(), getSettings()]);
       setProjects(projs);
+      setSubAgents(sas);
       setInboundProjectID(settings['A2A_INBOUND_PROJECT_ID'] ?? '');
+      setInboundSubAgentID(settings['A2A_INBOUND_SUB_AGENT_ID'] ?? '');
     } catch {
       // non-fatal
     }
@@ -409,12 +415,17 @@ function A2AMyAgentView() {
     }
   };
 
-  const handleSaveInboundProject = async (projectID: string) => {
+  const handleSaveInboundRouting = async (projectID: string, subAgentID: string) => {
     setSavingProject(true);
     try {
       const current = await getSettings();
-      await updateSettings({ ...current, A2A_INBOUND_PROJECT_ID: projectID });
+      await updateSettings({
+        ...current,
+        A2A_INBOUND_PROJECT_ID: projectID,
+        A2A_INBOUND_SUB_AGENT_ID: subAgentID,
+      });
       setInboundProjectID(projectID);
+      setInboundSubAgentID(subAgentID);
     } catch {
       // non-fatal
     } finally {
@@ -623,17 +634,36 @@ function A2AMyAgentView() {
   function renderInboundProjectPicker() {
     return (
       <section className="settings-group a2a-config-block" style={{ marginBottom: 24 }}>
-        <h3 style={{ margin: '0 0 4px' }}>Base project for inbound sessions</h3>
+        <h3 style={{ margin: '0 0 4px' }}>Inbound session defaults</h3>
         <p className="settings-help" style={{ marginBottom: 10 }}>
-          Inbound A2A requests will be assigned to this project. Leave empty for no project.
+          Configure how inbound A2A requests are handled locally.
         </p>
+        <label className="settings-field" style={{ gap: 6 }}>
+          <span>Handler</span>
+          <select
+            value={inboundSubAgentID}
+            onChange={e => {
+              setInboundSubAgentID(e.target.value);
+              void handleSaveInboundRouting(inboundProjectID, e.target.value);
+            }}
+            disabled={savingProject}
+          >
+            <option value="">Main agent</option>
+            {subAgents.map(sa => (
+              <option key={sa.id} value={sa.id}>{sa.name}</option>
+            ))}
+          </select>
+          <span className="settings-help" style={{ margin: 0 }}>
+            Choose a sub-agent to process inbound registry requests, or keep the main agent.
+          </span>
+        </label>
         <label className="settings-field" style={{ gap: 6 }}>
           <span>Project</span>
           <select
             value={inboundProjectID}
             onChange={e => {
               setInboundProjectID(e.target.value);
-              void handleSaveInboundProject(e.target.value);
+              void handleSaveInboundRouting(e.target.value, inboundSubAgentID);
             }}
             disabled={savingProject}
           >
