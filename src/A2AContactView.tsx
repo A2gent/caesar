@@ -97,20 +97,17 @@ function A2AContactView() {
 
   const handleSendMessage = async (message: string, images: MessageImage[] = []) => {
     if (!session) return;
-    if (images.length > 0) {
-      setError('A2A chat currently supports text only.');
-      return;
-    }
     setError(null);
     setIsLoading(true);
     const userMessage: Message = {
       role: 'user',
       content: message,
+      images,
       timestamp: new Date().toISOString(),
     };
     setMessages(prev => [...prev, userMessage]);
     try {
-      const resp = await sendA2AOutboundMessage(session.id, message);
+      const resp = await sendA2AOutboundMessage(session.id, message, images);
       setMessages(resp.messages || []);
       const fresh = await getSession(session.id);
       setSession(fresh);

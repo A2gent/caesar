@@ -682,13 +682,17 @@ export async function createA2AOutboundSession(request: CreateA2AOutboundSession
   return response.json();
 }
 
-export async function sendA2AOutboundMessage(sessionId: string, message: string): Promise<ChatResponse> {
+export async function sendA2AOutboundMessage(
+  sessionId: string,
+  message: string,
+  images: MessageImage[] = [],
+): Promise<ChatResponse> {
   const response = await fetch(`${getApiBaseUrl()}/a2a/outbound/sessions/${encodeURIComponent(sessionId)}/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, images }),
   });
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to send A2A message');
