@@ -29,13 +29,15 @@ interface NavSection {
 // System project IDs - must match backend
 export const SYSTEM_PROJECT_KB_ID = 'system-kb';
 export const SYSTEM_PROJECT_AGENT_ID = 'system-agent';
+export const SYSTEM_PROJECT_SOUL_ID = 'system-soul';
 
 const navSections: NavSection[] = [
   {
     id: 'agent',
     label: '🤖 Agent',
     items: [
-      { id: 'source', label: '📁 Source', path: '/projects/system-agent' },
+      { id: 'body', label: '📁 Body', path: '/projects/system-agent' },
+      { id: 'soul', label: '🫀 Soul', path: '/projects/system-soul' },
       { id: 'thinking', label: '🤔 Thinking', path: '/thinking' },
       { id: 'jobs', label: '🗓️ Recurring jobs', path: '/agent/jobs' },
       { id: 'tools', label: '🧰 Tools', path: '/tools' },
@@ -131,11 +133,11 @@ function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refr
     }
   };
 
-  // Sort projects: KB first, then user projects (agent is shown in Agent section)
+  // Sort projects: KB first, then user projects (Body/Soul are shown in Agent section)
   const sortedProjects = useCallback(() => {
     const kbProject = projects.find(p => p.id === SYSTEM_PROJECT_KB_ID);
     const userProjects = projects.filter(
-      p => p.id !== SYSTEM_PROJECT_KB_ID && p.id !== SYSTEM_PROJECT_AGENT_ID
+      p => p.id !== SYSTEM_PROJECT_KB_ID && p.id !== SYSTEM_PROJECT_AGENT_ID && p.id !== SYSTEM_PROJECT_SOUL_ID
     );
 
     const result: Project[] = [];
@@ -149,6 +151,7 @@ function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refr
   const getProjectIcon = (project: Project) => {
     if (project.id === SYSTEM_PROJECT_KB_ID) return '🧠';
     if (project.id === SYSTEM_PROJECT_AGENT_ID) return '🤖';
+    if (project.id === SYSTEM_PROJECT_SOUL_ID) return '🫀';
     return '📁';
   };
 

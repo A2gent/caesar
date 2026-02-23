@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import type { InstructionBlock, InstructionBlockType } from './instructionBlocks';
-import { Link, useNavigate } from 'react-router-dom';
-import { buildOpenInMyMindUrl } from './myMindNavigation';
+import { Link } from 'react-router-dom';
+import SoulFilePickerDialog from './SoulFilePickerDialog';
 
 interface ManagedBlockConfig {
   label: string;
@@ -38,7 +39,7 @@ function InstructionBlocksEditor({
   showOpenInMyMind = false,
   managedBlocks = {},
 }: InstructionBlocksEditorProps) {
-  const navigate = useNavigate();
+  const [pickerBlockIndex, setPickerBlockIndex] = useState<number | null>(null);
 
   const isManagedBlock = (type: InstructionBlockType): boolean => {
     return managedBlocks[type] !== undefined;
@@ -78,6 +79,8 @@ function InstructionBlocksEditor({
     nextBlocks.splice(nextIndex, 0, item);
     onChange(nextBlocks);
   };
+
+  const closePicker = () => setPickerBlockIndex(null);
 
   return (
     <div className="instruction-blocks">
@@ -186,11 +189,11 @@ function InstructionBlocksEditor({
                   <button
                     type="button"
                     className="settings-add-btn"
-                    onClick={() => navigate(buildOpenInMyMindUrl(block.value))}
-                    disabled={disabled || block.value.trim() === ''}
-                    title="Open this file in My Mind"
+                    onClick={() => setPickerBlockIndex(index)}
+                    disabled={disabled}
+                    title="Choose file from Soul"
                   >
-                    Open in My Mind
+                    Choose From Soul
                   </button>
                 ) : null}
               </div>
@@ -202,6 +205,17 @@ function InstructionBlocksEditor({
           </div>
         ))}
       </div>
+
+      <SoulFilePickerDialog
+        open={pickerBlockIndex !== null}
+        onClose={closePicker}
+        onPick={(absolutePath) => {
+          if (pickerBlockIndex === null) return;
+          updateBlock(pickerBlockIndex, { value: absolutePath });
+          closePicker();
+        }}
+        title="Choose Instruction File From Soul"
+      />
     </div>
   );
 }

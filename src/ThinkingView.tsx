@@ -301,6 +301,7 @@ function ThinkingView() {
               textPlaceholder="Describe what the agent should do during Thinking runs..."
               filePlaceholder="notes/thinking.md"
               emptyStateText="No blocks yet. Add text and/or file blocks. Blocks are executed in order."
+              showOpenInMyMind
             />
             <p className="thinking-note">
               These blocks are Thinking-specific and run after your global agent instruction settings.

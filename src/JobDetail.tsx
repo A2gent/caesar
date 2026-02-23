@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { deleteJob, getJob, getSettings, listJobSessions, runJobNow, type RecurringJob, type Session } from './api';
+import { cancelSessionRun, deleteJob, deleteSession, getJob, getSettings, listJobSessions, runJobNow, type RecurringJob, type Session } from './api';
 import { THINKING_JOB_ID_SETTING_KEY } from './thinking';
 import { buildOpenInMyMindUrl } from './myMindNavigation';
 
@@ -14,6 +14,9 @@ function JobDetail() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRunningNow, setIsRunningNow] = useState(false);
+  const [stoppingSessionId, setStoppingSessionId] = useState<string | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [isDeletingAllSessions, setIsDeletingAllSessions] = useState(false);
   const [pendingRunStartedAt, setPendingRunStartedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -128,6 +131,72 @@ function JobDetail() {
         return;
       }
       setError(message);
+    }
+  };
+
+  const handleStopSession = async (session: Session) => {
+    if (session.id.startsWith('optimistic-run-')) return;
+    if (session.status !== 'running') return;
+
+    setStoppingSessionId(session.id);
+    setError(null);
+
+    try {
+      await cancelSessionRun(session.id);
+      if (jobId) {
+        await loadSessions(jobId);
+      }
+    } catch (err) {
+      console.error('Failed to stop session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to stop session');
+    } finally {
+      setStoppingSessionId((current) => (current === session.id ? null : current));
+    }
+  };
+
+  const handleDeleteSession = async (session: Session) => {
+    if (session.id.startsWith('optimistic-run-')) return;
+    if (!confirm('Delete this session?')) return;
+
+    setDeletingSessionId(session.id);
+    setError(null);
+
+    try {
+      await deleteSession(session.id);
+      setSessions((current) => current.filter((item) => item.id !== session.id));
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete session');
+    } finally {
+      setDeletingSessionId((current) => (current === session.id ? null : current));
+    }
+  };
+
+  const handleDeleteAllSessions = async () => {
+    if (!jobId || sessions.length === 0) return;
+    if (!confirm(`Delete all ${sessions.length} session(s) for this recurring job? This cannot be undone.`)) return;
+
+    setIsDeletingAllSessions(true);
+    setError(null);
+
+    try {
+      for (const session of sessions) {
+        if (session.status === 'running') {
+          try {
+            await cancelSessionRun(session.id);
+          } catch (err) {
+            console.warn('Failed to cancel running session before delete:', session.id, err);
+          }
+        }
+        await deleteSession(session.id);
+      }
+      setSessions([]);
+    } catch (err) {
+      console.error('Failed to delete all job sessions:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete all job sessions');
+      await loadSessions(jobId);
+    } finally {
+      setIsDeletingAllSessions(false);
     }
   };
 
@@ -276,7 +345,18 @@ function JobDetail() {
         </div>
 
         <div className="job-sessions-section">
-          <h3>Execution Sessions ({displayedSessions.length})</h3>
+          <div className="job-sessions-header">
+            <h3>Execution Sessions ({displayedSessions.length})</h3>
+            <div className="job-sessions-actions">
+              <button
+                className="btn btn-danger"
+                onClick={() => void handleDeleteAllSessions()}
+                disabled={sessions.length === 0 || isDeletingAllSessions}
+              >
+                {isDeletingAllSessions ? 'Deleting All...' : 'Delete All Sessions'}
+              </button>
+            </div>
+          </div>
           {displayedSessions.length === 0 ? (
             <p className="no-sessions">No executions yet. Run the job to see sessions here.</p>
           ) : (
@@ -310,6 +390,36 @@ function JobDetail() {
                         </span>
                         <span className="session-date">{formatDate(session.updated_at || session.created_at)}</span>
                       </div>
+                      {!session.id.startsWith('optimistic-run-') && (
+                        <div className="session-actions">
+                          {session.status === 'running' && (
+                            <button
+                              className="session-play-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleStopSession(session);
+                              }}
+                              disabled={stoppingSessionId === session.id}
+                              title="Stop session"
+                              aria-label={`Stop ${session.title || `Session ${session.id.substring(0, 8)}`}`}
+                            >
+                              {stoppingSessionId === session.id ? 'Stopping...' : 'Stop'}
+                            </button>
+                          )}
+                          <button
+                            className="session-delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleDeleteSession(session);
+                            }}
+                            disabled={deletingSessionId === session.id}
+                            title="Delete session"
+                            aria-label={`Delete ${session.title || `Session ${session.id.substring(0, 8)}`}`}
+                          >
+                            {deletingSessionId === session.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

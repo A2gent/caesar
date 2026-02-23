@@ -2538,7 +2538,7 @@ body.mind-resizing * {
   background-color: #242424;
   border: 1px solid #333;
   border-radius: 8px;
-  padding: 14px 16px;
+  padding: 10px 12px;
   transition: border-color 0.2s;
 }
 
@@ -2550,16 +2550,17 @@ body.mind-resizing * {
   opacity: 0.7;
 }
 
-.job-card-main {
+.job-card-row {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
 }
 
-.job-header-main {
-  min-width: 0;
+.job-card-body {
   flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .job-name {
@@ -2577,79 +2578,34 @@ body.mind-resizing * {
 }
 
 .job-primary-schedule {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #f2f2f2;
   font-size: 14px;
   font-weight: 400;
   line-height: 1.35;
 }
 
-.job-card-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+.job-status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: #888;
 }
 
-.job-status {
-  display: flex;
-  justify-content: flex-end;
+.job-status-indicator.status-enabled {
+  background-color: #4caf50;
 }
 
-.status-badge {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-weight: 500;
+.job-status-indicator.status-disabled {
+  background-color: #888;
 }
 
-.status-badge.status-enabled {
-  background-color: rgba(76, 175, 80, 0.2);
-  color: #4caf50;
-}
-
-.status-badge.status-disabled {
-  background-color: rgba(136, 136, 136, 0.2);
-  color: #888;
-}
-
-/* Session status badges */
-.status-badge.status-running {
-  background-color: rgba(76, 175, 80, 0.2);
-  color: #4caf50;
-}
-
-.status-badge.status-completed {
-  background-color: rgba(33, 150, 243, 0.2);
-  color: #2196f3;
-}
-
-.status-badge.status-failed {
-  background-color: rgba(244, 67, 54, 0.2);
-  color: #f44336;
-}
-
-.status-badge.status-paused {
-  background-color: rgba(255, 152, 0, 0.2);
-  color: #ff9800;
-}
-
-.jobs-list .job-actions {
+.job-actions {
   display: flex;
   gap: 8px;
-  justify-content: flex-end;
   flex-wrap: wrap;
-}
-
-/* Settings styles */
-.settings-panel {
-  width: 100%;
-  max-width: none;
-  margin: 0;
-  padding: 18px;
-  border: 1px solid #333;
-  border-radius: 10px;
-  background: #202329;
+  align-items: center;
 }
 
 .settings-panel h2 {
@@ -5031,6 +4987,16 @@ body.mind-resizing * {
   min-height: 120px;
 }
 
+.job-file-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.job-file-picker-row input {
+  flex: 1;
+}
+
 .form-group.checkbox {
   flex-direction: row;
   align-items: center;
@@ -5171,6 +5137,27 @@ input[type="checkbox"]:disabled {
   color: #e0e0e0;
   margin: 0 0 16px 0;
   font-size: 16px;
+}
+
+.job-sessions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.job-sessions-header h3 {
+  margin: 0;
+}
+
+.job-sessions-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.job-sessions-section .session-play-btn {
+  min-width: 72px;
 }
 
 .job-task-path-row {
@@ -6237,6 +6224,47 @@ input[type="checkbox"]:disabled {
   justify-content: flex-start;
 }
 
+.project-git-init-dialog {
+  width: min(680px, 96vw);
+}
+
+.project-git-init-summary {
+  margin: 0;
+  font-size: 13px;
+  color: #b6c0d1;
+}
+
+.project-git-init-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #d4dceb;
+  font-size: 13px;
+}
+
+.project-git-init-field input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #3c4555;
+  background: #11151d;
+  color: #e7edf6;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.project-git-init-field input:focus {
+  outline: none;
+  border-color: #5b8cff;
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.2);
+}
+
+.project-git-init-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #8ea0b8;
+}
+
 .project-commit-content {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(520px, 1.6fr);
@@ -6598,6 +6626,26 @@ input[type="checkbox"]:disabled {
 
 .project-files-section .mind-viewer-panel {
   flex: 1;
+}
+
+.project-viewer-empty {
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.project-viewer-empty-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 8px;
+  border-radius: 14px;
+  border: 1px solid #3f4655;
+  background: linear-gradient(180deg, #242c3a 0%, #1a212d 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  line-height: 1;
 }
 
 /* Mind session controls row */

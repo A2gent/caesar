@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { createJob, updateJob, getJob, listProviders, type CreateJobRequest, type LLMProviderType, type ProviderConfig } from './api';
+import SoulFilePickerDialog from './SoulFilePickerDialog';
 
 type TaskPromptSource = 'text' | 'file';
 
@@ -23,6 +24,7 @@ function JobEdit() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [isSoulPickerOpen, setIsSoulPickerOpen] = useState(false);
 
   const isEditMode = !!jobId;
 
@@ -204,17 +206,28 @@ function JobEdit() {
         <div className="form-group">
           <label htmlFor="task">Task Instructions</label>
           {taskPromptSource === 'file' ? (
-            <input
-              type="text"
-              id="task"
-              value={taskPromptFile}
-              onChange={(event) => {
-                setTaskPromptFile(event.target.value);
-                setTaskPrompt(buildFileTaskPrompt(event.target.value.trim()));
-              }}
-              placeholder="/absolute/path/to/instructions.md"
-              disabled={saving}
-            />
+            <div className="job-file-picker-row">
+              <input
+                type="text"
+                id="task"
+                value={taskPromptFile}
+                onChange={(event) => {
+                  setTaskPromptFile(event.target.value);
+                  setTaskPrompt(buildFileTaskPrompt(event.target.value.trim()));
+                }}
+                placeholder="/absolute/path/to/instructions.md"
+                disabled={saving}
+              />
+              <button
+                type="button"
+                className="settings-add-btn"
+                onClick={() => setIsSoulPickerOpen(true)}
+                disabled={saving}
+                title="Choose instruction file from Soul"
+              >
+                Choose From Soul
+              </button>
+            </div>
           ) : (
             <textarea
               id="task"
@@ -269,6 +282,17 @@ function JobEdit() {
           </button>
         </div>
       </form>
+
+      <SoulFilePickerDialog
+        open={isSoulPickerOpen}
+        onClose={() => setIsSoulPickerOpen(false)}
+        onPick={(absolutePath) => {
+          setTaskPromptFile(absolutePath);
+          setTaskPrompt(buildFileTaskPrompt(absolutePath));
+          setIsSoulPickerOpen(false);
+        }}
+        title="Choose Job Instruction File From Soul"
+      />
     </div>
   );
 }

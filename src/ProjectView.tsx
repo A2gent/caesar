@@ -15,6 +15,7 @@ import {
   generateProjectGitCommitMessage,
   getProjectGitFileDiff,
   getProjectGitStatus,
+  initializeProjectGit,
   getSession,
   getSettings,
   listProjectTree,
@@ -58,6 +59,9 @@ const EXPANDED_DIRS_STORAGE_KEY_PREFIX = 'a2gent.project.expandedDirs.';
 const SELECTED_FILE_STORAGE_KEY_PREFIX = 'a2gent.project.selectedFile.';
 const SESSIONS_COLLAPSED_STORAGE_KEY = 'a2gent.project.sessionsCollapsed';
 const LAST_PROVIDER_STORAGE_KEY = 'a2gent.sessions.lastProvider';
+const SYSTEM_PROJECT_KB_ID = 'system-kb';
+const SYSTEM_PROJECT_BODY_ID = 'system-agent';
+const SYSTEM_PROJECT_SOUL_ID = 'system-soul';
 
 function readStoredTreePanelWidth(): number {
   const rawWidth = localStorage.getItem(TREE_PANEL_WIDTH_STORAGE_KEY);
@@ -419,6 +423,46 @@ function buildMindSessionContext(type: 'folder' | 'file', fullPath: string): str
   ].join('\n');
 }
 
+function getProjectViewerPlaceholder(project: Project | null): { icon: string; title: string; hint: string } {
+  if (!project) {
+    return {
+      icon: '📄',
+      title: 'No file selected.',
+      hint: 'Select a file from the tree to start viewing and editing.',
+    };
+  }
+
+  if (project.id === SYSTEM_PROJECT_KB_ID) {
+    return {
+      icon: '🧠',
+      title: 'Knowledge Base (Vault)',
+      hint: 'Use this as your Obsidian-style personal vault. Store linked notes so the agent can use your context and long-term knowledge.',
+    };
+  }
+
+  if (project.id === SYSTEM_PROJECT_BODY_ID) {
+    return {
+      icon: '🛠️',
+      title: 'Body (Agent Source Code)',
+      hint: 'This is the agent codebase. Ask the agent to improve behavior, implement changes, and commit updates here.',
+    };
+  }
+
+  if (project.id === SYSTEM_PROJECT_SOUL_ID) {
+    return {
+      icon: '🫀',
+      title: 'Soul (Agent State)',
+      hint: 'This stores database, sessions, and identity state. Keep it versioned so the agent can be moved to another machine quickly.',
+    };
+  }
+
+  return {
+    icon: '📄',
+    title: 'No file selected.',
+    hint: 'Select a file from the tree to start viewing and editing.',
+  };
+}
+
 function ProjectView() {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
@@ -446,6 +490,9 @@ function ProjectView() {
   const [isLoadingCommitFileDiff, setIsLoadingCommitFileDiff] = useState(false);
   const [isGeneratingCommitMessage, setIsGeneratingCommitMessage] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
+  const [isInitializingGit, setIsInitializingGit] = useState(false);
+  const [isGitInitDialogOpen, setIsGitInitDialogOpen] = useState(false);
+  const [gitInitRemoteURL, setGitInitRemoteURL] = useState('');
   const commitDiffRequestRef = useRef(0);
   const [gitDiscardPath, setGitDiscardPath] = useState<string | null>(null);
 
@@ -1281,6 +1328,39 @@ function ProjectView() {
     }
   };
 
+  const openGitInitDialog = () => {
+    if (!projectId) return;
+    setGitInitRemoteURL('');
+    setIsGitInitDialogOpen(true);
+  };
+
+  const closeGitInitDialog = () => {
+    if (isInitializingGit) return;
+    setIsGitInitDialogOpen(false);
+  };
+
+  const handleInitializeGit = async () => {
+    if (!projectId) return;
+    setIsInitializingGit(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const remoteURL = gitInitRemoteURL.trim();
+      await initializeProjectGit(projectId, remoteURL);
+      await loadGitStatus();
+      closeGitInitDialog();
+      if (remoteURL !== '') {
+        setSuccess('Git repository initialized and linked to remote origin.');
+      } else {
+        setSuccess('Git repository initialized.');
+      }
+    } catch (initError) {
+      setError(initError instanceof Error ? initError.message : 'Failed to initialize Git repository');
+    } finally {
+      setIsInitializingGit(false);
+    }
+  };
+
   const closeCommitDialog = () => {
     if (isCommitting || isPushing) return;
     setIsCommitDialogOpen(false);
@@ -1933,6 +2013,7 @@ function ProjectView() {
   const sortedSessions = [...sessions].sort((a, b) => {
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
   });
+  const viewerPlaceholder = getProjectViewerPlaceholder(project);
 
   if (isLoadingProject) {
     return (
@@ -1988,6 +2069,17 @@ function ProjectView() {
               title="Commit changed files"
             >
               {isLoadingGitStatus ? 'Loading Git...' : `Commit (${gitChangedFiles.length})`}
+            </button>
+          ) : null}
+          {rootFolder && !isGitRepo ? (
+            <button
+              type="button"
+              className="settings-save-btn"
+              onClick={openGitInitDialog}
+              disabled={isLoadingGitStatus || isInitializingGit}
+              title="Initialize Git repository for this folder"
+            >
+              {isInitializingGit ? 'Initializing Git...' : 'Init Git'}
             </button>
           ) : null}
           {!project.is_system && (
@@ -2178,10 +2270,12 @@ function ProjectView() {
                 <div className="mind-viewer-body">
                   {isLoadingFile ? <div className="sessions-loading">Loading file...</div> : null}
                   {!isLoadingFile && !selectedFilePath ? (
-                  <EmptyState className="sessions-empty">
-                    <EmptyStateTitle>No file selected.</EmptyStateTitle>
-                  </EmptyState>
-                ) : null}
+                    <EmptyState className="sessions-empty project-viewer-empty">
+                      <div className="project-viewer-empty-icon" aria-hidden="true">{viewerPlaceholder.icon}</div>
+                      <EmptyStateTitle>{viewerPlaceholder.title}</EmptyStateTitle>
+                      <EmptyStateHint>{viewerPlaceholder.hint}</EmptyStateHint>
+                    </EmptyState>
+                  ) : null}
                   {!isLoadingFile && selectedFilePath && markdownMode === 'source' ? (
                     <textarea
                       className="mind-markdown-editor"
@@ -2523,6 +2617,44 @@ function ProjectView() {
                 {isCommitting && isPushing ? 'Committing & pushing...' : 'Commit & Push'}
               </button>
               <button type="button" className="settings-remove-btn" onClick={closeCommitDialog} disabled={isCommitting || isPushing}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Git Init Dialog */}
+      {isGitInitDialogOpen ? (
+        <div className="mind-picker-overlay" role="dialog" aria-modal="true" aria-label="Initialize git repository">
+          <div className="mind-picker-dialog project-git-init-dialog">
+            <h2>Initialize Git Repository</h2>
+            <p className="project-git-init-summary">
+              This will run <code>git init</code> in the current project folder.
+            </p>
+            <label className="project-git-init-field">
+              <span>Remote URL (optional)</span>
+              <input
+                type="text"
+                value={gitInitRemoteURL}
+                onChange={(event) => setGitInitRemoteURL(event.target.value)}
+                placeholder="git@github.com:owner/repo.git or https://github.com/owner/repo.git"
+                disabled={isInitializingGit}
+              />
+            </label>
+            <p className="project-git-init-hint">
+              If provided, it will be added as <code>origin</code>.
+            </p>
+            <div className="mind-picker-actions">
+              <button
+                type="button"
+                className="settings-save-btn"
+                onClick={() => void handleInitializeGit()}
+                disabled={isInitializingGit}
+              >
+                {isInitializingGit ? 'Initializing...' : 'Initialize'}
+              </button>
+              <button type="button" className="settings-remove-btn" onClick={closeGitInitDialog} disabled={isInitializingGit}>
                 Cancel
               </button>
             </div>

@@ -1560,6 +1560,12 @@ export interface ProjectGitStatusResponse {
   files: ProjectGitChangedFile[];
 }
 
+export interface ProjectGitInitResponse {
+  root_folder: string;
+  has_git: boolean;
+  remote_url?: string;
+}
+
 export interface ProjectGitCommitResponse {
   root_folder: string;
   commit: string;
@@ -1576,6 +1582,20 @@ export async function getProjectGitStatus(projectID: string, repoPath = ''): Pro
   const response = await fetch(`${getApiBaseUrl()}/projects/git/status?projectID=${encodeURIComponent(projectID)}${repoQuery}`);
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to load git status');
+  }
+  return response.json();
+}
+
+export async function initializeProjectGit(projectID: string, remoteUrl = '', repoPath = ''): Promise<ProjectGitInitResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/git/init?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ remote_url: remoteUrl, repo_path: repoPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to initialize Git repository');
   }
   return response.json();
 }

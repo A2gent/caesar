@@ -99,23 +99,20 @@ function JobsList() {
               const jobLinkTarget = isThinkingJob ? '/thinking' : `/agent/jobs/${job.id}`;
               return (
                 <div key={job.id} className={`job-card ${!job.enabled ? 'job-disabled' : ''}`}>
-                <div className="job-card-main">
-                  <div className="job-header-main">
-                    <h3 className="job-name">
-                      <Link to={jobLinkTarget} className="job-name-link">
-                        {job.name}
-                      </Link>
-                    </h3>
-                    <div className="job-primary-schedule" title={job.schedule_human}>
-                      {job.schedule_human}
-                    </div>
-                  </div>
+                  <div className="job-card-row">
+                    <span
+                      className={`job-status-indicator ${job.enabled ? 'status-enabled' : 'status-disabled'}`}
+                    />
 
-                  <div className="job-card-side">
-                    <div className="job-status">
-                    <span className={`status-badge ${job.enabled ? 'status-enabled' : 'status-disabled'}`}>
-                      {job.enabled ? 'Enabled' : 'Disabled'}
-                    </span>
+                    <div className="job-card-body">
+                      <h3 className="job-name">
+                        <Link to={jobLinkTarget} className="job-name-link">
+                          {job.name}
+                        </Link>
+                      </h3>
+                      <div className="job-primary-schedule" title={job.schedule_human}>
+                        {job.schedule_human}
+                      </div>
                     </div>
 
                     <div className="job-actions">
@@ -143,7 +140,6 @@ function JobsList() {
                       )}
                     </div>
                   </div>
-                </div>
                 </div>
               );
             })}
