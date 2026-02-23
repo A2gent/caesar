@@ -285,7 +285,7 @@ function MCPServersView() {
         </div>
       )}
 
-      <div className="page-content page-content-narrow">
+      <div className="page-content page-content-narrow settings-sections">
         <p className="settings-help">
           Configure local MCP server commands, run connectivity/tool discovery tests, inspect logs, and estimate token footprint.
         </p>

@@ -597,7 +597,7 @@ function ProviderEditView() {
   if (!selected) {
     return (
       <div className="page-shell">
-        <div className="page-content page-content-narrow">
+        <div className="page-content page-content-narrow settings-sections">
           <div className="job-detail-error">
             Provider not found.
             <div className="settings-actions">
@@ -622,7 +622,7 @@ function ProviderEditView() {
         </div>
       )}
 
-      <div className="page-content page-content-narrow">
+      <div className="page-content page-content-narrow settings-sections">
         <div className="settings-panel provider-edit-panel">
           <div className="provider-edit-top">
             <Link to="/providers" className="settings-add-btn">Back</Link>

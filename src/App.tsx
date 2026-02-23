@@ -618,16 +618,26 @@ function AppLayout() {
           aria-label="Resize sidebar"
           onPointerDown={isSidebarOpen ? handleStartResize : undefined}
         >
-          <button
-            type="button"
+          <div
             className="sidebar-toggle sidebar-toggle-handle"
+            role="button"
+            tabIndex={0}
             onClick={handleToggleSidebar}
             aria-label={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
             title={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
             onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                handleToggleSidebar();
+              }
+            }}
           >
-            {isSidebarOpen ? '◀' : '▶'}
-          </button>
+            <span className="sidebar-toggle-handle-lines" aria-hidden="true">
+              <span className="sidebar-toggle-handle-line" />
+              <span className="sidebar-toggle-handle-line" />
+            </span>
+          </div>
         </div>
       ) : null}
 

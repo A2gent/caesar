@@ -271,7 +271,7 @@ function ProvidersView() {
         </div>
       )}
 
-      <div className="page-content page-content-narrow provider-list-view">
+      <div className="page-content page-content-narrow settings-sections provider-list-view">
         <h3>Automatic Router</h3>
         <p className="thinking-note">
           Automatic router is for intent-based model selection: a lightweight

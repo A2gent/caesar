@@ -241,7 +241,7 @@ function A2ARegistryView() {
         <h1>🌐 A2 Registry</h1>
       </div>
 
-      <div className="page-content page-content-narrow">
+      <div className="page-content page-content-narrow settings-sections">
         <p className="settings-help">
           Browse and discover agents registered on the Square A2A network. Connect to a local or remote registry to list available agents and their capabilities.
         </p>

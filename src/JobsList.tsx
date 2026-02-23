@@ -71,7 +71,7 @@ function JobsList() {
     <div className="page-shell">
       <div className="page-header">
         <h1>Recurring Jobs</h1>
-        <button onClick={() => navigate('/agent/jobs/new')} className="btn btn-primary">
+        <button type="button" onClick={() => navigate('/agent/jobs/new')} className="settings-save-btn">
           + New Job
         </button>
       </div>
@@ -83,7 +83,7 @@ function JobsList() {
         </div>
       )}
 
-      <div className="page-content jobs-list-container">
+      <div className="page-content settings-sections jobs-list-container">
         {jobs.length === 0 ? (
           <div className="jobs-empty">
             <p>No recurring jobs yet.</p>

@@ -48,9 +48,42 @@ body.mind-resizing * {
 
 .sidebar-toggle-handle {
   position: absolute;
-  top: 10px;
-  left: calc(50% - 3px);
-  transform: translateX(-50%);
+  top: 50%;
+  left: calc(50% - 4px);
+  transform: translateY(-50%);
+  border-radius: 0 6px 6px 0;
+  width: 12px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #3b3b3b;
+  background: #252525;
+  color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-toggle-handle-lines {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sidebar-toggle-handle-line {
+  width: 1px;
+  height: 12px;
+  border-radius: 1px;
+  background: #8d8d8d;
+  opacity: 0.9;
+}
+
+.sidebar-toggle-handle:hover .sidebar-toggle-handle-line {
+  background: #b2b2b2;
+}
+
+.sidebar-toggle-handle:focus-visible {
+  outline: 2px solid #646cff;
+  outline-offset: 2px;
 }
 
 .sidebar-toggle:hover {
@@ -1971,7 +2004,7 @@ body.mind-resizing * {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 16px 24px 16px 64px;
+  padding: 16px 15px 16px 25px;
   border-bottom: 1px solid #333;
 }
 
@@ -2639,7 +2672,20 @@ body.mind-resizing * {
 .settings-sections {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
+  padding: 25px 15px 15px 25px;
+  margin: 0;
+  align-self: flex-start;
+}
+
+.settings-sections > .settings-panel + .settings-panel {
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid #333;
+}
+
+.jobs-list-container.settings-sections {
+  padding-top: 25px;
 }
 
 .provider-settings-list {
@@ -6101,6 +6147,8 @@ input[type="checkbox"]:disabled {
 .thinking-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
 }
 
 @media (max-width: 900px) {

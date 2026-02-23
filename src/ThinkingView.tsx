@@ -253,7 +253,7 @@ function ThinkingView() {
         </div>
       ) : null}
 
-      <div className="page-content thinking-content">
+      <div className="page-content settings-sections thinking-content">
         <div className="thinking-card">
           <label className="thinking-checkbox-row">
             <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} disabled={saving} />
@@ -315,13 +315,13 @@ function ThinkingView() {
           <div className="thinking-actions">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="settings-add-btn"
               onClick={() => void handleRunNow()}
               disabled={saving || runningNow || thinkingJobID.trim() === ''}
             >
               {runningNow ? 'Starting...' : 'Run Now'}
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => void handleSave()} disabled={saving}>
+            <button type="button" className="settings-save-btn" onClick={() => void handleSave()} disabled={saving}>
               {saving ? 'Saving...' : 'Save'}
             </button>
           </div>

@@ -729,7 +729,7 @@ function A2AMyAgentView() {
         <h1>🤖 My Agent</h1>
       </div>
 
-      <div className="page-content page-content-narrow">
+      <div className="page-content page-content-narrow settings-sections">
         <p className="settings-help">
           Control how your agent participates in the A2A network. When connected and active, other agents on the Square registry can discover and contact yours.
         </p>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { browseSkillDirectories, estimateInstructionPrompt, type MindTreeEntry, type SystemPromptSnapshot } from './api';
 import InstructionBlocksEditor from './InstructionBlocksEditor';
@@ -15,6 +15,13 @@ import {
   type InstructionBlockType,
 } from './instructionBlocks';
 import { SKILLS_MANAGED_SETTING_KEYS } from './skills';
+import {
+  VOICE_LANGUAGE_OPTIONS,
+  readVoiceInputDeviceSetting,
+  readVoiceInputLanguageSetting,
+  writeVoiceInputDeviceSetting,
+  writeVoiceInputLanguageSetting,
+} from './voiceInputSettings';
 
 interface SettingsPanelProps {
   settings: Record<string, string>;
@@ -189,6 +196,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [instructionEstimate, setInstructionEstimate] = useState<SystemPromptSnapshot | null>(null);
   const [instructionEstimateError, setInstructionEstimateError] = useState<string | null>(null);
   const [isEstimatingInstructions, setIsEstimatingInstructions] = useState(false);
+  const [voiceInputLanguage, setVoiceInputLanguage] = useState(() => readVoiceInputLanguageSetting());
+  const [voiceInputDeviceId, setVoiceInputDeviceId] = useState(() => readVoiceInputDeviceSetting());
+  const [voiceInputDevices, setVoiceInputDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
+  const [isLoadingVoiceInputDevices, setIsLoadingVoiceInputDevices] = useState(false);
 
   useEffect(() => {
     const rows: CustomRow[] = [];
@@ -205,6 +216,60 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setSessionsFolder(settings[SESSIONS_FOLDER] || '');
     setAgentInstructionBlocks(ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')));
   }, [settings]);
+
+  const refreshVoiceInputDevices = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setVoiceInputDevices([]);
+      return;
+    }
+
+    setIsLoadingVoiceInputDevices(true);
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices
+        .filter((device) => device.kind === 'audioinput')
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Microphone ${index + 1}`,
+        }));
+      setVoiceInputDevices(inputs);
+      setVoiceInputDeviceId((prev) => {
+        if (prev === '' || inputs.some((input) => input.deviceId === prev)) {
+          return prev;
+        }
+        return inputs[0]?.deviceId || '';
+      });
+    } catch (error) {
+      console.error('Failed to enumerate microphones in settings:', error);
+    } finally {
+      setIsLoadingVoiceInputDevices(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshVoiceInputDevices();
+
+    if (!navigator.mediaDevices?.addEventListener) {
+      return;
+    }
+
+    const handleDeviceChange = () => {
+      void refreshVoiceInputDevices();
+    };
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+    };
+  }, [refreshVoiceInputDevices]);
+
+  useEffect(() => {
+    writeVoiceInputLanguageSetting(voiceInputLanguage);
+  }, [voiceInputLanguage]);
+
+  useEffect(() => {
+    writeVoiceInputDeviceSetting(voiceInputDeviceId);
+  }, [voiceInputDeviceId]);
 
   const compactionTriggerValue = Number.parseFloat(compactionTriggerPercent);
   const compactionTriggerProgress = Number.isFinite(compactionTriggerValue)
@@ -409,6 +474,56 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   return (
     <>
+      <div className="settings-panel">
+        <h2>Voice input</h2>
+        <p className="settings-help">
+          Configure microphone and transcription language for chat voice input. These are saved in this browser and used in Project chat recording.
+        </p>
+        <div className="settings-group">
+          <label className="settings-field">
+            <span>Voice input language</span>
+            <select
+              value={voiceInputLanguage}
+              onChange={(event) => setVoiceInputLanguage(event.target.value)}
+            >
+              {VOICE_LANGUAGE_OPTIONS.map((locale) => (
+                <option key={locale.value || 'auto'} value={locale.value}>
+                  {locale.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-field">
+            <span>Microphone device</span>
+            <div className="tool-folder-picker-row">
+              <select
+                value={voiceInputDeviceId}
+                onChange={(event) => setVoiceInputDeviceId(event.target.value)}
+                disabled={isLoadingVoiceInputDevices}
+              >
+                <option value="">Browser default microphone</option>
+                {voiceInputDevices.map((input) => (
+                  <option key={input.deviceId} value={input.deviceId}>
+                    {input.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="settings-add-btn"
+                onClick={() => void refreshVoiceInputDevices()}
+                disabled={isLoadingVoiceInputDevices}
+              >
+                {isLoadingVoiceInputDevices ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+            <span className="settings-field-hint">
+              If labels are blank, allow microphone access once and click Refresh.
+            </span>
+          </label>
+        </div>
+      </div>
+
       <div className="settings-panel">
         <div className="settings-panel-title-row">
           <h2>Agent instructions</h2>

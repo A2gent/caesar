@@ -1,5 +1,11 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { transcribeSpeech } from './api';
+import {
+  normalizeLanguageForBackend,
+  readVoiceInputDeviceSetting,
+  readVoiceInputLanguageSetting,
+  writeVoiceInputDeviceSetting,
+} from './voiceInputSettings';
 
 interface ChatInputProps {
   onSend?: (message: string) => void;
@@ -18,25 +24,6 @@ interface ChatInputProps {
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 const VOICE_SHORTCUT_LABEL = IS_MAC ? 'Ctrl+Shift+M' : 'Alt+M';
-const VOICE_LANG_STORAGE_KEY = 'a2gent.voiceInputLanguage';
-const VOICE_LANGUAGE_OPTIONS = [
-  { value: '', label: 'Auto detect' },
-  { value: 'en-US', label: 'English (US)' },
-  { value: 'en-GB', label: 'English (UK)' },
-  { value: 'ru-RU', label: 'Russian' },
-  { value: 'uk-UA', label: 'Ukrainian' },
-  { value: 'de-DE', label: 'German' },
-  { value: 'fr-FR', label: 'French' },
-  { value: 'es-ES', label: 'Spanish (Spain)' },
-  { value: 'it-IT', label: 'Italian' },
-  { value: 'pt-BR', label: 'Portuguese (Brazil)' },
-  { value: 'pl-PL', label: 'Polish' },
-  { value: 'tr-TR', label: 'Turkish' },
-  { value: 'ja-JP', label: 'Japanese' },
-  { value: 'ko-KR', label: 'Korean' },
-  { value: 'zh-CN', label: 'Chinese (Simplified)' },
-  { value: 'zh-TW', label: 'Chinese (Traditional)' },
-];
 
 const isVoiceShortcut = (event: { altKey: boolean; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; code?: string; key: string }) => {
   const keyMatch = event.code === 'KeyM' || event.key.toLowerCase() === 'm';
@@ -48,15 +35,6 @@ const isVoiceShortcut = (event: { altKey: boolean; shiftKey: boolean; metaKey: b
 
   return event.altKey && !event.shiftKey && !event.ctrlKey;
 };
-
-function normalizeLanguageForBackend(language: string): string {
-  const value = (language || '').trim().toLowerCase();
-  if (!value) {
-    return '';
-  }
-  const parts = value.split('-');
-  return parts[0] || '';
-}
 
 function mergeFloat32(chunks: Float32Array[]): Float32Array {
   let total = 0;
@@ -187,16 +165,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingLevel, setRecordingLevel] = useState(0);
-  const [audioInputs, setAudioInputs] = useState<Array<{ deviceId: string; label: string }>>([]);
-  const [selectedInputId, setSelectedInputId] = useState('');
-  const [selectedVoiceLanguage, setSelectedVoiceLanguage] = useState(() => {
-    try {
-      return localStorage.getItem(VOICE_LANG_STORAGE_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
-  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+  const [selectedInputId, setSelectedInputId] = useState(() => readVoiceInputDeviceSetting());
+  const [selectedVoiceLanguage] = useState(() => readVoiceInputLanguageSetting());
 
   const setValue = useCallback((newValue: string | ((prev: string) => string)) => {
     const nextValue = typeof newValue === 'function' ? newValue(value) : newValue;
@@ -369,14 +339,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
           deviceId: d.deviceId,
           label: d.label || 'Microphone',
         }));
-      setAudioInputs(inputs);
-      if (!selectedInputId && inputs.length > 0) {
-        setSelectedInputId(inputs[0].deviceId);
-      }
+      setSelectedInputId((prev) => {
+        if (prev && inputs.some((input) => input.deviceId === prev)) {
+          return prev;
+        }
+        return inputs[0]?.deviceId || '';
+      });
     } catch (error) {
       console.error('Failed to enumerate microphones:', error);
     }
-  }, [selectedInputId]);
+  }, []);
 
   useEffect(() => {
     void refreshAudioInputs();
@@ -395,12 +367,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }, [refreshAudioInputs]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(VOICE_LANG_STORAGE_KEY, selectedVoiceLanguage);
-    } catch {
-      // Ignore storage failures.
-    }
-  }, [selectedVoiceLanguage]);
+    writeVoiceInputDeviceSetting(selectedInputId);
+  }, [selectedInputId]);
 
   useEffect(() => {
     if (disabled && isRecording) {
@@ -477,7 +445,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    setShowVoiceSettings(true);
     pcmChunksRef.current = [];
 
     try {
@@ -525,7 +492,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       }
       await teardownRecordingGraph();
       setIsRecording(false);
-      setShowVoiceSettings(false);
     }
   }, [disabled, drawWaveform, isRecording, isTranscribing, refreshAudioInputs, selectedInputId, teardownRecordingGraph]);
 
@@ -545,7 +511,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
     if (chunks.length === 0) {
       setIsTranscribing(false);
-      setShowVoiceSettings(false);
       return;
     }
 
@@ -558,7 +523,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       alert(error instanceof Error ? error.message : 'Failed to transcribe audio.');
     } finally {
       setIsTranscribing(false);
-      setShowVoiceSettings(false);
     }
   }, [appendTranscript, isRecording, isTranscribing, selectedVoiceLanguage, teardownRecordingGraph]);
 
@@ -654,46 +618,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       />
       <div className="chat-input-actions">
         {actionControls}
-        {showVoiceSettings && (
-          <>
-            <label className="voice-settings-inline">
-              <select
-                className="mic-select"
-                value={selectedVoiceLanguage}
-                onChange={(e) => setSelectedVoiceLanguage(e.target.value)}
-                disabled={isRecording || isTranscribing}
-                title="Voice input language"
-                aria-label="Voice input language"
-              >
-                {VOICE_LANGUAGE_OPTIONS.map((locale) => (
-                  <option key={locale.value || 'auto'} value={locale.value}>
-                    {locale.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="voice-settings-inline">
-              <select
-                className="mic-select"
-                value={selectedInputId}
-                onChange={(e) => setSelectedInputId(e.target.value)}
-                disabled={isRecording || isTranscribing}
-                title="Microphone device"
-                aria-label="Microphone device"
-              >
-                {audioInputs.length === 0 ? (
-                  <option value="">No microphone devices found</option>
-                ) : (
-                  audioInputs.map((input) => (
-                    <option key={input.deviceId} value={input.deviceId}>
-                      {input.label}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-          </>
-        )}
         <button
           type="button"
           className={`voice-button ${isRecording ? 'recording' : ''}`}

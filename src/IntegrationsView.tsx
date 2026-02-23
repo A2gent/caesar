@@ -77,7 +77,7 @@ function IntegrationsView() {
         </div>
       )}
 
-      <div className="page-content page-content-narrow">
+      <div className="page-content page-content-narrow settings-sections">
         {isLoading ? (
           <div className="sessions-loading">Loading integrations...</div>
         ) : (
