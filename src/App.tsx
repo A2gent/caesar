@@ -16,6 +16,7 @@ import ProjectView from './ProjectView';
 import ThinkingView from './ThinkingView';
 import SkillsView from './SkillsView';
 import ToolsView from './ToolsView';
+import SubAgentsView from './SubAgentsView';
 import NotificationsView from './NotificationsView';
 import A2ARegistryView from './A2ARegistryView';
 import A2AMyAgentView from './A2AMyAgentView';
@@ -723,6 +724,7 @@ function AppLayout() {
           <Route path="/providers/fallback-aggregates/new" element={<FallbackAggregateCreateView />} />
           <Route path="/providers/:providerType" element={<ProviderEditView />} />
           <Route path="/tools" element={<ToolsView />} />
+          <Route path="/sub-agents" element={<SubAgentsView />} />
           <Route path="/notifications" element={<NotificationsView notifications={notifications} onClearAll={clearAllNotifications} onDismiss={dismissNotification} />} />
           <Route path="/skills" element={<SkillsView />} />
           <Route path="/settings" element={<SettingsView onAgentNameRefresh={handleBackendChange} />} />

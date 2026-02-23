@@ -282,6 +282,7 @@ export interface CreateSessionRequest {
   provider?: string;
   model?: string;
   project_id?: string;
+  sub_agent_id?: string;
   queued?: boolean;
 }
 
@@ -2298,6 +2299,113 @@ export async function testMCPServer(serverId: string): Promise<MCPServerTestResp
   });
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to test MCP server');
+  }
+  return response.json();
+}
+
+// --- Sub-Agents ---
+
+export interface SubAgent {
+  id: string;
+  name: string;
+  provider: string;
+  model: string;
+  enabled_tools: string[];
+  instruction_blocks: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubAgentRequest {
+  name: string;
+  provider: string;
+  model?: string;
+  enabled_tools?: string[];
+  instruction_blocks?: string;
+}
+
+export interface ToolDefinitionInfo {
+  name: string;
+  description: string;
+}
+
+export async function listSubAgents(): Promise<SubAgent[]> {
+  const response = await fetch(`${getApiBaseUrl()}/sub-agents/`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to list sub-agents');
+  }
+  return response.json();
+}
+
+export async function getSubAgent(id: string): Promise<SubAgent> {
+  const response = await fetch(`${getApiBaseUrl()}/sub-agents/${id}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to get sub-agent');
+  }
+  return response.json();
+}
+
+export async function createSubAgent(request: SubAgentRequest): Promise<SubAgent> {
+  const response = await fetch(`${getApiBaseUrl()}/sub-agents/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to create sub-agent');
+  }
+  return response.json();
+}
+
+export async function updateSubAgent(id: string, request: SubAgentRequest): Promise<SubAgent> {
+  const response = await fetch(`${getApiBaseUrl()}/sub-agents/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to update sub-agent');
+  }
+  return response.json();
+}
+
+export async function deleteSubAgent(id: string): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/sub-agents/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to delete sub-agent');
+  }
+}
+
+export async function estimateSubAgentInstructionPrompt(
+  subAgentId: string | null,
+  instructionBlocks: string,
+  name: string,
+  enabledTools: string[],
+): Promise<InstructionEstimateResponse> {
+  const url = subAgentId
+    ? `${getApiBaseUrl()}/sub-agents/${subAgentId}/instruction-estimate`
+    : `${getApiBaseUrl()}/sub-agents/instruction-estimate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      instruction_blocks: instructionBlocks,
+      name,
+      enabled_tools: enabledTools,
+    }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to estimate sub-agent instructions');
+  }
+  return response.json();
+}
+
+export async function listToolDefinitions(): Promise<ToolDefinitionInfo[]> {
+  const response = await fetch(`${getApiBaseUrl()}/tools/definitions`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to list tool definitions');
   }
   return response.json();
 }

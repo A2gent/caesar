@@ -38,6 +38,7 @@ const navSections: NavSection[] = [
     items: [
       { id: 'body', label: '📁 Body', path: '/projects/system-agent' },
       { id: 'soul', label: '🫀 Soul', path: '/projects/system-soul' },
+      { id: 'sub-agents', label: '🤖 Sub-agents', path: '/sub-agents' },
       { id: 'thinking', label: '🤔 Thinking', path: '/thinking' },
       { id: 'jobs', label: '🗓️ Recurring jobs', path: '/agent/jobs' },
       { id: 'tools', label: '🧰 Tools', path: '/tools' },

@@ -3572,6 +3572,32 @@ body.mind-resizing * {
   background: #202737;
 }
 
+.subagent-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid #293241;
+  border-radius: 6px;
+  background: #0f1218;
+}
+
+.subagent-tool-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 3px 0;
+  color: #d1d5db;
+}
+
+.subagent-tool-item:hover {
+  color: #fff;
+}
+
 .settings-group {
   display: flex;
   flex-direction: column;

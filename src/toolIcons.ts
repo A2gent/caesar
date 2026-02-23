@@ -28,6 +28,7 @@ const TOOL_ICONS_BY_NAME: Record<string, string> = {
   fetch_url: '📡',
   exa_search: '🔬',
   git_integration: '🌿',
+  delegate_to_subagent: '🤖',
 };
 
 // Tool categories for grouping in the UI
@@ -130,6 +131,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   recurring_jobs_tool: 'task-management',
   session_task_progress: 'task-management',
   task: 'task-management',
+  delegate_to_subagent: 'task-management',
   // Notifications
   notify_webapp: 'notifications',
   telegram_send_message: 'notifications',

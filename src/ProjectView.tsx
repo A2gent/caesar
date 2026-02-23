@@ -21,6 +21,7 @@ import {
   listProjectTree,
   listProviders,
   listSessions,
+  listSubAgents,
   moveProjectFile,
   parseTaskProgress,
   pushProjectGit,
@@ -35,8 +36,8 @@ import {
   type MindTreeEntry,
   type ProjectGitChangedFile,
   type Project,
-  type ProviderConfig,
   type Session,
+  type SubAgent,
 } from './api';
 import ChatInput from './ChatInput';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from './EmptyState';
@@ -59,7 +60,7 @@ const TREE_PANEL_WIDTH_STORAGE_KEY = 'a2gent.project.tree.width';
 const EXPANDED_DIRS_STORAGE_KEY_PREFIX = 'a2gent.project.expandedDirs.';
 const SELECTED_FILE_STORAGE_KEY_PREFIX = 'a2gent.project.selectedFile.';
 const SESSIONS_COLLAPSED_STORAGE_KEY = 'a2gent.project.sessionsCollapsed';
-const LAST_PROVIDER_STORAGE_KEY = 'a2gent.sessions.lastProvider';
+const SELECTED_AGENT_STORAGE_KEY_PREFIX = 'a2gent.project.selectedAgent.';
 const SYSTEM_PROJECT_KB_ID = 'system-kb';
 const SYSTEM_PROJECT_BODY_ID = 'system-agent';
 const SYSTEM_PROJECT_SOUL_ID = 'system-soul';
@@ -505,9 +506,11 @@ function ProjectView() {
   const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
   const [startingSessionID, setStartingSessionID] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(readStoredSessionsCollapsed);
-  const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
   const [hasLoadedProviders, setHasLoadedProviders] = useState(false);
+  const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
+  // selectedAgentValue: "main" for main agent, "subagent:<id>" for sub-agent
+  const [selectedAgentValue, setSelectedAgentValue] = useState<string>('main');
 
   // Files state
   const [rootFolder, setRootFolder] = useState('');
@@ -658,28 +661,36 @@ function ProjectView() {
     void loadGitStatus();
   }, [loadGitStatus]);
 
-  // Load providers
+  // Load providers and sub-agents
   useEffect(() => {
     const loadProviders = async () => {
       try {
-        const data = await listProviders();
-        setProviders(data);
-        let storedProvider: LLMProviderType | '' = '';
-        try {
-          storedProvider = (localStorage.getItem(LAST_PROVIDER_STORAGE_KEY) as LLMProviderType | null) || '';
-        } catch {
-          storedProvider = '';
+        const [data, agents] = await Promise.all([
+          listProviders(),
+          listSubAgents().catch(() => [] as SubAgent[]),
+        ]);
+        setSubAgents(agents);
+
+        // Restore selected agent for this project
+        const storedAgent = projectId
+          ? localStorage.getItem(SELECTED_AGENT_STORAGE_KEY_PREFIX + projectId) || ''
+          : '';
+        if (storedAgent.startsWith('subagent:')) {
+          const saId = storedAgent.slice('subagent:'.length);
+          if (agents.some(a => a.id === saId)) {
+            setSelectedAgentValue(storedAgent);
+          } else {
+            setSelectedAgentValue('main');
+          }
+        } else {
+          setSelectedAgentValue('main');
         }
-        if (storedProvider && data.some((provider) => provider.type === storedProvider)) {
-          setSelectedProvider(storedProvider);
-          return;
-        }
+
+        // Set active provider for internal use (session creation)
         const active = data.find((provider) => provider.is_active);
         if (active) {
           setSelectedProvider(active.type);
-          return;
-        }
-        if (data.length > 0) {
+        } else if (data.length > 0) {
           setSelectedProvider(data[0].type);
         }
       } catch (err) {
@@ -689,21 +700,19 @@ function ProjectView() {
       }
     };
     loadProviders();
-  }, []);
+  }, [projectId]);
 
-  // Persist selected provider
+  // Persist selected agent for this project
   useEffect(() => {
     if (!hasLoadedProviders) return;
     try {
-      if (selectedProvider) {
-        localStorage.setItem(LAST_PROVIDER_STORAGE_KEY, selectedProvider);
-      } else {
-        localStorage.removeItem(LAST_PROVIDER_STORAGE_KEY);
+      if (projectId) {
+        localStorage.setItem(SELECTED_AGENT_STORAGE_KEY_PREFIX + projectId, selectedAgentValue);
       }
     } catch {
       // Ignore storage failures
     }
-  }, [hasLoadedProviders, selectedProvider]);
+  }, [hasLoadedProviders, selectedAgentValue, projectId]);
 
   // Persist sessions collapsed state
   useEffect(() => {
@@ -886,17 +895,21 @@ function ProjectView() {
         ? `${sessionContextMessage}\n\n---\n\n${message}`
         : message;
 
+      const isSubAgent = selectedAgentValue.startsWith('subagent:');
+      const subAgentId = isSubAgent ? selectedAgentValue.slice('subagent:'.length) : undefined;
+
       const created = await createSession({
         agent_id: 'build',
-        provider: selectedProvider || undefined,
+        provider: isSubAgent ? undefined : (selectedProvider || undefined),
+        sub_agent_id: subAgentId,
         project_id: projectId || undefined,
       });
-      
+
       // Clear context after using it
       setSessionContextMessage('');
       setSessionTargetLabel('');
       setIsSessionContextExpanded(false);
-      
+
       handleSelectSession(created.id, combinedMessage, images);
     } catch (err) {
       console.error('Failed to create session:', err);
@@ -915,11 +928,15 @@ function ProjectView() {
         ? `${sessionContextMessage}\n\n---\n\n${message}`
         : message;
 
+      const isSubAgentQ = selectedAgentValue.startsWith('subagent:');
+      const subAgentIdQ = isSubAgentQ ? selectedAgentValue.slice('subagent:'.length) : undefined;
+
       await createSession({
         agent_id: 'build',
         task: combinedMessage,
         images,
-        provider: selectedProvider || undefined,
+        provider: isSubAgentQ ? undefined : (selectedProvider || undefined),
+        sub_agent_id: subAgentIdQ,
         project_id: projectId || undefined,
         queued: true,
       });
@@ -2462,18 +2479,26 @@ function ProjectView() {
               ? `Describe the task for ${sessionTargetLabel}...`
               : 'Start a new chat...'}
             actionControls={
-              providers.length > 0 ? (
+              subAgents.length > 0 ? (
                 <div className="sessions-new-chat-controls">
                   <label className="chat-provider-select">
                     <select
-                      value={selectedProvider}
-                      onChange={(e) => setSelectedProvider(e.target.value as LLMProviderType)}
-                      title="Provider"
-                      aria-label="Provider"
+                      value={selectedAgentValue}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.startsWith('subagent:')) {
+                          setSelectedAgentValue(val);
+                        } else {
+                          setSelectedAgentValue('main');
+                        }
+                      }}
+                      title="Agent"
+                      aria-label="Agent"
                     >
-                      {providers.map((provider) => (
-                        <option key={provider.type} value={provider.type}>
-                          {provider.display_name}
+                      <option value="main">Main Agent</option>
+                      {subAgents.map((sa) => (
+                        <option key={sa.id} value={`subagent:${sa.id}`}>
+                          {sa.name}
                         </option>
                       ))}
                     </select>
