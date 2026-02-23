@@ -6,7 +6,8 @@ import { EmptyState, EmptyStateHint, EmptyStateTitle } from './EmptyState';
 import {
   createA2AOutboundSession,
   getSession,
-  sendA2AOutboundMessage,
+  sendA2AOutboundMessageStream,
+  type A2AOutboundStreamEvent,
   type Message,
   type MessageImage,
   type Session,
@@ -106,16 +107,40 @@ function A2AContactView() {
       timestamp: new Date().toISOString(),
     };
     setMessages(prev => [...prev, userMessage]);
+    const assistantPlaceholder: Message = {
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, assistantPlaceholder]);
     try {
-      const resp = await sendA2AOutboundMessage(session.id, message, images);
-      setMessages(resp.messages || []);
+      for await (const event of sendA2AOutboundMessageStream(session.id, message, images)) {
+        handleA2AStreamEvent(event, session.id);
+      }
       const fresh = await getSession(session.id);
       setSession(fresh);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
-      setMessages(prev => prev.slice(0, -1));
+      setMessages(prev => prev.slice(0, -2));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleA2AStreamEvent = (event: A2AOutboundStreamEvent, sessionId: string) => {
+    if (event.event === 'status') {
+      if (event.data.state === 'accepted' || event.data.state === 'running') {
+        setSession(prev => (prev && prev.id === sessionId ? { ...prev, status: 'running' } : prev));
+      }
+      if (event.data.state === 'failed') {
+        setError(event.data.error || 'Failed to send message');
+        setSession(prev => (prev && prev.id === sessionId ? { ...prev, status: 'failed' } : prev));
+      }
+      return;
+    }
+    if (event.event === 'response') {
+      setMessages(event.data.messages || []);
+      setSession(prev => (prev && prev.id === sessionId ? { ...prev, status: event.data.status } : prev));
     }
   };
 

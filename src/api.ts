@@ -700,6 +700,107 @@ export async function sendA2AOutboundMessage(
   return response.json();
 }
 
+type A2AOutboundStreamStatusEvent = {
+  event: 'status';
+  data: {
+    state: string;
+    error?: string;
+    http_status?: number;
+  };
+};
+
+type A2AOutboundStreamResponseEvent = {
+  event: 'response';
+  data: ChatResponse;
+};
+
+export type A2AOutboundStreamEvent = A2AOutboundStreamStatusEvent | A2AOutboundStreamResponseEvent;
+
+export async function* sendA2AOutboundMessageStream(
+  sessionId: string,
+  message: string,
+  images: MessageImage[] = [],
+  signal?: AbortSignal,
+): AsyncGenerator<A2AOutboundStreamEvent, void, unknown> {
+  const response = await fetch(`${getApiBaseUrl()}/a2a/outbound/sessions/${encodeURIComponent(sessionId)}/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    signal,
+    body: JSON.stringify({ message, images }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to stream A2A message');
+  }
+  if (!response.body) {
+    throw new Error('Streaming response body is unavailable');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const flushSSEChunk = (chunk: string): A2AOutboundStreamEvent | null => {
+    const lines = chunk.split('\n');
+    let eventName = '';
+    let data = '';
+    for (const lineRaw of lines) {
+      const line = lineRaw.trim();
+      if (!line || line.startsWith(':')) {
+        continue;
+      }
+      if (line.startsWith('event:')) {
+        eventName = line.slice('event:'.length).trim();
+      } else if (line.startsWith('data:')) {
+        if (data !== '') {
+          data += '\n';
+        }
+        data += line.slice('data:'.length).trim();
+      }
+    }
+    if (eventName === '' || data === '') {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(data) as unknown;
+      if (eventName === 'status') {
+        return { event: 'status', data: parsed as A2AOutboundStreamStatusEvent['data'] };
+      }
+      if (eventName === 'response') {
+        return { event: 'response', data: parsed as ChatResponse };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split('\n\n');
+    buffer = chunks.pop() || '';
+    for (const chunk of chunks) {
+      const event = flushSSEChunk(chunk);
+      if (event) {
+        yield event;
+      }
+    }
+  }
+
+  const tail = buffer.trim();
+  if (tail) {
+    const event = flushSSEChunk(tail);
+    if (event) {
+      yield event;
+    }
+  }
+}
+
 export async function getA2ATunnelStatus(): Promise<TunnelStatus> {
   const response = await fetch(`${getApiBaseUrl()}/integrations/a2_registry/tunnel-status`);
   if (!response.ok) {
