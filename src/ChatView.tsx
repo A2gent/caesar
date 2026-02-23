@@ -20,6 +20,7 @@ import {
   type ProviderConfig,
   type Session,
   type Message,
+  type MessageImage,
   type ChatStreamEvent,
   type PendingQuestion,
   type ProviderFailure,
@@ -27,6 +28,7 @@ import {
 
 type ChatLocationState = {
   initialMessage?: string;
+  initialImages?: MessageImage[];
 };
 
 function firstNonEmpty(value: string | null | undefined): string {
@@ -438,8 +440,9 @@ function ChatView() {
   }, [session?.project_id]);
 
   useEffect(() => {
-    const initialMessage = locationState.initialMessage?.trim();
-    if (!initialMessage || !activeSessionId || !session) {
+    const initialMessage = locationState.initialMessage?.trim() || '';
+    const initialImages = Array.isArray(locationState.initialImages) ? locationState.initialImages : [];
+    if ((!initialMessage && initialImages.length === 0) || !activeSessionId || !session) {
       return;
     }
     if (activeRequestSessionId === activeSessionId) {
@@ -447,8 +450,8 @@ function ChatView() {
     }
 
     navigate(location.pathname, { replace: true, state: {} });
-    void sendMessageWithStreaming(activeSessionId, initialMessage);
-  }, [locationState.initialMessage, activeSessionId, activeRequestSessionId, session, navigate, location.pathname]);
+    void sendMessageWithStreaming(activeSessionId, initialMessage, initialImages);
+  }, [locationState.initialImages, locationState.initialMessage, activeSessionId, activeRequestSessionId, session, navigate, location.pathname]);
 
   useEffect(() => {
     const loadProviders = async () => {
@@ -569,17 +572,19 @@ function ChatView() {
 
 
 
-  const sendMessageWithStreaming = async (targetSessionId: string, message: string) => {
+  const sendMessageWithStreaming = async (targetSessionId: string, message: string, images: MessageImage[] = []) => {
     setActiveRequestSessionId(targetSessionId);
     
     // Check if the message already exists (e.g., for queued sessions)
     const lastUserMessage = messages.filter(m => m.role === 'user').pop();
-    const messageAlreadyExists = lastUserMessage?.content === message;
+    const lastImages = Array.isArray(lastUserMessage?.images) ? lastUserMessage.images : [];
+    const messageAlreadyExists = lastUserMessage?.content === message && JSON.stringify(lastImages) === JSON.stringify(images);
     
     if (!messageAlreadyExists) {
       const userMessage: Message = {
         role: 'user',
         content: message,
+        images,
         timestamp: new Date().toISOString(),
       };
       const assistantMessage: Message = {
@@ -604,7 +609,7 @@ function ChatView() {
     activeStreamAbortRef.current = controller;
 
     try {
-      for await (const event of sendMessageStream(targetSessionId, message, controller.signal)) {
+      for await (const event of sendMessageStream(targetSessionId, message, images, controller.signal)) {
         handleStreamEvent(event, targetSessionId);
       }
     } catch (err) {
@@ -738,11 +743,15 @@ function ChatView() {
 
 
 
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (message: string, images: MessageImage[] = []) => {
     setError(null);
     
     // If there's a pending question, treat the message as an answer
     if (session && pendingQuestion) {
+      if (images.length > 0) {
+        setError('Image attachments are not supported while answering a pending question.');
+        return;
+      }
       await handleAnswerQuestion(message);
       return;
     }
@@ -751,7 +760,7 @@ function ChatView() {
       return;
     }
     
-    await sendMessageWithStreaming(session.id, message);
+    await sendMessageWithStreaming(session.id, message, images);
   };
 
   const handleCancelSession = async () => {

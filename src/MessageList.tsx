@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
+import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
 import { IntegrationProviderIcon, integrationProviderForToolName, integrationProviderLabel } from './integrationMeta';
 import { renderMarkdownToHtml } from './markdown';
 import { buildOpenInMyMindUrl, extractToolFilePath, isSupportedFileTool } from './myMindNavigation';
@@ -338,6 +338,52 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     return <div className="message-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
   };
 
+  const messageImages = (message: Message): MessageImage[] => {
+    if (Array.isArray(message.images) && message.images.length > 0) {
+      return message.images;
+    }
+    const metadataImages = (message.metadata?.images ?? null) as MessageImage[] | null;
+    return Array.isArray(metadataImages) ? metadataImages : [];
+  };
+
+  const imageSource = (image: MessageImage): string => {
+    const url = (image.url || '').trim();
+    if (url !== '') {
+      return url;
+    }
+    const mediaType = (image.media_type || '').trim();
+    const data = (image.data_base64 || '').trim();
+    if (mediaType !== '' && data !== '') {
+      return `data:${mediaType};base64,${data}`;
+    }
+    return '';
+  };
+
+  const renderMessageImages = (message: Message) => {
+    const images = messageImages(message);
+    if (images.length === 0) {
+      return null;
+    }
+    return (
+      <div className="message-image-grid">
+        {images.map((image, idx) => {
+          const src = imageSource(image);
+          if (!src) {
+            return null;
+          }
+          return (
+            <img
+              key={`${message.timestamp}-${idx}`}
+              src={src}
+              alt={image.name || `Message image ${idx + 1}`}
+              loading="lazy"
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
   const messageAudioClipUrl = (message: Message): string => {
     const directClip = (message.metadata?.audio_clip ?? null) as Record<string, unknown> | null;
     if (directClip) {
@@ -587,6 +633,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
             >
               <div className="message-content">
                 {renderMessageContent(message)}
+                {renderMessageImages(message)}
               </div>
               <div className="message-footer">
                 {hasTokens ? (
@@ -631,6 +678,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
               className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}`}
             >
               <div className="message-content">{renderMessageContent(message)}</div>
+              {renderMessageImages(message)}
               <div className="message-footer">
                 {hasTokens ? (
                   <span className="message-tokens" title={`Input: ${message.input_tokens ?? 0} tokens, Output: ${message.output_tokens ?? 0} tokens`}>
@@ -647,7 +695,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       }
 
       // Skip empty assistant messages (tool-only responses without text content)
-      if (message.role === 'assistant' && !message.content?.trim() && !isCompactionMessage(message)) {
+      if (message.role === 'assistant' && !message.content?.trim() && messageImages(message).length === 0 && !isCompactionMessage(message)) {
         continue;
       }
 
@@ -659,15 +707,17 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       const hasTokens = (message.input_tokens ?? 0) > 0 || (message.output_tokens ?? 0) > 0;
       const totalTokens = (message.input_tokens ?? 0) + (message.output_tokens ?? 0);
       const clipUrl = messageAudioClipUrl(message);
+      const hasImages = messageImages(message).length > 0;
 
       nodes.push(
         <div
           key={index}
           className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}${isProviderFailure ? ' message-provider-failure' : ''}`}
         >
-          {(message.content || clipUrl) && (
+          {(message.content || clipUrl || hasImages) && (
             <div className="message-content">
               {message.content ? renderMessageContent(message) : null}
+              {renderMessageImages(message)}
               {clipUrl ? (
                 <div className="message-audio-wrap">
                   <audio className="message-audio-player" controls preload="metadata" src={clipUrl} />

@@ -1109,7 +1109,7 @@ function MyMindView() {
     activeInlineStreamAbortRef.current = controller;
 
     try {
-      for await (const event of sendMessageStream(targetSessionId, trimmedMessage, controller.signal)) {
+      for await (const event of sendMessageStream(targetSessionId, trimmedMessage, [], controller.signal)) {
         handleInlineStreamEvent(event, targetSessionId);
       }
     } catch (streamError) {

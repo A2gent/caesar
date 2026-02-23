@@ -10,6 +10,7 @@ import {
   parseTaskProgress,
   startSession,
   type LLMProviderType,
+  type MessageImage,
   type Project,
   type ProviderConfig,
   type Session,
@@ -20,7 +21,7 @@ import { TaskProgressModal } from './TaskProgressModal';
 const LAST_PROVIDER_STORAGE_KEY = 'a2gent.sessions.lastProvider';
 
 interface SessionsListProps {
-  onSelectSession: (sessionId: string, initialMessage?: string) => void;
+  onSelectSession: (sessionId: string, initialMessage?: string, initialImages?: MessageImage[]) => void;
   projectId?: string; // If provided, only show sessions for this project
   title?: string; // Optional title override
 }
@@ -136,7 +137,7 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
     }
   };
 
-  const handleStartSession = async (message: string) => {
+  const handleStartSession = async (message: string, images: MessageImage[] = []) => {
     setIsCreatingSession(true);
     setError(null);
 
@@ -146,7 +147,7 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
         provider: selectedProvider || undefined,
         project_id: projectId || undefined,
       });
-      onSelectSession(created.id, message);
+      onSelectSession(created.id, message, images);
     } catch (err) {
       console.error('Failed to create session from sessions list:', err);
       setError(err instanceof Error ? err.message : 'Failed to create session');
@@ -155,7 +156,7 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
     }
   };
 
-  const handleQueueSession = async (message: string) => {
+  const handleQueueSession = async (message: string, images: MessageImage[] = []) => {
     setIsQueuingSession(true);
     setError(null);
 
@@ -163,6 +164,7 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
       await createSession({
         agent_id: 'build',
         task: message,
+        images,
         provider: selectedProvider || undefined,
         project_id: projectId || undefined,
         queued: true,

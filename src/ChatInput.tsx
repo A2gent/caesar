@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { transcribeSpeech } from './api';
+import { transcribeSpeech, type MessageImage } from './api';
 import {
   normalizeLanguageForBackend,
   readVoiceInputDeviceSetting,
@@ -8,8 +8,8 @@ import {
 } from './voiceInputSettings';
 
 interface ChatInputProps {
-  onSend?: (message: string) => void;
-  onQueue?: (message: string) => void;
+  onSend?: (message: string, images?: MessageImage[]) => void;
+  onQueue?: (message: string, images?: MessageImage[]) => void;
   onStop?: () => void;
   disabled?: boolean;
   autoFocus?: boolean;
@@ -20,6 +20,11 @@ interface ChatInputProps {
   value?: string;
   onValueChange?: (value: string) => void;
   showQueueButton?: boolean;
+}
+
+interface PendingImage extends MessageImage {
+  id: string;
+  preview_url: string;
 }
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -142,6 +147,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const shortcutPressedRef = useRef(false);
 
   const streamRef = useRef<MediaStream | null>(null);
@@ -167,6 +173,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [recordingLevel, setRecordingLevel] = useState(0);
   const [selectedInputId, setSelectedInputId] = useState(() => readVoiceInputDeviceSetting());
   const [selectedVoiceLanguage] = useState(() => readVoiceInputLanguageSetting());
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const setValue = useCallback((newValue: string | ((prev: string) => string)) => {
     const nextValue = typeof newValue === 'function' ? newValue(value) : newValue;
@@ -176,6 +184,46 @@ const ChatInput: React.FC<ChatInputProps> = ({
       setInternalValue(nextValue);
     }
   }, [isControlled, onValueChange, value]);
+
+  const toPendingImage = useCallback((file: File): Promise<PendingImage> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error(`Failed to read image: ${file.name}`));
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        const commaIdx = result.indexOf(',');
+        const dataBase64 = commaIdx >= 0 ? result.slice(commaIdx + 1) : '';
+        resolve({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          name: file.name,
+          media_type: file.type || 'image/png',
+          data_base64: dataBase64,
+          preview_url: result,
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const addFiles = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter((file) => file.type.startsWith('image/'));
+    if (fileArray.length === 0) {
+      return;
+    }
+    try {
+      const converted = await Promise.all(fileArray.map((file) => toPendingImage(file)));
+      setPendingImages((prev) => {
+        const combined = [...prev, ...converted];
+        return combined.slice(0, 8);
+      });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to attach image.');
+    }
+  }, [toPendingImage]);
+
+  const removePendingImage = useCallback((id: string) => {
+    setPendingImages((prev) => prev.filter((img) => img.id !== id));
+  }, []);
 
   const appendTranscript = useCallback((text: string) => {
     const normalized = text.trim();
@@ -418,23 +466,71 @@ const ChatInput: React.FC<ChatInputProps> = ({
     setValue(event.target.value);
   };
 
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageFiles = items
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (imageFiles.length > 0) {
+      event.preventDefault();
+      void addFiles(imageFiles);
+    }
+  };
+
+  const handleImagePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0) {
+      return;
+    }
+    void addFiles(event.target.files);
+    event.target.value = '';
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    if (disabled) {
+      return;
+    }
+    if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
+      void addFiles(event.dataTransfer.files);
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (!disabled) {
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
   const handleSend = useCallback(() => {
     if (disabled) return;
     const messageToSend = value.trim();
-    if (messageToSend && onSend) {
-      onSend(messageToSend);
+    if ((messageToSend || pendingImages.length > 0) && onSend) {
+      onSend(messageToSend, pendingImages);
       setValue('');
+      setPendingImages([]);
     }
-  }, [disabled, onSend, value]);
+  }, [disabled, onSend, pendingImages, setValue, value]);
 
   const handleQueue = useCallback(() => {
     if (disabled) return;
     const messageToSend = value.trim();
-    if (messageToSend && onQueue) {
-      onQueue(messageToSend);
+    if ((messageToSend || pendingImages.length > 0) && onQueue) {
+      onQueue(messageToSend, pendingImages);
       setValue('');
+      setPendingImages([]);
     }
-  }, [disabled, onQueue, value]);
+  }, [disabled, onQueue, pendingImages, setValue, value]);
 
   const startRecording = useCallback(async () => {
     if (disabled || isRecording || isTranscribing) {
@@ -586,7 +682,30 @@ const ChatInput: React.FC<ChatInputProps> = ({
       : `Start voice input (${VOICE_SHORTCUT_LABEL})`;
 
   return (
-    <div className="chat-input-container">
+    <div
+      className={`chat-input-container${isDragOver ? ' chat-input-dragover' : ''}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="chat-image-input"
+        onChange={handleFileInputChange}
+      />
+      {pendingImages.length > 0 ? (
+        <div className="chat-image-strip">
+          {pendingImages.map((image) => (
+            <div key={image.id} className="chat-image-chip">
+              <img src={image.preview_url} alt={image.name || 'Selected image'} />
+              <button type="button" onClick={() => removePendingImage(image.id)} aria-label="Remove image">×</button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {(isRecording || isTranscribing) && (
         <div className="voice-live-panel" aria-live="polite">
           {isRecording ? (
@@ -612,12 +731,27 @@ const ChatInput: React.FC<ChatInputProps> = ({
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         placeholder={placeholder || (disabled ? 'Agent is processing...' : 'Start a new chat...')}
         rows={1}
         disabled={disabled}
       />
       <div className="chat-input-actions">
         {actionControls}
+        <button
+          type="button"
+          className="image-button"
+          onClick={handleImagePicker}
+          disabled={disabled}
+          title="Attach images"
+          aria-label="Attach images"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="send-icon" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+        </button>
         <button
           type="button"
           className={`voice-button ${isRecording ? 'recording' : ''}`}
@@ -668,7 +802,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 type="button"
                 className="queue-button"
                 onClick={handleQueue}
-                disabled={disabled || !value.trim()}
+                disabled={disabled || (!value.trim() && pendingImages.length === 0)}
                 title="Queue for later (create without starting)"
                 aria-label="Queue for later"
               >
@@ -682,7 +816,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               type="button"
               className="send-button"
               onClick={handleSend}
-              disabled={disabled || !value.trim()}
+              disabled={disabled || (!value.trim() && pendingImages.length === 0)}
               title="Send message"
               aria-label="Send message"
             >

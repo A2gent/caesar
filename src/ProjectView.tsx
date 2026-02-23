@@ -31,6 +31,7 @@ import {
   unstageProjectGitFile,
   updateProject,
   type LLMProviderType,
+  type MessageImage,
   type MindTreeEntry,
   type ProjectGitChangedFile,
   type Project,
@@ -856,9 +857,11 @@ function ProjectView() {
   }, [isFileActionsMenuOpen]);
 
   // Session handlers
-  const handleSelectSession = (sessionId: string, initialMessage?: string) => {
+  const handleSelectSession = (sessionId: string, initialMessage?: string, initialImages?: MessageImage[]) => {
     navigate(`/chat/${sessionId}`, {
-      state: initialMessage ? { initialMessage } : undefined,
+      state: (initialMessage || (initialImages && initialImages.length > 0))
+        ? { initialMessage, initialImages }
+        : undefined,
     });
   };
 
@@ -874,7 +877,7 @@ function ProjectView() {
     }
   };
 
-  const handleStartSession = async (message: string) => {
+  const handleStartSession = async (message: string, images: MessageImage[] = []) => {
     setIsCreatingSession(true);
     setError(null);
 
@@ -894,7 +897,7 @@ function ProjectView() {
       setSessionTargetLabel('');
       setIsSessionContextExpanded(false);
       
-      handleSelectSession(created.id, combinedMessage);
+      handleSelectSession(created.id, combinedMessage, images);
     } catch (err) {
       console.error('Failed to create session:', err);
       setError(err instanceof Error ? err.message : 'Failed to create session');
@@ -903,7 +906,7 @@ function ProjectView() {
     }
   };
 
-  const handleQueueSession = async (message: string) => {
+  const handleQueueSession = async (message: string, images: MessageImage[] = []) => {
     setIsQueuingSession(true);
     setError(null);
 
@@ -915,6 +918,7 @@ function ProjectView() {
       await createSession({
         agent_id: 'build',
         task: combinedMessage,
+        images,
         provider: selectedProvider || undefined,
         project_id: projectId || undefined,
         queued: true,

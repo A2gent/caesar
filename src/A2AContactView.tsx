@@ -8,6 +8,7 @@ import {
   getSession,
   sendA2AOutboundMessage,
   type Message,
+  type MessageImage,
   type Session,
 } from './api';
 
@@ -94,8 +95,12 @@ function A2AContactView() {
     };
   }, [targetAgentID, targetAgentName, forceNewSession]);
 
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (message: string, images: MessageImage[] = []) => {
     if (!session) return;
+    if (images.length > 0) {
+      setError('A2A chat currently supports text only.');
+      return;
+    }
     setError(null);
     setIsLoading(true);
     const userMessage: Message = {

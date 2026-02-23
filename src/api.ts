@@ -180,12 +180,20 @@ export interface InstructionEstimateResponse {
 export interface Message {
   role: 'user' | 'assistant' | 'tool' | 'system';
   content: string;
+  images?: MessageImage[];
   tool_calls?: ToolCall[];
   tool_results?: ToolResult[];
   metadata?: Record<string, unknown>;
   timestamp: string;
   input_tokens?: number;
   output_tokens?: number;
+}
+
+export interface MessageImage {
+  name?: string;
+  media_type?: string;
+  data_base64?: string;
+  url?: string;
 }
 
 export interface ToolCall {
@@ -270,6 +278,7 @@ export type ChatStreamEvent =
 export interface CreateSessionRequest {
   agent_id?: string;
   task?: string;
+  images?: MessageImage[];
   provider?: string;
   model?: string;
   project_id?: string;
@@ -863,13 +872,13 @@ export async function startSession(sessionId: string): Promise<Session> {
   return response.json();
 }
 
-export async function sendMessage(sessionId: string, message: string): Promise<ChatResponse> {
+export async function sendMessage(sessionId: string, message: string, images: MessageImage[] = []): Promise<ChatResponse> {
   const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, images }),
   });
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to send message');
@@ -961,6 +970,7 @@ export async function deleteProject(projectId: string): Promise<void> {
 export async function* sendMessageStream(
   sessionId: string,
   message: string,
+  images: MessageImage[] = [],
   signal?: AbortSignal,
 ): AsyncGenerator<ChatStreamEvent, void, unknown> {
   const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/chat/stream`, {
@@ -969,7 +979,7 @@ export async function* sendMessageStream(
       'Content-Type': 'application/json',
     },
     signal,
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, images }),
   });
 
   if (!response.ok) {
