@@ -241,6 +241,8 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
     return `Session ${session.id.substring(0, 8)}`;
   };
 
+  const isChildSession = (session: Session) => Boolean(session.parent_id);
+
   const formatStatusLabel = (status: string) => {
     const normalized = status.trim();
     if (normalized.length === 0) {
@@ -321,14 +323,24 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
             <div className="sessions-list">
               {sortedSessions.map((session) => {
                 const isQueued = session.status === 'queued';
+                const isChild = isChildSession(session);
                 return (
                   <div
                     key={session.id}
-                    className={`session-card ${isQueued ? 'session-queued' : ''}`}
+                    className={`session-card ${isQueued ? 'session-queued' : ''} ${isChild ? 'session-child' : ''}`}
                     onClick={() => onSelectSession(session.id)}
                   >
                     <div className="session-card-row">
                       <div className="session-name-wrap">
+                        {isChild && (
+                          <span
+                            className="session-hierarchy-marker"
+                            title="Sub-agent session"
+                            aria-label="Sub-agent session"
+                          >
+                            ↳
+                          </span>
+                        )}
                         <span
                           className={`session-status-dot status-${session.status}`}
                           title={`Status: ${formatStatusLabel(session.status)}`}

@@ -2004,6 +2004,8 @@ function ProjectView() {
     return `Session ${session.id.substring(0, 8)}`;
   };
 
+  const isChildSession = (session: Session) => Boolean(session.parent_id);
+
   const formatStatusLabel = (status: string) => {
     const normalized = status.trim();
     if (normalized.length === 0) return 'Unknown';
@@ -2338,14 +2340,25 @@ function ProjectView() {
                 </EmptyState>
               ) : (
                 <div className="sessions-list project-sessions-list">
-                  {sortedSessions.map((session) => (
+                  {sortedSessions.map((session) => {
+                    const isChild = isChildSession(session);
+                    return (
                     <div
                       key={session.id}
-                      className="session-card"
+                      className={`session-card ${isChild ? 'session-child' : ''}`}
                       onClick={() => handleSelectSession(session.id)}
                     >
                       <div className="session-card-row">
                         <div className="session-name-wrap">
+                          {isChild && (
+                            <span
+                              className="session-hierarchy-marker"
+                              title="Sub-agent session"
+                              aria-label="Sub-agent session"
+                            >
+                              ↳
+                            </span>
+                          )}
                           <span
                             className={`session-status-dot status-${session.status}`}
                             title={`Status: ${formatStatusLabel(session.status)}`}
@@ -2420,7 +2433,8 @@ function ProjectView() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
