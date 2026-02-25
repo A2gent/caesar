@@ -28,6 +28,8 @@ import {
   storeLocalA2AAgentID,
 } from './a2aIdentity';
 
+const DEFAULT_SQUARE_GRPC_ADDR = 'a2gent.net:9001';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -320,10 +322,10 @@ function A2AMyAgentView() {
   const handleConnect = async () => {
     const key = apiKeyInput.trim();
     const transport = transportInput;
-    const grpcAddr = grpcAddrInput.trim() || (integration?.config?.square_grpc_addr ?? '');
+    const grpcAddr = grpcAddrInput.trim() || (integration?.config?.square_grpc_addr ?? DEFAULT_SQUARE_GRPC_ADDR);
     const wsUrl = wsUrlInput.trim() || (integration?.config?.square_ws_url ?? '');
     if (!key) { setError('API key is required.'); return; }
-    if (transport === 'grpc' && !grpcAddr) { setError('Square gRPC address is required (e.g. localhost:50051).'); return; }
+    if (transport === 'grpc' && !grpcAddr) { setError('Square gRPC address is required (e.g. a2gent.net:9001).'); return; }
     if (transport === 'websocket' && !wsUrl) { setError('Square WebSocket URL is required (e.g. ws://localhost:9000/tunnel/ws).'); return; }
     setSaving(true);
     setError(null);
@@ -435,7 +437,7 @@ function A2AMyAgentView() {
 
   const startEditKey = () => {
     setApiKeyInput('');
-    setGrpcAddrInput(integration?.config?.square_grpc_addr ?? '');
+    setGrpcAddrInput(integration?.config?.square_grpc_addr ?? DEFAULT_SQUARE_GRPC_ADDR);
     setWsUrlInput(integration?.config?.square_ws_url ?? '');
     setTransportInput((integration?.config?.transport as 'grpc' | 'websocket') || 'grpc');
     setShowKey(false);
@@ -505,13 +507,13 @@ function A2AMyAgentView() {
               type="text"
               value={grpcAddrInput}
               onChange={e => setGrpcAddrInput(e.target.value)}
-              placeholder="localhost:50051"
+              placeholder={DEFAULT_SQUARE_GRPC_ADDR}
               autoComplete="off"
               disabled={saving}
               onKeyDown={e => { if (e.key === 'Enter') void handleConnect(); }}
             />
             <span className="settings-help" style={{ margin: 0 }}>
-              The host:port of Square&apos;s gRPC tunnel server (e.g. <code>square.example.com:50051</code>).
+              The host:port of Square&apos;s gRPC tunnel server (e.g. <code>{DEFAULT_SQUARE_GRPC_ADDR}</code>).
             </span>
           </label>
         ) : (
