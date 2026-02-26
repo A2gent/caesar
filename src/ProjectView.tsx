@@ -27,15 +27,19 @@ import {
   pushProjectGit,
   renameProjectEntry,
   saveProjectFile,
+  searchProject,
   stageProjectGitFile,
   startSession,
   unstageProjectGitFile,
   updateProject,
   type LLMProviderType,
   type MessageImage,
+  type ProjectContentMatch,
+  type ProjectFileNameMatch,
   type MindTreeEntry,
   type ProjectGitChangedFile,
   type Project,
+  type ProjectSearchResponse,
   type Session,
   type SubAgent,
 } from './api';
@@ -476,6 +480,10 @@ function ProjectView() {
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
+  const [projectSearchResults, setProjectSearchResults] = useState<ProjectSearchResponse | null>(null);
+  const [isSearchingProject, setIsSearchingProject] = useState(false);
+  const [projectSearchError, setProjectSearchError] = useState<string | null>(null);
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [gitChangedFiles, setGitChangedFiles] = useState<ProjectGitChangedFile[]>([]);
   const [firstLayerGitChangeCounts, setFirstLayerGitChangeCounts] = useState<Record<string, number>>({});
@@ -548,6 +556,7 @@ function ProjectView() {
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const fileActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const handledOpenFileQueryRef = useRef('');
+  const projectSearchRequestRef = useRef(0);
 
   // Load project details
   useEffect(() => {
@@ -584,6 +593,14 @@ function ProjectView() {
       }
     };
     void loadProject();
+  }, [projectId]);
+
+  useEffect(() => {
+    setProjectSearchQuery('');
+    setProjectSearchResults(null);
+    setProjectSearchError(null);
+    setIsSearchingProject(false);
+    projectSearchRequestRef.current += 1;
   }, [projectId]);
 
   // Load sessions for this project
@@ -1049,6 +1066,13 @@ function ProjectView() {
       }
     }
   }, [expandedDirs, treeEntries, loadTree]);
+
+  const openSearchResultFile = useCallback(async (path: string) => {
+    const normalizedPath = normalizeMindPath(path);
+    if (normalizedPath === '') return;
+    await expandTreePath(normalizedPath);
+    await openFile(normalizedPath);
+  }, [expandTreePath, openFile]);
 
   const saveCurrentFile = async () => {
     if (!selectedFilePath || !projectId) return;
@@ -1616,6 +1640,46 @@ function ProjectView() {
     }
     void loadCommitFileDiff(selectedCommitFilePath);
   }, [isCommitDialogOpen, selectedCommitFilePath, loadCommitFileDiff]);
+
+  useEffect(() => {
+    if (!projectId || !rootFolder) {
+      setProjectSearchResults(null);
+      setProjectSearchError(null);
+      setIsSearchingProject(false);
+      return;
+    }
+
+    const trimmedQuery = projectSearchQuery.trim();
+    const requestID = projectSearchRequestRef.current + 1;
+    projectSearchRequestRef.current = requestID;
+    if (trimmedQuery === '') {
+      setProjectSearchResults(null);
+      setProjectSearchError(null);
+      setIsSearchingProject(false);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setIsSearchingProject(true);
+      setProjectSearchError(null);
+      try {
+        const response = await searchProject(projectId, trimmedQuery);
+        if (requestID !== projectSearchRequestRef.current) return;
+        setProjectSearchResults(response);
+      } catch (searchError) {
+        if (requestID !== projectSearchRequestRef.current) return;
+        setProjectSearchResults(null);
+        setProjectSearchError(searchError instanceof Error ? searchError.message : 'Failed to search project');
+      } finally {
+        if (requestID !== projectSearchRequestRef.current) return;
+        setIsSearchingProject(false);
+      }
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [projectId, projectSearchQuery, rootFolder]);
   
   const selectedFilePathNormalized = normalizeMindPath(selectedFilePath);
   const selectedFileAbsolutePath = rootFolder && selectedFilePath
@@ -2036,6 +2100,10 @@ function ProjectView() {
   const sortedSessions = [...sessions].sort((a, b) => {
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
   });
+  const fileNameSearchMatches: ProjectFileNameMatch[] = projectSearchResults?.filename_matches || [];
+  const contentSearchMatches: ProjectContentMatch[] = projectSearchResults?.content_matches || [];
+  const firstSearchHitPath = fileNameSearchMatches[0]?.path || contentSearchMatches[0]?.path || '';
+  const hasSearchHits = fileNameSearchMatches.length > 0 || contentSearchMatches.length > 0;
   const viewerPlaceholder = getProjectViewerPlaceholder(project);
 
   if (isLoadingProject) {
@@ -2077,6 +2145,77 @@ function ProjectView() {
             ) : null}
           </h1>
         </div>
+        {rootFolder ? (
+          <div className="project-header-search">
+            <input
+              type="search"
+              className="project-search-input"
+              value={projectSearchQuery}
+              onChange={(event) => setProjectSearchQuery(event.target.value)}
+              placeholder="Search files and content..."
+              aria-label="Search project files and file contents"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && firstSearchHitPath) {
+                  event.preventDefault();
+                  void openSearchResultFile(firstSearchHitPath);
+                }
+                if (event.key === 'Escape') {
+                  setProjectSearchQuery('');
+                }
+              }}
+            />
+            {projectSearchQuery.trim() !== '' ? (
+              <div className="project-search-results" role="listbox" aria-label="Project search results">
+                {isSearchingProject ? <div className="project-search-status">Searching...</div> : null}
+                {!isSearchingProject && projectSearchError ? (
+                  <div className="project-search-status error">{projectSearchError}</div>
+                ) : null}
+                {!isSearchingProject && !projectSearchError ? (
+                  <>
+                    <div className="project-search-group">
+                      <div className="project-search-group-title">File names</div>
+                      {fileNameSearchMatches.length === 0 ? (
+                        <div className="project-search-empty">No filename matches.</div>
+                      ) : (
+                        fileNameSearchMatches.map((match) => (
+                          <button
+                            key={`filename:${match.path}`}
+                            type="button"
+                            className="project-search-item"
+                            onClick={() => void openSearchResultFile(match.path)}
+                          >
+                            <code>{match.path}</code>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    <div className="project-search-group">
+                      <div className="project-search-group-title">File contents</div>
+                      {contentSearchMatches.length === 0 ? (
+                        <div className="project-search-empty">No content matches.</div>
+                      ) : (
+                        contentSearchMatches.map((match) => (
+                          <button
+                            key={`content:${match.path}:${match.line}`}
+                            type="button"
+                            className="project-search-item"
+                            onClick={() => void openSearchResultFile(match.path)}
+                          >
+                            <code>{match.path}:{match.line}</code>
+                            <span>{match.preview}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    {!hasSearchHits ? (
+                      <div className="project-search-status">No matches found.</div>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="project-header-actions">
           {rootFolder ? (
             <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>

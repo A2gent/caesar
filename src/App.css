@@ -6459,6 +6459,106 @@ input[type="checkbox"]:disabled {
   min-width: 0;
 }
 
+.project-header-search {
+  position: relative;
+  width: min(520px, 100%);
+  min-width: 280px;
+  flex: 1 1 360px;
+}
+
+.project-search-input {
+  width: 100%;
+  border: 1px solid #3f4757;
+  border-radius: 8px;
+  background: #141922;
+  color: #e4eaf4;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 9px 11px;
+}
+
+.project-search-input:focus {
+  outline: none;
+  border-color: #5b8cff;
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.2);
+}
+
+.project-search-results {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  border: 1px solid #2f3847;
+  border-radius: 8px;
+  background: #11161f;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.45);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(56vh, 440px);
+  overflow: auto;
+}
+
+.project-search-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.project-search-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #90a4c0;
+}
+
+.project-search-item {
+  border: 1px solid #303b4d;
+  border-radius: 6px;
+  background: #171e2a;
+  color: #d6deec;
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.project-search-item:hover {
+  border-color: #4c6ca9;
+  background: #1d2635;
+}
+
+.project-search-item code {
+  color: #b8cdf3;
+  font-size: 12px;
+}
+
+.project-search-item span {
+  color: #c7cfdd;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.project-search-empty,
+.project-search-status {
+  color: #8c98ad;
+  font-size: 12px;
+  padding: 2px 2px;
+}
+
+.project-search-status.error {
+  color: #f0abab;
+}
+
 .project-header-left h1 {
   display: flex;
   align-items: baseline;
@@ -7123,6 +7223,11 @@ input[type="checkbox"]:disabled {
 
   .project-header-actions {
     width: 100%;
+  }
+
+  .project-header-search {
+    width: 100%;
+    min-width: 0;
   }
 
   .project-commit-content {

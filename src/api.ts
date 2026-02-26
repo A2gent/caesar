@@ -1797,6 +1797,34 @@ export async function listProjectTree(projectID: string, path = ''): Promise<Min
   return response.json();
 }
 
+export interface ProjectFileNameMatch {
+  path: string;
+  name: string;
+}
+
+export interface ProjectContentMatch {
+  path: string;
+  line: number;
+  preview: string;
+}
+
+export interface ProjectSearchResponse {
+  root_folder: string;
+  query: string;
+  filename_matches: ProjectFileNameMatch[];
+  content_matches: ProjectContentMatch[];
+}
+
+export async function searchProject(projectID: string, query: string): Promise<ProjectSearchResponse> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/projects/search?projectID=${encodeURIComponent(projectID)}&query=${encodeURIComponent(query)}`,
+  );
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to search project');
+  }
+  return response.json();
+}
+
 export interface ProjectGitChangedFile {
   path: string;
   status: string;
