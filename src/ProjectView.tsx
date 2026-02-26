@@ -55,7 +55,153 @@ import {
 } from './instructionBlocks';
 import { updateSettings } from './api';
 
-type MarkdownMode = 'preview' | 'source';
+type MarkdownMode = 'kanban' | 'preview' | 'source';
+
+const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);
+const TODO_TASK_LINE_PATTERN = /^(\s*)-\s+\[( |x|X)\]\s+(.*?)(?:\s+<!--\s*task-file:\s*([^\s][^>]*)\s*-->)?\s*$/;
+const TODO_HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*$/;
+
+type TodoTask = {
+  id: string;
+  lineIndex: number;
+  indent: string;
+  checked: boolean;
+  text: string;
+  linkedFilePath: string;
+};
+
+type TodoColumn = {
+  id: string;
+  title: string;
+  headingLineIndex: number | null;
+  tasks: TodoTask[];
+};
+
+type TodoBoard = {
+  columns: TodoColumn[];
+};
+
+function isTodoFilePath(path: string): boolean {
+  const base = path.split('/').filter(Boolean).pop()?.toLowerCase() || '';
+  return TODO_FILE_NAMES.has(base);
+}
+
+function defaultMarkdownModeForPath(path: string): MarkdownMode {
+  return isTodoFilePath(path) ? 'kanban' : 'preview';
+}
+
+function parseTodoBoard(content: string): TodoBoard {
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+  const columns: TodoColumn[] = [];
+  let currentColumn: TodoColumn = {
+    id: 'default',
+    title: 'Tasks',
+    headingLineIndex: null,
+    tasks: [],
+  };
+  columns.push(currentColumn);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const headingMatch = TODO_HEADING_PATTERN.exec(line.trim());
+    if (headingMatch) {
+      currentColumn = {
+        id: `h:${index}`,
+        title: headingMatch[2].trim(),
+        headingLineIndex: index,
+        tasks: [],
+      };
+      columns.push(currentColumn);
+      continue;
+    }
+
+    const taskMatch = TODO_TASK_LINE_PATTERN.exec(line);
+    if (!taskMatch) {
+      continue;
+    }
+
+    currentColumn.tasks.push({
+      id: `t:${index}`,
+      lineIndex: index,
+      indent: taskMatch[1] || '',
+      checked: taskMatch[2].toLowerCase() === 'x',
+      text: (taskMatch[3] || '').trim(),
+      linkedFilePath: (taskMatch[4] || '').trim(),
+    });
+  }
+
+  const hasExplicitColumns = columns.some((column) => column.headingLineIndex !== null);
+  const visibleColumns = hasExplicitColumns
+    ? columns.filter((column) => column.headingLineIndex !== null || column.tasks.length > 0)
+    : columns;
+
+  return { columns: visibleColumns };
+}
+
+function slugifyTaskFileName(text: string): string {
+  const normalized = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]+/gu, '')
+    .trim()
+    .replace(/\s+/g, '-');
+  return normalized || 'task';
+}
+
+function mutateLines(content: string, mutate: (lines: string[]) => void): string {
+  const normalized = content.replace(/\r\n/g, '\n');
+  const hadTrailingNewline = normalized.endsWith('\n');
+  const lines = normalized.split('\n');
+  mutate(lines);
+  let next = lines.join('\n');
+  if (hadTrailingNewline && next !== '' && !next.endsWith('\n')) {
+    next += '\n';
+  }
+  return next;
+}
+
+function buildTodoTaskLine(taskText: string, linkedFilePath = '', indent = '', checked = false): string {
+  const mark = checked ? 'x' : ' ';
+  const base = `${indent}- [${mark}] ${taskText.trim()}`;
+  if (linkedFilePath.trim() === '') {
+    return base;
+  }
+  return `${base} <!-- task-file: ${linkedFilePath.trim()} -->`;
+}
+
+function findInsertIndexForColumn(lines: string[], column: TodoColumn): number {
+  if (column.headingLineIndex === null) {
+    return lines.length;
+  }
+
+  const regionStart = column.headingLineIndex + 1;
+  let regionEnd = lines.length;
+  for (let i = regionStart; i < lines.length; i += 1) {
+    if (TODO_HEADING_PATTERN.test(lines[i].trim())) {
+      regionEnd = i;
+      break;
+    }
+  }
+
+  let lastTaskIndex = -1;
+  for (let i = regionStart; i < regionEnd; i += 1) {
+    if (TODO_TASK_LINE_PATTERN.test(lines[i])) {
+      lastTaskIndex = i;
+    }
+  }
+
+  return lastTaskIndex >= 0 ? lastTaskIndex + 1 : regionStart;
+}
+
+function findHeadingLineIndexByTitle(lines: string[], title: string): number | null {
+  for (let i = 0; i < lines.length; i += 1) {
+    const match = TODO_HEADING_PATTERN.exec(lines[i].trim());
+    if (!match) continue;
+    if (match[2].trim() === title.trim()) {
+      return i;
+    }
+  }
+  return null;
+}
 
 const DEFAULT_TREE_PANEL_WIDTH = 360;
 const MIN_TREE_PANEL_WIDTH = 240;
@@ -536,6 +682,8 @@ function ProjectView() {
   const [isSavingFile, setIsSavingFile] = useState(false);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
   const [markdownMode, setMarkdownMode] = useState<MarkdownMode>('preview');
+  const [isUpdatingTodoBoard, setIsUpdatingTodoBoard] = useState(false);
+  const [startingTaskSessionID, setStartingTaskSessionID] = useState<string | null>(null);
   const [pendingAnchor, setPendingAnchor] = useState('');
   const [treePanelWidth, setTreePanelWidth] = useState(readStoredTreePanelWidth);
   const treeResizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -806,6 +954,10 @@ function ProjectView() {
     void loadFile();
   }, [selectedFilePath, rootFolder, projectId]);
 
+  useEffect(() => {
+    setMarkdownMode(defaultMarkdownModeForPath(selectedFilePath));
+  }, [selectedFilePath]);
+
   // Persist expanded dirs
   useEffect(() => {
     if (projectId) {
@@ -1039,7 +1191,7 @@ function ProjectView() {
   const openFile = useCallback(async (path: string) => {
     if (!projectId) return;
     setSelectedFilePath(path);
-    setMarkdownMode('preview');
+    setMarkdownMode(defaultMarkdownModeForPath(path));
     setIsLoadingFile(true);
     try {
       const response = await getProjectFile(projectId, path);
@@ -1629,8 +1781,152 @@ function ProjectView() {
   // Computed values
   const hasUnsavedChanges = selectedFileContent !== savedFileContent;
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
+  const todoBoard = useMemo(() => parseTodoBoard(selectedFileContent), [selectedFileContent]);
+  const canUseKanban = isTodoFilePath(selectedFilePath);
   const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
   const commitDiffLines = useMemo(() => selectedCommitFileDiff.split('\n'), [selectedCommitFileDiff]);
+
+  const persistTodoContent = useCallback(async (nextContent: string) => {
+    if (!projectId || !selectedFilePath) return;
+    setIsUpdatingTodoBoard(true);
+    setError(null);
+    try {
+      await saveProjectFile(projectId, selectedFilePath, nextContent);
+      setSelectedFileContent(nextContent);
+      setSavedFileContent(nextContent);
+      await loadGitStatus();
+    } catch (todoError) {
+      setError(todoError instanceof Error ? todoError.message : 'Failed to update TODO board');
+    } finally {
+      setIsUpdatingTodoBoard(false);
+    }
+  }, [loadGitStatus, projectId, selectedFilePath]);
+
+  const handleAddTaskToColumn = async (column: TodoColumn) => {
+    const taskText = window.prompt(`New task for "${column.title}":`, '');
+    if (!taskText || taskText.trim() === '') return;
+    const nextContent = mutateLines(selectedFileContent, (lines) => {
+      const insertIndex = findInsertIndexForColumn(lines, column);
+      lines.splice(insertIndex, 0, buildTodoTaskLine(taskText, '', '', false));
+    });
+    await persistTodoContent(nextContent);
+  };
+
+  const handleDeleteTodoTask = async (task: TodoTask) => {
+    const nextContent = mutateLines(selectedFileContent, (lines) => {
+      if (task.lineIndex >= 0 && task.lineIndex < lines.length) {
+        lines.splice(task.lineIndex, 1);
+      }
+    });
+    await persistTodoContent(nextContent);
+  };
+
+  const handleMoveTask = async (task: TodoTask, targetColumn: TodoColumn) => {
+    const nextContent = mutateLines(selectedFileContent, (lines) => {
+      if (task.lineIndex < 0 || task.lineIndex >= lines.length) return;
+      const [taskLine] = lines.splice(task.lineIndex, 1);
+      if (!taskLine) return;
+      const resolvedHeadingLineIndex = targetColumn.headingLineIndex === null
+        ? null
+        : findHeadingLineIndexByTitle(lines, targetColumn.title);
+      const insertIndex = findInsertIndexForColumn(lines, {
+        ...targetColumn,
+        headingLineIndex: resolvedHeadingLineIndex,
+      });
+      lines.splice(insertIndex, 0, taskLine);
+    });
+    await persistTodoContent(nextContent);
+  };
+
+  const handleOpenTodoTaskFile = async (linkedPath: string) => {
+    const normalizedPath = normalizeMindPath(linkedPath);
+    if (normalizedPath === '') return;
+    await expandTreePath(normalizedPath);
+    await openFile(normalizedPath);
+  };
+
+  const ensureTodoTaskFile = async (task: TodoTask, column: TodoColumn): Promise<string> => {
+    if (!projectId || !selectedFilePath) {
+      throw new Error('Project file is not selected.');
+    }
+
+    if (task.linkedFilePath.trim() !== '') {
+      return task.linkedFilePath.trim();
+    }
+
+    const todoDir = dirname(selectedFilePath);
+    const tasksDir = todoDir ? `${todoDir}/.tasks` : '.tasks';
+    try {
+      await createProjectFolder(projectId, tasksDir);
+    } catch (createErr) {
+      const message = createErr instanceof Error ? createErr.message.toLowerCase() : '';
+      if (!message.includes('already exists')) {
+        throw createErr;
+      }
+    }
+
+    const slug = slugifyTaskFileName(task.text);
+    const taskFilePath = `${tasksDir}/${slug}-${Date.now().toString(36)}.md`;
+    const taskFileContent = [
+      `# ${task.text}`,
+      '',
+      `- TODO file: ${selectedFilePath}`,
+      `- Column: ${column.title}`,
+      `- Origin line: ${task.lineIndex + 1}`,
+      '',
+      '## Notes',
+      '',
+      '## Progress',
+      '',
+      '## Next Steps',
+      '',
+    ].join('\n');
+    await saveProjectFile(projectId, taskFilePath, taskFileContent);
+
+    const nextContent = mutateLines(selectedFileContent, (lines) => {
+      const idx = task.lineIndex;
+      if (idx < 0 || idx >= lines.length) return;
+      const match = TODO_TASK_LINE_PATTERN.exec(lines[idx]);
+      if (!match) return;
+      const checked = (match[2] || '').toLowerCase() === 'x';
+      lines[idx] = buildTodoTaskLine(match[3] || '', taskFilePath, match[1] || '', checked);
+    });
+    await persistTodoContent(nextContent);
+    return taskFilePath;
+  };
+
+  const handleStartTaskSession = async (task: TodoTask, column: TodoColumn) => {
+    if (!projectId) return;
+    const taskID = `${column.id}:${task.id}`;
+    setStartingTaskSessionID(taskID);
+    setError(null);
+
+    try {
+      const linkedFilePath = await ensureTodoTaskFile(task, column);
+      const isSubAgent = selectedAgentValue.startsWith('subagent:');
+      const subAgentId = isSubAgent ? selectedAgentValue.slice('subagent:'.length) : undefined;
+      const created = await createSession({
+        agent_id: 'build',
+        provider: isSubAgent ? undefined : (selectedProvider || undefined),
+        sub_agent_id: subAgentId,
+        project_id: projectId,
+      });
+      const initialMessage = [
+        `Work on this task from ${selectedFilePath}:`,
+        '',
+        `Column: ${column.title}`,
+        `Task: ${task.text}`,
+        `Task file: ${linkedFilePath}`,
+        '',
+        'Read both files first, then execute the task and keep the task file updated.',
+      ].join('\n');
+      handleSelectSession(created.id, initialMessage);
+    } catch (taskSessionError) {
+      setError(taskSessionError instanceof Error ? taskSessionError.message : 'Failed to start task session');
+    } finally {
+      setStartingTaskSessionID(null);
+    }
+  };
 
   useEffect(() => {
     if (!isCommitDialogOpen) return;
@@ -2414,18 +2710,41 @@ function ProjectView() {
                         {isDeletingFile ? 'Deleting...' : 'Delete'}
                       </button>
                     ) : null}
-                    <button
-                      type="button"
-                      className={`mind-mode-toggle ${markdownMode === 'source' ? 'source' : 'preview'}`}
-                      onClick={() => setMarkdownMode((prev) => (prev === 'preview' ? 'source' : 'preview'))}
-                      disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
-                      title={markdownMode === 'preview' ? 'Switch to source view' : 'Switch to preview mode'}
-                    >
-                      <span className="mind-mode-toggle-label">{markdownMode === 'preview' ? 'Preview' : 'Source'}</span>
-                      <span className="mind-mode-toggle-switch" aria-hidden="true">
-                        <span className="mind-mode-toggle-thumb" />
-                      </span>
-                    </button>
+                    <div className="mind-mode-tabs" role="tablist" aria-label="File viewer mode">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={markdownMode === 'kanban'}
+                        className={`mind-mode-tab ${markdownMode === 'kanban' ? 'active' : ''}`}
+                        onClick={() => setMarkdownMode('kanban')}
+                        disabled={!selectedFilePath || isLoadingFile || isDeletingFile || !canUseKanban}
+                        title={canUseKanban ? 'Task board view' : 'Kanban mode is available for TODO.md or to-do.md'}
+                      >
+                        Kanban
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={markdownMode === 'preview'}
+                        className={`mind-mode-tab ${markdownMode === 'preview' ? 'active' : ''}`}
+                        onClick={() => setMarkdownMode('preview')}
+                        disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
+                        title="Markdown preview"
+                      >
+                        Preview
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={markdownMode === 'source'}
+                        className={`mind-mode-tab ${markdownMode === 'source' ? 'active' : ''}`}
+                        onClick={() => setMarkdownMode('source')}
+                        disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
+                        title="Edit markdown source"
+                      >
+                        Edit
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -2449,6 +2768,97 @@ function ProjectView() {
                   ) : null}
                   {!isLoadingFile && selectedFilePath && markdownMode === 'preview' ? (
                     <div className="mind-markdown-preview" onClick={(event) => void handlePreviewClick(event)} dangerouslySetInnerHTML={{ __html: markdownHtml }} />
+                  ) : null}
+                  {!isLoadingFile && selectedFilePath && markdownMode === 'kanban' && !canUseKanban ? (
+                    <div className="mind-todo-empty">
+                      Kanban mode is only available for files named TODO.md or to-do.md.
+                    </div>
+                  ) : null}
+                  {!isLoadingFile && selectedFilePath && markdownMode === 'kanban' && canUseKanban ? (
+                    <div className="mind-todo-board">
+                      {todoBoard.columns.map((column, columnIndex) => (
+                        <div key={column.id} className="mind-todo-column">
+                          <div className="mind-todo-column-header">
+                            <h3>{column.title}</h3>
+                            <button
+                              type="button"
+                              className="mind-todo-add-btn"
+                              onClick={() => void handleAddTaskToColumn(column)}
+                              disabled={isUpdatingTodoBoard || isSavingFile}
+                              title={`Add task to ${column.title}`}
+                            >
+                              + Task
+                            </button>
+                          </div>
+                          <div className="mind-todo-column-body">
+                            {column.tasks.length === 0 ? (
+                              <div className="mind-todo-empty">No tasks</div>
+                            ) : null}
+                            {column.tasks.map((task) => {
+                              const taskID = `${column.id}:${task.id}`;
+                              return (
+                                <article key={task.id} className="mind-todo-card">
+                                  <div className="mind-todo-card-title">{task.text}</div>
+                                  <div className="mind-todo-card-meta">Line {task.lineIndex + 1}</div>
+                                  <div className="mind-todo-card-actions">
+                                    {columnIndex > 0 ? (
+                                      <button
+                                        type="button"
+                                        className="mind-todo-action-btn"
+                                        onClick={() => void handleMoveTask(task, todoBoard.columns[columnIndex - 1])}
+                                        disabled={isUpdatingTodoBoard}
+                                        title="Move left"
+                                      >
+                                        ←
+                                      </button>
+                                    ) : null}
+                                    {columnIndex < todoBoard.columns.length - 1 ? (
+                                      <button
+                                        type="button"
+                                        className="mind-todo-action-btn"
+                                        onClick={() => void handleMoveTask(task, todoBoard.columns[columnIndex + 1])}
+                                        disabled={isUpdatingTodoBoard}
+                                        title="Move right"
+                                      >
+                                        →
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="mind-todo-action-btn"
+                                      onClick={() => void handleDeleteTodoTask(task)}
+                                      disabled={isUpdatingTodoBoard}
+                                      title="Delete task"
+                                    >
+                                      Delete
+                                    </button>
+                                    {task.linkedFilePath !== '' ? (
+                                      <button
+                                        type="button"
+                                        className="mind-todo-action-btn"
+                                        onClick={() => void handleOpenTodoTaskFile(task.linkedFilePath)}
+                                        title="Open linked task file"
+                                      >
+                                        File
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="mind-todo-action-btn primary"
+                                      onClick={() => void handleStartTaskSession(task, column)}
+                                      disabled={startingTaskSessionID === taskID}
+                                      title="Start a new session for this task"
+                                    >
+                                      {startingTaskSessionID === taskID ? 'Starting...' : 'Session'}
+                                    </button>
+                                  </div>
+                                </article>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
               </div>

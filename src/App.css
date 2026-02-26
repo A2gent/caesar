@@ -5943,6 +5943,42 @@ input[type="checkbox"]:disabled {
   transform: translateX(16px);
 }
 
+.mind-mode-tabs {
+  display: inline-flex;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1f1f1f;
+}
+
+.mind-mode-tab {
+  border: 0;
+  border-right: 1px solid #404040;
+  background: #252525;
+  color: #cfcfcf;
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.mind-mode-tab:last-child {
+  border-right: 0;
+}
+
+.mind-mode-tab:hover {
+  background: #2f2f2f;
+}
+
+.mind-mode-tab.active {
+  background: #6d90ff;
+  color: #fff;
+}
+
+.mind-mode-tab:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .mind-viewer-body {
   flex: 1;
   min-height: 0;
@@ -6050,6 +6086,95 @@ input[type="checkbox"]:disabled {
   background: #242424;
   color: #efefef;
   font-weight: 600;
+}
+
+.mind-todo-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.mind-todo-column {
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #1a1a1a;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+}
+
+.mind-todo-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  border-bottom: 1px solid #323232;
+}
+
+.mind-todo-column-header h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #f0f0f0;
+}
+
+.mind-todo-column-body {
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.mind-todo-card {
+  border: 1px solid #353535;
+  border-radius: 8px;
+  background: #232323;
+  padding: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.mind-todo-card-title {
+  color: #f0f0f0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mind-todo-card-meta {
+  color: #989898;
+  font-size: 11px;
+}
+
+.mind-todo-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mind-todo-action-btn,
+.mind-todo-add-btn {
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+  background: #2a2a2a;
+  color: #ddd;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.mind-todo-action-btn.primary {
+  background: #3557bf;
+  border-color: #4f75ea;
+  color: #fff;
+}
+
+.mind-todo-action-btn:disabled,
+.mind-todo-add-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mind-todo-empty {
+  color: #9b9b9b;
+  font-size: 12px;
 }
 
 .mind-picker-overlay {
