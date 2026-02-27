@@ -1912,6 +1912,19 @@ export async function stageProjectGitFile(projectID: string, path: string, repoP
   }
 }
 
+export async function stageAllProjectGitFiles(projectID: string, repoPath = ''): Promise<void> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/git/stage-all?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ repo_path: repoPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to stage all files');
+  }
+}
+
 export async function unstageProjectGitFile(projectID: string, path: string, repoPath = ''): Promise<void> {
   const response = await fetch(`${getApiBaseUrl()}/projects/git/unstage?projectID=${encodeURIComponent(projectID)}`, {
     method: 'POST',

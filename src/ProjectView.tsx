@@ -28,6 +28,7 @@ import {
   renameProjectEntry,
   saveProjectFile,
   searchProject,
+  stageAllProjectGitFiles,
   stageProjectGitFile,
   startSession,
   unstageProjectGitFile,
@@ -656,6 +657,7 @@ function ProjectView() {
   const [gitInitRemoteURL, setGitInitRemoteURL] = useState('');
   const commitDiffRequestRef = useRef(0);
   const [gitDiscardPath, setGitDiscardPath] = useState<string | null>(null);
+  const [isStagingAll, setIsStagingAll] = useState(false);
 
   // Sessions state
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -1633,6 +1635,24 @@ function ProjectView() {
       setError(gitError instanceof Error ? gitError.message : 'Failed to update file staging');
     } finally {
       setGitFileActionPath(null);
+    }
+  };
+
+  const handleStageAllFiles = async () => {
+    if (!projectId || isCommitting || isPushing) return;
+    const unstagedFiles = commitDialogFiles.filter((f) => !f.staged);
+    if (unstagedFiles.length === 0) return;
+
+    setError(null);
+    setIsStagingAll(true);
+    try {
+      await stageAllProjectGitFiles(projectId, commitRepoPath);
+      await refreshCommitDialogFiles();
+      await loadGitStatus();
+    } catch (gitError) {
+      setError(gitError instanceof Error ? gitError.message : 'Failed to stage all files');
+    } finally {
+      setIsStagingAll(false);
     }
   };
 
@@ -3139,6 +3159,14 @@ function ProjectView() {
                 disabled={isCommitting || isPushing || isGeneratingCommitMessage || commitDialogFiles.length === 0}
               >
                 {isGeneratingCommitMessage ? 'Generating...' : 'Suggest message'}
+              </button>
+              <button
+                type="button"
+                className="settings-add-btn"
+                onClick={() => void handleStageAllFiles()}
+                disabled={isCommitting || isPushing || isStagingAll || commitDialogFiles.filter((f) => !f.staged).length === 0}
+              >
+                {isStagingAll ? 'Adding...' : 'Add All'}
               </button>
             </div>
             <div className="project-commit-content">
