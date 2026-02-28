@@ -7,6 +7,8 @@ A personal AI agent control web app. Uses [A²gent/brute](https://github.com/A2g
 A modern, responsive web interface for managing AI agent sessions, jobs, tools, and knowledge base.
 Main use-case is having personal knowledge base (Obsidian-style second brain) used by the persistent, self-improving AI agent.
 
+<img width="1514" height="959" alt="caesar" src="https://github.com/user-attachments/assets/761d0323-9a48-421f-a759-aa68e3c1fa4d" />
+
 [![Showcase](https://img.youtube.com/vi/WlWKugsgGqk/0.jpg)](https://www.youtube.com/watch?v=WlWKugsgGqk)
 
 ## Features
