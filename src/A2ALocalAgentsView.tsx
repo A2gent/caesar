@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  buildLocalDockerAgentImage,
   createLocalDockerAgent,
   getLocalDockerAgentLogs,
   listLocalDockerAgents,
@@ -35,6 +36,7 @@ function A2ALocalAgentsView() {
   const [newName, setNewName] = useState('');
   const [newPort, setNewPort] = useState('');
   const [newImage, setNewImage] = useState('a2gent-brute:latest');
+  const [rebuildNoCache, setRebuildNoCache] = useState(false);
 
   const [registeringID, setRegisteringID] = useState<string | null>(null);
   const [lastRegisterResult, setLastRegisterResult] = useState<RegisterLocalDockerAgentResponse | null>(null);
@@ -66,7 +68,12 @@ function A2ALocalAgentsView() {
       await fn();
       await loadAgents();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Request failed');
+      const message = err instanceof Error ? err.message : 'Request failed';
+      if (message.includes("pull access denied") && message.includes("a2gent-brute")) {
+        setError(`${message}\nTip: Build the image first using "Build/Rebuild image".`);
+        return;
+      }
+      setError(message);
     } finally {
       setBusy(null);
     }
@@ -83,6 +90,16 @@ function A2ALocalAgentsView() {
       setNewName('');
       setNewPort('');
       setSuccess('Local agent container started.');
+    });
+  };
+
+  const handleBuildImage = () => {
+    void runAction('build-image', async () => {
+      const resp = await buildLocalDockerAgentImage({
+        image: newImage.trim() || undefined,
+        no_cache: rebuildNoCache,
+      });
+      setSuccess(`Built ${resp.image} from ${resp.dockerfile}.`);
     });
   };
 
@@ -194,7 +211,28 @@ function A2ALocalAgentsView() {
             <button type="button" className="settings-add-btn" onClick={handleCreate} disabled={busy !== null}>
               {busy === 'create' ? 'Starting…' : 'Start container'}
             </button>
+            <button
+              type="button"
+              className="settings-add-btn"
+              onClick={handleBuildImage}
+              disabled={busy !== null}
+              style={{ marginLeft: 8 }}
+            >
+              {busy === 'build-image' ? 'Building…' : 'Build/Rebuild image'}
+            </button>
+            <label className="settings-help" style={{ display: 'inline-flex', marginLeft: 12, gap: 6, alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={rebuildNoCache}
+                onChange={e => setRebuildNoCache(e.target.checked)}
+                disabled={busy !== null}
+              />
+              no cache
+            </label>
           </div>
+          <p className="settings-help" style={{ marginTop: 8, marginBottom: 0 }}>
+            Run build once on new machines if image pull fails.
+          </p>
         </section>
 
         <section className="a2a-config-block">

@@ -22,7 +22,7 @@ import A2ARegistryView from './A2ARegistryView';
 import A2AMyAgentView from './A2AMyAgentView';
 import A2AContactView from './A2AContactView';
 import A2ALocalAgentsView from './A2ALocalAgentsView';
-import { buildImageAssetUrl, fetchAgentName, fetchSpeechClip, getSession, listSessions, saveAgentName } from './api';
+import { addApiBaseUrlToHistory, buildImageAssetUrl, fetchAgentName, fetchSpeechClip, getApiBaseUrl, getSession, listSessions, saveAgentName, setApiBaseUrl } from './api';
 import { THINKING_PROJECT_ID } from './thinking';
 import { SYSTEM_PROJECT_KB_ID, SYSTEM_PROJECT_AGENT_ID } from './Sidebar';
 import { readWebAppNotification } from './toolResultEvents';
@@ -553,6 +553,13 @@ function AppLayout() {
     }
   };
 
+  const handleAgentSelect = useCallback(async (nextBaseUrl: string) => {
+    setApiBaseUrl(nextBaseUrl);
+    const normalized = getApiBaseUrl();
+    addApiBaseUrlToHistory(normalized);
+    await handleBackendChange();
+  }, [handleBackendChange]);
+
   const handleAppTitleChange = useCallback((nextTitle: string) => {
     const trimmed = nextTitle.trim() || '🤖 A2';
     setAppTitle(trimmed);
@@ -605,7 +612,8 @@ function AppLayout() {
       <div className="sidebar-shell">
         <Sidebar 
           title={appTitle} 
-          onTitleChange={handleAppTitleChange} 
+          onTitleChange={handleAppTitleChange}
+          onAgentSelect={handleAgentSelect}
           onNavigate={handleSidebarNavigate}
           notificationCount={notifications.length}
           refreshKey={backendRefreshKey}

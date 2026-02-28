@@ -43,6 +43,7 @@ const CONTEXT_COMPACTION_PROMPT = 'AAGENT_CONTEXT_COMPACTION_PROMPT';
 const LLM_RETRIES = 'AAGENT_LLM_RETRIES';
 const SESSIONS_FOLDER = 'AAGENT_SESSIONS_FOLDER';
 const REPEAT_INITIAL_PROMPT = 'AAGENT_REPEAT_INITIAL_PROMPT';
+const LLM_PROVIDER_PROXY_ENABLED = 'A2GENT_LLM_PROVIDER_PROXY_ENABLED';
 const DEFAULT_COMPACTION_TRIGGER = '80';
 const DEFAULT_COMPACTION_PROMPT = 'Create a concise continuation summary preserving goals, progress, constraints, and next actions.';
 const DEFAULT_LLM_RETRIES = '3';
@@ -116,6 +117,7 @@ const MANAGED_KEYS = [
   REPEAT_INITIAL_PROMPT,
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
   AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
+  LLM_PROVIDER_PROXY_ENABLED,
   'SAG_VOICE_ID',
   'AAGENT_SAY_VOICE',
   AGENT_NAME_SETTING_KEY,
@@ -183,6 +185,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [llmRetries, setLlmRetries] = useState(settings[LLM_RETRIES] || DEFAULT_LLM_RETRIES);
   const [sessionsFolder, setSessionsFolder] = useState(settings[SESSIONS_FOLDER] || '');
   const [repeatInitialPrompt, setRepeatInitialPrompt] = useState(settings[REPEAT_INITIAL_PROMPT] !== 'false');
+  const [llmProviderProxyEnabled, setLLMProviderProxyEnabled] = useState(settings[LLM_PROVIDER_PROXY_ENABLED] !== 'false');
   const [isSessionsFolderPickerOpen, setIsSessionsFolderPickerOpen] = useState(false);
   const [sessionsFolderBrowsePath, setSessionsFolderBrowsePath] = useState('');
   const [sessionsFolderBrowseEntries, setSessionsFolderBrowseEntries] = useState<MindTreeEntry[]>([]);
@@ -214,6 +217,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setCompactionPrompt(settings[CONTEXT_COMPACTION_PROMPT] || DEFAULT_COMPACTION_PROMPT);
     setLlmRetries(settings[LLM_RETRIES] || DEFAULT_LLM_RETRIES);
     setSessionsFolder(settings[SESSIONS_FOLDER] || '');
+    setLLMProviderProxyEnabled(settings[LLM_PROVIDER_PROXY_ENABLED] !== 'false');
     setAgentInstructionBlocks(ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')));
   }, [settings]);
 
@@ -444,6 +448,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
     const trimmedRepeatInitialPrompt = repeatInitialPrompt;
     payload[REPEAT_INITIAL_PROMPT] = trimmedRepeatInitialPrompt ? 'true' : 'false';
+    payload[LLM_PROVIDER_PROXY_ENABLED] = llmProviderProxyEnabled ? 'true' : 'false';
 
     const draftSettings = buildInstructionSettingsDraft();
     payload[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] = draftSettings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '';
@@ -702,6 +707,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
       ) : null}
+
+      <div className="settings-panel">
+        <h2>LLM Provider Proxy (Keychain)</h2>
+        <p className="settings-help">
+          Expose OpenAI-compatible endpoints at <code>/v1</code> so other local processes can use this agent as a provider keychain.
+        </p>
+        <div className="settings-group">
+          <label className="settings-field settings-field-checkbox">
+            <input
+              type="checkbox"
+              checked={llmProviderProxyEnabled}
+              onChange={(e) => setLLMProviderProxyEnabled(e.target.checked)}
+            />
+            <span>Enable LLM Provider Proxy</span>
+            <span className="settings-field-hint">
+              Enabled by default. Local Docker agents use this proxy automatically.
+            </span>
+          </label>
+        </div>
+      </div>
 
       <div className="settings-panel">
         <h2>Context compaction</h2>

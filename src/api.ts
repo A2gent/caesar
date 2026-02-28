@@ -2,6 +2,7 @@
 
 const API_BASE_URL_STORAGE_KEY = 'a2gent.api_base_url';
 const API_BASE_URL_HISTORY_KEY = 'a2gent.api_base_url_history';
+const API_BASE_URL_AGENT_NAME_MAP_KEY = 'a2gent.api_base_url_agent_names';
 const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 function normalizeApiBaseUrl(url: string): string {
   return url.trim().replace(/\/$/, '');
@@ -106,6 +107,82 @@ export function removeApiBaseUrlFromHistory(url: string): void {
   const history = getApiBaseUrlHistory();
   const filtered = history.filter((u) => u !== normalized);
   window.localStorage.setItem(API_BASE_URL_HISTORY_KEY, JSON.stringify(filtered));
+}
+
+function getApiBaseUrlAgentNameMap(): Record<string, string> {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(API_BASE_URL_AGENT_NAME_MAP_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const result: Record<string, string> = {};
+    for (const [rawUrl, rawName] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof rawUrl !== 'string' || typeof rawName !== 'string') {
+        continue;
+      }
+      const url = normalizeApiBaseUrl(rawUrl);
+      const name = rawName.trim();
+      if (url !== '' && name !== '') {
+        result[url] = name;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function setApiBaseUrlAgentName(url: string, name: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const normalizedUrl = normalizeApiBaseUrl(url);
+  const normalizedName = name.trim();
+  if (normalizedUrl === '' || normalizedName === '') {
+    return;
+  }
+
+  const map = getApiBaseUrlAgentNameMap();
+  map[normalizedUrl] = normalizedName;
+  window.localStorage.setItem(API_BASE_URL_AGENT_NAME_MAP_KEY, JSON.stringify(map));
+}
+
+export function getStoredAgentNameForApiBaseUrl(url: string): string {
+  const normalized = normalizeApiBaseUrl(url);
+  if (normalized === '') {
+    return '';
+  }
+  const map = getApiBaseUrlAgentNameMap();
+  return (map[normalized] || '').trim();
+}
+
+export interface StoredAgentEndpoint {
+  url: string;
+  name: string;
+}
+
+export function getStoredAgentEndpoints(): StoredAgentEndpoint[] {
+  const current = getApiBaseUrl();
+  const history = getApiBaseUrlHistory();
+  const urls = [current, ...history].filter((value, index, arr) => value !== '' && arr.indexOf(value) === index);
+
+  return urls.map((url) => {
+    const name = getStoredAgentNameForApiBaseUrl(url);
+    return {
+      url,
+      name: name || url,
+    };
+  });
 }
 
 // Types matching the Go server responses
@@ -847,6 +924,19 @@ export interface CreateLocalDockerAgentRequest {
   lm_studio_base_url?: string;
 }
 
+export interface BuildLocalDockerAgentImageRequest {
+  image?: string;
+  no_cache?: boolean;
+}
+
+export interface BuildLocalDockerAgentImageResponse {
+  status: string;
+  image: string;
+  dockerfile: string;
+  context_dir: string;
+  output: string;
+}
+
 export interface RegisterLocalDockerAgentRequest {
   registry_url?: string;
   owner_email: string;
@@ -889,6 +979,22 @@ export async function createLocalDockerAgent(payload: CreateLocalDockerAgentRequ
   });
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to create local Docker agent');
+  }
+  return response.json();
+}
+
+export async function buildLocalDockerAgentImage(
+  payload: BuildLocalDockerAgentImageRequest,
+): Promise<BuildLocalDockerAgentImageResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/integrations/a2_registry/local-agents/build-image`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to build local Docker agent image');
   }
   return response.json();
 }
@@ -1317,15 +1423,22 @@ export async function healthCheck(): Promise<boolean> {
 }
 
 export async function fetchAgentName(): Promise<string> {
+  const activeBaseUrl = getApiBaseUrl();
+  const cached = getStoredAgentNameForApiBaseUrl(activeBaseUrl);
   try {
-    const response = await fetch(`${getApiBaseUrl()}/health`);
+    const response = await fetch(`${activeBaseUrl}/health`);
     if (!response.ok) {
-      return DEFAULT_APP_TITLE_FALLBACK;
+      return cached || DEFAULT_APP_TITLE_FALLBACK;
     }
     const data = await response.json() as { agent_name?: string };
-    return data.agent_name?.trim() || DEFAULT_APP_TITLE_FALLBACK;
+    const name = data.agent_name?.trim() || '';
+    if (name !== '') {
+      setApiBaseUrlAgentName(activeBaseUrl, name);
+      return name;
+    }
+    return cached || DEFAULT_APP_TITLE_FALLBACK;
   } catch {
-    return DEFAULT_APP_TITLE_FALLBACK;
+    return cached || DEFAULT_APP_TITLE_FALLBACK;
   }
 }
 

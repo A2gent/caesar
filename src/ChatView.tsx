@@ -394,13 +394,11 @@ function ChatView() {
   const queuedMessagesRef = useRef<string[]>([]);
   const activeStreamAbortRef = useRef<AbortController | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
-  const [questionAnswer, setQuestionAnswer] = useState<string>('');
   const [projectName, setProjectName] = useState<string | null>(null);
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
-  const [showLinkedSessionModal, setShowLinkedSessionModal] = useState(false);
   const [linkedSessionType, setLinkedSessionType] = useState<'review' | 'continuation'>('review');
   const [linkedSessionAgent, setLinkedSessionAgent] = useState<string>('build');
-  const [linkedSessionPrompt, setLinkedSessionPrompt] = useState<string>('');
+  const [composerValue, setComposerValue] = useState<string>('');
   const [isCreatingLinkedSession, setIsCreatingLinkedSession] = useState(false);
   const [providerTrace, setProviderTrace] = useState<string>('');
 
@@ -498,13 +496,6 @@ function ChatView() {
     void loadSubAgents();
   }, []);
 
-  useEffect(() => {
-    if (!showLinkedSessionModal || !session) {
-      return;
-    }
-    setLinkedSessionPrompt(linkedSessionDefaultPrompt(linkedSessionType, session));
-  }, [showLinkedSessionModal, linkedSessionType, session]);
-
   // Poll active sessions for real-time updates
   // This handles:
   // 1. Sessions running from external sources (web-app reload, TUI, jobs)
@@ -543,7 +534,7 @@ function ChatView() {
   useEffect(() => {
     if (!session || session.status !== 'input_required') {
       setPendingQuestion(null);
-      setQuestionAnswer('');
+      setComposerValue('');
       return;
     }
 
@@ -551,7 +542,7 @@ function ChatView() {
       try {
         const question = await getPendingQuestion(session.id);
         setPendingQuestion(question);
-        setQuestionAnswer(''); // Clear previous answer
+        setComposerValue(''); // Clear previous answer
       } catch (err) {
         console.error('Failed to load pending question:', err);
         setError(err instanceof Error ? err.message : 'Failed to load question');
@@ -803,7 +794,7 @@ function ChatView() {
       setIsLoading(true);
       await answerQuestion(session.id, answer);
       setPendingQuestion(null);
-      setQuestionAnswer('');
+      setComposerValue('');
       
       // Reload session to continue execution
       const fresh = await getSession(session.id);
@@ -824,7 +815,7 @@ function ChatView() {
   };
 
   const handleSelectQuestionOption = (answer: string) => {
-    setQuestionAnswer(answer);
+    setComposerValue(answer);
   };
 
   const handleCreateLinkedSession = async () => {
@@ -834,7 +825,7 @@ function ChatView() {
       const selected = linkedSessionAgent.trim();
       const isSubAgent = selected.startsWith('subagent:');
       const subAgentID = isSubAgent ? selected.slice('subagent:'.length) : undefined;
-      const prompt = linkedSessionPrompt.trim();
+      const prompt = composerValue.trim();
 
       const newSession = await createSession({
         agent_id: 'build',
@@ -850,7 +841,7 @@ function ChatView() {
           initialMessage: prompt || linkedSessionDefaultPrompt(linkedSessionType, session),
         },
       });
-      setShowLinkedSessionModal(false);
+      setComposerValue('');
       setError(null);
     } catch (err) {
       console.error('Failed to create linked session:', err);
@@ -862,6 +853,19 @@ function ChatView() {
 
   const isActiveRequest = Boolean(session && activeRequestSessionId === session.id);
   const inputDisabled = isLoading && !session;
+  const linkedPromptForSelectedType = session ? linkedSessionDefaultPrompt(linkedSessionType, session) : '';
+
+  const handleSelectLinkedType = (nextType: 'review' | 'continuation') => {
+    if (!session) {
+      return;
+    }
+    const trimmed = composerValue.trim();
+    const currentTemplate = linkedSessionDefaultPrompt(linkedSessionType, session);
+    if (trimmed.length === 0 || trimmed === currentTemplate) {
+      setComposerValue(linkedSessionDefaultPrompt(nextType, session));
+    }
+    setLinkedSessionType(nextType);
+  };
 
   return (
     <>
@@ -895,19 +899,6 @@ function ChatView() {
                       : session.provider}
                     {session.provider !== 'automatic_router' && session.model ? ` / ${session.model}` : ''}
                   </span>
-                ) : null}
-                {session ? (
-                  <button
-                    className="session-linked-btn"
-                    onClick={() => {
-                      setLinkedSessionType('review');
-                      setLinkedSessionAgent('build');
-                      setShowLinkedSessionModal(true);
-                    }}
-                    title="Create linked session"
-                  >
-                    Linked Session
-                  </button>
                 ) : null}
                 {(session.input_tokens ?? 0) > 0 || (session.output_tokens ?? 0) > 0 ? (
                   <>
@@ -990,7 +981,7 @@ function ChatView() {
         <QuestionPrompt
           question={pendingQuestion}
           onSelectOption={handleSelectQuestionOption}
-          selectedOption={questionAnswer}
+          selectedOption={composerValue}
         />
       )}
       
@@ -1000,54 +991,54 @@ function ChatView() {
         onStop={() => void handleCancelSession()}
         showStopButton={Boolean(session && isActiveRequest)}
         canStop={Boolean(session)}
-        value={questionAnswer}
-        onValueChange={setQuestionAnswer}
+        value={composerValue}
+        onValueChange={setComposerValue}
         placeholder={pendingQuestion ? "Type your answer or select an option above..." : undefined}
-        actionControls={!session && providers.length > 0 ? (
-          <label className="chat-provider-select">
-            <select
-              value={selectedProvider}
-              onChange={(e) => setSelectedProvider(e.target.value as LLMProviderType)}
-              title="Provider"
-              aria-label="Provider"
-            >
-              {providers.map((provider) => (
-                <option key={provider.type} value={provider.type}>
-                  {provider.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : queuedMessages.length > 0 ? (
-          <span className="chat-provider-select" title={queuedMessages.join('\n')}>
-            Queued: {queuedMessages.length}
-          </span>
-        ) : null}
-      />
-
-      {showLinkedSessionModal && (
-        <div className="modal-overlay" onClick={() => setShowLinkedSessionModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Create linked session</h3>
-              <button className="modal-close" onClick={() => setShowLinkedSessionModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label>Type</label>
-                <select
-                  value={linkedSessionType}
-                  onChange={(e) => setLinkedSessionType(e.target.value as 'review' | 'continuation')}
+        actionControls={
+          !session && providers.length > 0 ? (
+            <label className="chat-provider-select">
+              <select
+                value={selectedProvider}
+                onChange={(e) => setSelectedProvider(e.target.value as LLMProviderType)}
+                title="Provider"
+                aria-label="Provider"
+              >
+                {providers.map((provider) => (
+                  <option key={provider.type} value={provider.type}>
+                    {provider.display_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : session && !pendingQuestion ? (
+            <div className="chat-linked-controls">
+              <div className="chat-linked-type-buttons">
+                <button
+                  type="button"
+                  className={`chat-linked-type-btn${linkedSessionType === 'review' ? ' active' : ''}`}
+                  onClick={() => handleSelectLinkedType('review')}
+                  disabled={isCreatingLinkedSession || isActiveRequest}
+                  title="Review file changes in a linked session"
                 >
-                  <option value="review">Review file changes</option>
-                  <option value="continuation">Continue with another agent</option>
-                </select>
+                  Review file changes
+                </button>
+                <button
+                  type="button"
+                  className={`chat-linked-type-btn${linkedSessionType === 'continuation' ? ' active' : ''}`}
+                  onClick={() => handleSelectLinkedType('continuation')}
+                  disabled={isCreatingLinkedSession || isActiveRequest}
+                  title="Continue with another agent in a linked session"
+                >
+                  Continue with another agent
+                </button>
               </div>
-              <div className="form-group">
-                <label>Agent</label>
+              <label className="chat-provider-select">
                 <select
                   value={linkedSessionAgent}
                   onChange={(e) => setLinkedSessionAgent(e.target.value)}
+                  title="Linked session agent"
+                  aria-label="Linked session agent"
+                  disabled={isCreatingLinkedSession || isActiveRequest}
                 >
                   <option value="build">Default agent</option>
                   {subAgents.map((subAgent) => (
@@ -1056,36 +1047,35 @@ function ChatView() {
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="form-group">
-                <label>Initial prompt</label>
-                <textarea
-                  value={linkedSessionPrompt}
-                  onChange={(e) => setLinkedSessionPrompt(e.target.value)}
-                  className="model-input"
-                  rows={4}
-                />
-              </div>
-            </div>
-            <div className="modal-footer">
+              </label>
               <button
-                className="btn-secondary"
-                onClick={() => setShowLinkedSessionModal(false)}
-                disabled={isCreatingLinkedSession}
+                type="button"
+                className="chat-linked-create-btn"
+                onClick={() => void handleCreateLinkedSession()}
+                disabled={isCreatingLinkedSession || isActiveRequest}
+                title="Create linked session from the current input"
               >
-                Cancel
+                {isCreatingLinkedSession ? 'Creating...' : 'Create linked'}
               </button>
-              <button
-                className="btn-primary"
-                onClick={handleCreateLinkedSession}
-                disabled={isCreatingLinkedSession}
-              >
-                {isCreatingLinkedSession ? 'Creating...' : 'Create linked session'}
-              </button>
+              {composerValue.trim() === '' ? (
+                <button
+                  type="button"
+                  className="chat-linked-template-btn"
+                  onClick={() => setComposerValue(linkedPromptForSelectedType)}
+                  disabled={isCreatingLinkedSession || isActiveRequest}
+                  title="Fill default linked-session prompt"
+                >
+                  Fill prompt
+                </button>
+              ) : null}
             </div>
-          </div>
-        </div>
-      )}
+          ) : queuedMessages.length > 0 ? (
+            <span className="chat-provider-select" title={queuedMessages.join('\n')}>
+              Queued: {queuedMessages.length}
+            </span>
+          ) : null
+        }
+      />
     </>
   );
 }

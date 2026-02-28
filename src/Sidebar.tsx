@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import type { ChangeEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
+  getApiBaseUrl,
+  getStoredAgentEndpoints,
   listProjects,
   createProject,
   type Project,
@@ -15,6 +18,7 @@ interface NavItem {
 interface SidebarProps {
   title: string;
   onTitleChange: (title: string) => void;
+  onAgentSelect: (baseUrl: string) => void | Promise<void>;
   onNavigate?: () => void;
   notificationCount?: number;
   refreshKey?: number;
@@ -38,7 +42,6 @@ const navSections: NavSection[] = [
     items: [
       { id: 'body', label: '📁 Body', path: '/projects/system-agent' },
       { id: 'soul', label: '🫀 Soul', path: '/projects/system-soul' },
-      { id: 'sub-agents', label: '🤖 Sub-agents', path: '/sub-agents' },
       { id: 'thinking', label: '🤔 Thinking', path: '/thinking' },
       { id: 'jobs', label: '🗓️ Recurring jobs', path: '/agent/jobs' },
       { id: 'tools', label: '🧰 Tools', path: '/tools' },
@@ -47,14 +50,15 @@ const navSections: NavSection[] = [
       { id: 'integrations', label: '🔌 Integrations', path: '/integrations' },
       { id: 'providers', label: '🤖 LLM providers', path: '/providers' },
       { id: 'settings', label: '⚙️ Settings', path: '/settings' },
+      { id: 'sub-agents', label: '🤖 Sub-agents', path: '/sub-agents' },
+      { id: 'a2a-local-agents', label: '🐳 Local agents', path: '/a2a/local-agents' },
     ],
   },
   {
     id: 'a2a',
     label: '🌐 A2 Network',
     items: [
-      { id: 'a2a-local-agents', label: '🐳 Local agents', path: '/a2a/local-agents' },
-      { id: 'a2a-registry', label: '📡 A2 Registry', path: '/a2a' },
+      { id: 'a2a-registry', label: '📡 External agents', path: '/a2a' },
       { id: 'a2a-my-agent', label: '🤖 My agent', path: '/a2a/my-agent' },
     ],
   },
@@ -70,11 +74,15 @@ function isNavItemActive(pathname: string, itemPath: string): boolean {
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
-function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refreshKey }: SidebarProps) {
+function Sidebar({ title, onTitleChange, onAgentSelect, onNavigate, notificationCount = 0, refreshKey }: SidebarProps) {
   const location = useLocation();
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [activeBaseUrl, setActiveBaseUrl] = useState(() => getApiBaseUrl());
+  const [isSwitchingAgent, setIsSwitchingAgent] = useState(false);
+  const [agentOptions, setAgentOptions] = useState(() => getStoredAgentEndpoints());
   const [titleDraft, setTitleDraft] = useState(title);
-  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const comboRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Projects state
   const [projects, setProjects] = useState<Project[]>([]);
@@ -82,17 +90,27 @@ function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refr
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
 
+  const reloadAgentOptions = useCallback(() => {
+    setActiveBaseUrl(getApiBaseUrl());
+    setAgentOptions(getStoredAgentEndpoints());
+  }, []);
+
   useEffect(() => {
     setTitleDraft(title);
   }, [title]);
 
   useEffect(() => {
-    if (!isEditingTitle) {
+    if (!isDropdownOpen) {
       return;
     }
-    titleInputRef.current?.focus();
-    titleInputRef.current?.select();
-  }, [isEditingTitle]);
+    const handleOutside = (event: MouseEvent) => {
+      if (comboRef.current && !comboRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isDropdownOpen]);
 
   // Load projects
   const loadProjects = useCallback(async () => {
@@ -105,17 +123,35 @@ function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refr
   }, []);
 
   useEffect(() => {
+    reloadAgentOptions();
+  }, [reloadAgentOptions, refreshKey]);
+
+  useEffect(() => {
     loadProjects();
   }, [loadProjects, refreshKey]);
 
+  const handleAgentChange = async (nextUrl: string) => {
+    if (nextUrl === '' || nextUrl === activeBaseUrl || isSwitchingAgent) {
+      return;
+    }
+
+    setIsSwitchingAgent(true);
+    try {
+      await onAgentSelect(nextUrl);
+    } finally {
+      setIsSwitchingAgent(false);
+      setIsDropdownOpen(false);
+      reloadAgentOptions();
+    }
+  };
+
   const commitTitleEdit = () => {
     onTitleChange(titleDraft);
-    setIsEditingTitle(false);
   };
 
   const cancelTitleEdit = () => {
     setTitleDraft(title);
-    setIsEditingTitle(false);
+    inputRef.current?.blur();
   };
 
   const handleCreateProject = async () => {
@@ -157,37 +193,61 @@ function Sidebar({ title, onTitleChange, onNavigate, notificationCount = 0, refr
     return '📁';
   };
 
+  const alternateAgents = agentOptions.filter((endpoint) => endpoint.url !== activeBaseUrl);
+  const hasAlternateAgents = alternateAgents.length > 0;
+
   return (
     <div className="sidebar">
       <div className="sidebar-title-wrap">
-        {isEditingTitle ? (
-          <input
-            ref={titleInputRef}
-            className="sidebar-title-input"
-            value={titleDraft}
-            onChange={(event) => setTitleDraft(event.target.value)}
-            onBlur={commitTitleEdit}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                commitTitleEdit();
-              } else if (event.key === 'Escape') {
-                event.preventDefault();
-                cancelTitleEdit();
-              }
-            }}
-            aria-label="Edit app title"
-          />
-        ) : (
-          <button
-            type="button"
-            className="sidebar-title-button"
-            onClick={() => setIsEditingTitle(true)}
-            title="Click to rename app title"
-          >
-            <h2 className="sidebar-title">{title}</h2>
-          </button>
-        )}
+        <div className="sidebar-agent-combo" ref={comboRef}>
+          <div className="sidebar-agent-combo-row">
+            <input
+              ref={inputRef}
+              className="sidebar-title-input sidebar-agent-combo-input"
+              value={titleDraft}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setTitleDraft(event.target.value)}
+              onBlur={commitTitleEdit}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  commitTitleEdit();
+                  inputRef.current?.blur();
+                } else if (event.key === 'Escape') {
+                  event.preventDefault();
+                  cancelTitleEdit();
+                }
+              }}
+              aria-label="Edit active agent name"
+            />
+            <button
+              type="button"
+              className="sidebar-agent-combo-toggle"
+              onClick={() => setIsDropdownOpen((prev) => !prev)}
+              disabled={isSwitchingAgent || !hasAlternateAgents}
+              aria-expanded={isDropdownOpen}
+              aria-label="Show saved agents"
+              title="Show saved agents"
+            >
+              ▾
+            </button>
+          </div>
+          {isDropdownOpen && hasAlternateAgents ? (
+            <ul className="sidebar-agent-combo-dropdown" role="listbox">
+              {alternateAgents.map((endpoint) => (
+                <li key={endpoint.url} className="sidebar-agent-combo-option">
+                  <button
+                    type="button"
+                    className="sidebar-agent-combo-option-btn"
+                    onClick={() => void handleAgentChange(endpoint.url)}
+                    title={endpoint.url}
+                  >
+                    {endpoint.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       </div>
 
       <nav className="sidebar-nav">

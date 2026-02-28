@@ -1638,7 +1638,7 @@ function ProjectView() {
     }
   };
 
-  const handleStageAllFiles = async () => {
+  const handleStageAllFiles = useCallback(async () => {
     if (!projectId || isCommitting || isPushing) return;
     const unstagedFiles = commitDialogFiles.filter((f) => !f.staged);
     if (unstagedFiles.length === 0) return;
@@ -1654,7 +1654,7 @@ function ProjectView() {
     } finally {
       setIsStagingAll(false);
     }
-  };
+  }, [projectId, isCommitting, isPushing, commitDialogFiles, commitRepoPath, refreshCommitDialogFiles, loadGitStatus]);
 
   const handleDiscardGitFileChanges = async (file: ProjectGitChangedFile) => {
     if (!projectId || isCommitting || isPushing || gitDiscardPath === file.path) return;
