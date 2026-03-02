@@ -3234,6 +3234,24 @@ body.mind-resizing * {
   margin-bottom: 8px;
 }
 
+.provider-safe-mode-banner {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #3b5f8a;
+  border-radius: 8px;
+  background: #122033;
+  color: #c9def8;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.provider-safe-mode-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
 .provider-model-query-row {
   display: flex;
   gap: 8px;

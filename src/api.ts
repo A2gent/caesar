@@ -562,6 +562,8 @@ export interface ProviderConfig {
   has_api_key: boolean;
   base_url: string;
   model: string;
+  proxy_managed?: boolean;
+  proxy_base_url?: string;
   fallback_chain?: FallbackChainNode[];
   router_provider?: LLMProviderType;
   router_model?: string;

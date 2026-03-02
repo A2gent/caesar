@@ -96,6 +96,8 @@ function ProviderEditView() {
   const isAnthropic = selected?.type === 'anthropic';
   const isFallback = isFallbackProvider(selected?.type);
   const isNamedFallbackAggregate = selected?.type ? selected.type.startsWith('fallback_chain:') : false;
+  const isProxyManaged = Boolean(selected?.proxy_managed);
+  const proxyBaseURL = (selected?.proxy_base_url || '').trim();
 
   const nonAggregateProviders = useMemo(
     () => providers.filter((provider) => !isFallbackProvider(provider.type) && provider.type !== 'automatic_router'),
@@ -365,6 +367,10 @@ function ProviderEditView() {
 
   const handleSave = async () => {
     if (!providerType) return;
+    if (isProxyManaged) {
+      setError('Provider settings are managed by the parent agent in Docker safe mode.');
+      return;
+    }
 
     try {
       setIsSaving(true);
@@ -633,6 +639,15 @@ function ProviderEditView() {
               {selected.is_active ? <span className="status-badge status-running">Active</span> : null}
             </div>
           </div>
+
+          {isProxyManaged ? (
+            <div className="provider-safe-mode-banner">
+              <strong>Docker safe mode:</strong> provider credentials and configuration are managed by the parent agent.
+              {proxyBaseURL ? <span> Parent proxy: <code>{proxyBaseURL}</code></span> : null}
+            </div>
+          ) : null}
+
+          <fieldset className="provider-safe-mode-fieldset" disabled={isProxyManaged}>
 
           {/* Anthropic: OAuth or API key */}
           {isAnthropic && !isFallback && !isAutomaticRouter ? (
@@ -1143,6 +1158,7 @@ function ProviderEditView() {
               ) : null}
             </div>
           ) : null}
+          </fieldset>
 
           <div className="settings-actions">
             <button
@@ -1151,12 +1167,13 @@ function ProviderEditView() {
               onClick={handleSave}
               disabled={
                 isSaving ||
+                isProxyManaged ||
                 (isNamedFallbackAggregate && fallbackName.trim() === '') ||
                 (isFallback && fallbackChain.length < 2) ||
                 (isAutomaticRouter && (routerProvider.trim() === '' || routingRules.length === 0 || (!isFallbackProvider(routerProvider) && routerModel.trim() === '')))
               }
             >
-              {isSaving ? 'Saving...' : 'Save'}
+              {isSaving ? 'Saving...' : isProxyManaged ? 'Managed by parent' : 'Save'}
             </button>
             <button
               type="button"
@@ -1181,7 +1198,7 @@ function ProviderEditView() {
                 type="button"
                 className="settings-remove-btn"
                 onClick={handleDeleteAggregate}
-                disabled={isSaving}
+                disabled={isSaving || isProxyManaged}
               >
                 Delete aggregate
               </button>

@@ -255,6 +255,7 @@ function ProvidersView() {
       !isFallbackProvider(provider.type) &&
       provider.type !== "automatic_router",
   );
+  const proxyManagedProvider = providers.find((provider) => provider.proxy_managed);
 
   return (
     <div className="page-shell">
@@ -272,6 +273,15 @@ function ProvidersView() {
       )}
 
       <div className="page-content page-content-narrow settings-sections provider-list-view">
+        {proxyManagedProvider ? (
+          <div className="provider-safe-mode-banner">
+            <strong>Docker safe mode:</strong> this agent routes all LLM providers through its parent agent, so credentials and provider settings are locked here.
+            {proxyManagedProvider.proxy_base_url ? (
+              <span> Parent proxy: <code>{proxyManagedProvider.proxy_base_url}</code></span>
+            ) : null}
+          </div>
+        ) : null}
+
         <h3>Automatic Router</h3>
         <p className="thinking-note">
           Automatic router is for intent-based model selection: a lightweight
@@ -408,12 +418,16 @@ function ProvidersView() {
 
         <h3>Fallback Chains</h3>
         <div className="settings-actions">
-          <Link
-            to="/providers/fallback-aggregates/new"
-            className="settings-add-btn"
-          >
-            New chain
-          </Link>
+          {!proxyManagedProvider ? (
+            <Link
+              to="/providers/fallback-aggregates/new"
+              className="settings-add-btn"
+            >
+              New chain
+            </Link>
+          ) : (
+            <span className="thinking-note">Fallback chain editing is locked in Docker safe mode.</span>
+          )}
         </div>
 
         <p className="thinking-note">
