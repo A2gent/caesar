@@ -6,7 +6,6 @@ import {
   getA2ATunnelStatus,
   getA2ATunnelStatusStreamUrl,
   getSettings,
-  listA2AInboundSessions,
   listIntegrations,
   listProjects,
   listSubAgents,
@@ -14,7 +13,6 @@ import {
   updateSettings,
   type Integration,
   type Project,
-  type Session,
   type SubAgent,
   type TunnelLogEntry,
   type TunnelState,
@@ -43,31 +41,6 @@ function relativeTime(iso: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-function statusDot(status: string) {
-  const colors: Record<string, string> = {
-    running: '#4caf82',
-    completed: '#6f8cff',
-    failed: '#f25f5c',
-    queued: '#aeb7c7',
-    paused: '#f0b429',
-    input_required: '#f0b429',
-  };
-  return (
-    <span
-      title={status}
-      style={{
-        display: 'inline-block',
-        width: 8,
-        height: 8,
-        borderRadius: '50%',
-        background: colors[status] ?? '#aeb7c7',
-        marginRight: 6,
-        flexShrink: 0,
-      }}
-    />
-  );
 }
 
 function tunnelStateDot(state: TunnelState) {
@@ -170,9 +143,6 @@ function A2AMyAgentView() {
   const [inboundSubAgentID, setInboundSubAgentID] = useState<string>('');
   const [savingProject, setSavingProject] = useState(false);
 
-  // Inbound sessions
-  const [inboundSessions, setInboundSessions] = useState<Session[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
   const [localAgentID, setLocalAgentID] = useState<string>(getStoredLocalA2AAgentID());
   const [localAgentIDError, setLocalAgentIDError] = useState<string | null>(null);
 
@@ -204,21 +174,6 @@ function A2AMyAgentView() {
       setInboundSubAgentID(settings['A2A_INBOUND_SUB_AGENT_ID'] ?? '');
     } catch {
       // non-fatal
-    }
-  }, []);
-
-  // ---- Load inbound sessions ----
-  const loadInboundSessions = useCallback(async () => {
-    setSessionsLoading(true);
-    try {
-      const sessions = await listA2AInboundSessions();
-      // Sort newest first
-      sessions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      setInboundSessions(sessions);
-    } catch {
-      // non-fatal
-    } finally {
-      setSessionsLoading(false);
     }
   }, []);
 
@@ -276,10 +231,9 @@ function A2AMyAgentView() {
     void loadIntegration();
     void loadProjectsAndSettings();
     void loadTunnelStatus();
-    void loadInboundSessions();
     startSSE();
     return () => stopSSE();
-  }, [loadIntegration, loadProjectsAndSettings, loadTunnelStatus, loadInboundSessions, startSSE, stopSSE]);
+  }, [loadIntegration, loadProjectsAndSettings, loadTunnelStatus, startSSE, stopSSE]);
 
   useEffect(() => {
     const resolveAgentIDFromRegistry = async () => {
@@ -311,12 +265,6 @@ function A2AMyAgentView() {
     const id = setInterval(() => void loadTunnelStatus(), 5000);
     return () => clearInterval(id);
   }, [loadTunnelStatus]);
-
-  // Refresh inbound sessions every 15s
-  useEffect(() => {
-    const id = setInterval(() => void loadInboundSessions(), 15_000);
-    return () => clearInterval(id);
-  }, [loadInboundSessions]);
 
   // ---- Handlers ----
 
@@ -682,79 +630,6 @@ function A2AMyAgentView() {
     );
   }
 
-  function renderInboundSessions() {
-    return (
-      <section className="a2a-config-block">
-        <div className="integration-form-title-row" style={{ marginBottom: 4 }}>
-          <h3 style={{ margin: 0 }}>Inbound sessions</h3>
-          <button
-            type="button"
-            className="settings-add-btn"
-            style={{ fontSize: '0.78em', padding: '2px 8px' }}
-            onClick={() => void loadInboundSessions()}
-            disabled={sessionsLoading}
-          >
-            {sessionsLoading ? 'Refreshing…' : 'Refresh'}
-          </button>
-        </div>
-        <p className="settings-help" style={{ marginBottom: 14 }}>
-          Sessions created from inbound A2A requests.
-        </p>
-
-        {sessionsLoading && inboundSessions.length === 0 ? (
-          <div className="sessions-loading">Loading…</div>
-        ) : inboundSessions.length === 0 ? (
-          <p className="settings-help" style={{ fontStyle: 'italic' }}>No inbound sessions yet.</p>
-        ) : (
-          <div className="mcp-server-list">
-            {inboundSessions.map(sess => (
-              <article key={sess.id} className="integration-card mcp-server-card">
-                <div className="integration-card-headline">
-                  <div className="integration-card-title-wrap">
-                    <h3 style={{ display: 'flex', alignItems: 'center' }}>
-                      {statusDot(sess.status)}
-                      {sess.a2a_source_agent_name || 'Unknown agent'}
-                    </h3>
-                    <span className="integration-mode-chip">{sess.status}</span>
-                  </div>
-                  <span className="integration-updated">{relativeTime(sess.updated_at)}</span>
-                </div>
-
-                {sess.title && (
-                  <p style={{ margin: '6px 0 4px', color: 'var(--text-2)', fontSize: '0.88em', lineHeight: 1.5, fontStyle: 'italic' }}>
-                    "{sess.title}"
-                  </p>
-                )}
-
-                <div className="mcp-server-meta">
-                  <code style={{ fontSize: '0.78em', color: 'var(--text-2)' }}>
-                    {sess.a2a_source_agent_id && <>agent: {sess.a2a_source_agent_id} · </>}
-                    session: {sess.id} · started {relativeTime(sess.created_at)}
-                  </code>
-                </div>
-
-                <div className="integration-card-actions" style={{ marginTop: 8 }}>
-                  <a
-                    href={`/chat/${sess.id}`}
-                    className="settings-add-btn"
-                    style={{ textDecoration: 'none', display: 'inline-block' }}
-                    onClick={e => {
-                      e.preventDefault();
-                      // Navigate via React Router if available, otherwise direct
-                      window.location.href = `/chat/${sess.id}`;
-                    }}
-                  >
-                    Open session
-                  </a>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-    );
-  }
-
   // ---- Main render ----
   return (
     <div className="page-shell">
@@ -793,7 +668,6 @@ function A2AMyAgentView() {
               <>
                 {renderConnectionLog()}
                 {renderInboundProjectPicker()}
-                {renderInboundSessions()}
               </>
             )}
           </>

@@ -19,6 +19,7 @@ import ToolsView from './ToolsView';
 import SubAgentsView from './SubAgentsView';
 import NotificationsView from './NotificationsView';
 import A2ARegistryView from './A2ARegistryView';
+import A2ARegistrySettingsView from './A2ARegistrySettingsView';
 import A2AMyAgentView from './A2AMyAgentView';
 import A2AContactView from './A2AContactView';
 import A2ALocalAgentsView from './A2ALocalAgentsView';
@@ -739,6 +740,7 @@ function AppLayout() {
           <Route path="/settings" element={<SettingsView onAgentNameRefresh={handleBackendChange} />} />
           <Route path="/projects/:projectId" element={<ProjectView />} />
           <Route path="/a2a" element={<A2ARegistryView />} />
+          <Route path="/a2a/registry-settings" element={<A2ARegistrySettingsView />} />
           <Route path="/a2a/my-agent" element={<A2AMyAgentView />} />
           <Route path="/a2a/local-agents" element={<A2ALocalAgentsView />} />
           <Route path="/a2a/contact/:agentId" element={<A2AContactView />} />

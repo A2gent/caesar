@@ -19,6 +19,15 @@ export function getStoredA2ARegistryURL(): string {
   return stored && stored.trim() !== '' ? stored.trim() : DEFAULT_REGISTRY_URL;
 }
 
+export function storeA2ARegistryURL(url: string): void {
+  const normalized = url.trim().replace(/\/$/, '');
+  if (!normalized) {
+    localStorage.removeItem(A2A_REGISTRY_URL_KEY);
+    return;
+  }
+  localStorage.setItem(A2A_REGISTRY_URL_KEY, normalized);
+}
+
 export async function fetchRegistrySelfAgent(registryUrl: string, apiKey: string): Promise<RegistrySelfAgent> {
   const normalizedURL = registryUrl.trim().replace(/\/$/, '');
   const normalizedKey = apiKey.trim();

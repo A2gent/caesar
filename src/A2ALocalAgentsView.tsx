@@ -125,7 +125,7 @@ function A2ALocalAgentsView() {
   const handleRegister = (agent: LocalDockerAgent) => {
     const ownerEmail = getStoredA2ARegistryOwnerEmail();
     if (!ownerEmail.trim()) {
-      setError('Owner email is required. Set it in A2 Registry view, then try Register again.');
+      setError('Owner email is required. Set it in Registry settings, then try Register again.');
       return;
     }
 

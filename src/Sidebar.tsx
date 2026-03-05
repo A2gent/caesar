@@ -59,6 +59,7 @@ const navSections: NavSection[] = [
     label: '🌐 A2 Network',
     items: [
       { id: 'a2a-registry', label: '📡 External agents', path: '/a2a' },
+      { id: 'a2a-registry-settings', label: '⚙️ Registry settings', path: '/a2a/registry-settings' },
       { id: 'a2a-my-agent', label: '🤖 My agent', path: '/a2a/my-agent' },
     ],
   },
