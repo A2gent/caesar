@@ -3,17 +3,13 @@ import { Link } from 'react-router-dom';
 import {
   createIntegration,
   deleteIntegration,
+  fetchHealthInfo,
   getA2ATunnelStatus,
   getA2ATunnelStatusStreamUrl,
-  getSettings,
+  getParentApiBaseUrl,
   listIntegrations,
-  listProjects,
-  listSubAgents,
   updateIntegration,
-  updateSettings,
   type Integration,
-  type Project,
-  type SubAgent,
   type TunnelLogEntry,
   type TunnelState,
   type TunnelStatus,
@@ -136,15 +132,9 @@ function A2AMyAgentView() {
   const logRef = useRef<HTMLDivElement | null>(null);
   const sseRef = useRef<EventSource | null>(null);
 
-  // Projects + inbound project setting
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [inboundProjectID, setInboundProjectID] = useState<string>('');
-  const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
-  const [inboundSubAgentID, setInboundSubAgentID] = useState<string>('');
-  const [savingProject, setSavingProject] = useState(false);
-
   const [localAgentID, setLocalAgentID] = useState<string>(getStoredLocalA2AAgentID());
   const [localAgentIDError, setLocalAgentIDError] = useState<string | null>(null);
+  const [isContainerizedAgent, setIsContainerizedAgent] = useState(false);
 
   // Derived
   const isConfigured = Boolean(integration?.config?.api_key);
@@ -164,16 +154,22 @@ function A2AMyAgentView() {
     }
   }, []);
 
-  // ---- Load projects + inbound project setting ----
-  const loadProjectsAndSettings = useCallback(async () => {
+  const loadHealthInfo = useCallback(async () => {
+    const hasParentAgentMarker = getParentApiBaseUrl().trim() !== '';
     try {
-      const [projs, sas, settings] = await Promise.all([listProjects(), listSubAgents(), getSettings()]);
-      setProjects(projs);
-      setSubAgents(sas);
-      setInboundProjectID(settings['A2A_INBOUND_PROJECT_ID'] ?? '');
-      setInboundSubAgentID(settings['A2A_INBOUND_SUB_AGENT_ID'] ?? '');
+      const health = await fetchHealthInfo();
+      // Backward-compatible detection:
+      // - new backends: `containerized`
+      // - child docker safe mode: `docker_safe_mode`
+      // - UI-switched subagent sessions: parent URL marker
+      setIsContainerizedAgent(
+        Boolean(health.containerized) ||
+        Boolean(health.docker_safe_mode) ||
+        hasParentAgentMarker,
+      );
     } catch {
-      // non-fatal
+      // Fallback when health endpoint is older/unreachable.
+      setIsContainerizedAgent(hasParentAgentMarker);
     }
   }, []);
 
@@ -229,11 +225,11 @@ function A2AMyAgentView() {
   // ---- Initial load ----
   useEffect(() => {
     void loadIntegration();
-    void loadProjectsAndSettings();
+    void loadHealthInfo();
     void loadTunnelStatus();
     startSSE();
     return () => stopSSE();
-  }, [loadIntegration, loadProjectsAndSettings, loadTunnelStatus, startSSE, stopSSE]);
+  }, [loadHealthInfo, loadIntegration, loadTunnelStatus, startSSE, stopSSE]);
 
   useEffect(() => {
     const resolveAgentIDFromRegistry = async () => {
@@ -367,24 +363,6 @@ function A2AMyAgentView() {
     }
   };
 
-  const handleSaveInboundRouting = async (projectID: string, subAgentID: string) => {
-    setSavingProject(true);
-    try {
-      const current = await getSettings();
-      await updateSettings({
-        ...current,
-        A2A_INBOUND_PROJECT_ID: projectID,
-        A2A_INBOUND_SUB_AGENT_ID: subAgentID,
-      });
-      setInboundProjectID(projectID);
-      setInboundSubAgentID(subAgentID);
-    } catch {
-      // non-fatal
-    } finally {
-      setSavingProject(false);
-    }
-  };
-
   const startEditKey = () => {
     setApiKeyInput('');
     setGrpcAddrInput(integration?.config?.square_grpc_addr ?? DEFAULT_SQUARE_GRPC_ADDR);
@@ -411,6 +389,15 @@ function A2AMyAgentView() {
     return (
       <section className="settings-group a2a-config-block" style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <h3 style={{ margin: 0 }}>{isReplace ? 'Replace credentials' : 'Connect to A2A network'}</h3>
+
+        {!isContainerizedAgent && (
+          <div className="a2a-security-warning">
+            <strong>Security warning:</strong> This agent may be running directly on your host (not in Docker). Publishing it to A2A can expose host-level tools and files to remote control if compromised.
+            <span>
+              Recommended: use <Link to="/a2a/local-agents">Local agents</Link> (Dockerized) and connect those containers to the registry instead.
+            </span>
+          </div>
+        )}
 
         {!isReplace && (
           <p className="settings-help" style={{ margin: 0 }}>
@@ -507,6 +494,15 @@ function A2AMyAgentView() {
       <section className="settings-group a2a-config-block" style={{ marginBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <h3 style={{ margin: 0 }}>Connection</h3>
 
+        {!isContainerizedAgent && (
+          <div className="a2a-security-warning">
+            <strong>Security warning:</strong> This endpoint is publicly reachable through the A2A network. If this agent is not isolated in Docker, a compromise can impact your host machine.
+            <span>
+              Recommended: run and publish only <Link to="/a2a/local-agents">Dockerized Local agents</Link> for safer isolation.
+            </span>
+          </div>
+        )}
+
         {/* Status row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
           {tunnelStateDot(state)}
@@ -583,53 +579,6 @@ function A2AMyAgentView() {
     );
   }
 
-  function renderInboundProjectPicker() {
-    return (
-      <section className="settings-group a2a-config-block" style={{ marginBottom: 24 }}>
-        <h3 style={{ margin: '0 0 4px' }}>Inbound session defaults</h3>
-        <p className="settings-help" style={{ marginBottom: 10 }}>
-          Configure how inbound A2A requests are handled locally.
-        </p>
-        <label className="settings-field" style={{ gap: 6 }}>
-          <span>Handler</span>
-          <select
-            value={inboundSubAgentID}
-            onChange={e => {
-              setInboundSubAgentID(e.target.value);
-              void handleSaveInboundRouting(inboundProjectID, e.target.value);
-            }}
-            disabled={savingProject}
-          >
-            <option value="">Main agent</option>
-            {subAgents.map(sa => (
-              <option key={sa.id} value={sa.id}>{sa.name}</option>
-            ))}
-          </select>
-          <span className="settings-help" style={{ margin: 0 }}>
-            Choose a sub-agent to process inbound registry requests, or keep the main agent.
-          </span>
-        </label>
-        <label className="settings-field" style={{ gap: 6 }}>
-          <span>Project</span>
-          <select
-            value={inboundProjectID}
-            onChange={e => {
-              setInboundProjectID(e.target.value);
-              void handleSaveInboundRouting(e.target.value, inboundSubAgentID);
-            }}
-            disabled={savingProject}
-          >
-            <option value="">— No project —</option>
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
-        {savingProject && <span style={{ fontSize: '0.82em', color: 'var(--text-2)' }}>Saving…</span>}
-      </section>
-    );
-  }
-
   // ---- Main render ----
   return (
     <div className="page-shell">
@@ -667,7 +616,6 @@ function A2AMyAgentView() {
             {isConfigured && !isEditingKey && (
               <>
                 {renderConnectionLog()}
-                {renderInboundProjectPicker()}
               </>
             )}
           </>

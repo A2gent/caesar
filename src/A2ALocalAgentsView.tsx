@@ -8,6 +8,7 @@ import {
   removeLocalDockerAgent,
   startLocalDockerAgent,
   stopLocalDockerAgent,
+  getApiBaseUrl,
   type LocalDockerAgent,
   type RegisterLocalDockerAgentResponse,
 } from './api';
@@ -26,7 +27,26 @@ function relativeTime(iso?: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function A2ALocalAgentsView() {
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/$/, '');
+}
+
+function resolveAgentApiUrl(agent: LocalDockerAgent): string {
+  const directUrl = normalizeUrl(agent.api_url || '');
+  if (directUrl !== '') {
+    return directUrl;
+  }
+  if (agent.host_port && Number.isFinite(agent.host_port)) {
+    return `http://localhost:${agent.host_port}`;
+  }
+  return '';
+}
+
+interface A2ALocalAgentsViewProps {
+  onOpenAgent?: (baseUrl: string) => void | Promise<void>;
+}
+
+function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
   const [agents, setAgents] = useState<LocalDockerAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -43,6 +63,7 @@ function A2ALocalAgentsView() {
 
   const [logsByID, setLogsByID] = useState<Record<string, string>>({});
   const [openLogs, setOpenLogs] = useState<Record<string, boolean>>({});
+  const activeApiBaseUrl = normalizeUrl(getApiBaseUrl());
 
   const loadAgents = useCallback(async () => {
     setLoading(true);
@@ -142,6 +163,32 @@ function A2ALocalAgentsView() {
       setSuccess(`Registered ${result.registry_agent_name} in A2 Registry.`);
       setRegisteringID(null);
     });
+  };
+
+  const handleOpenAgent = async (agent: LocalDockerAgent, targetApiUrl: string) => {
+    if (!onOpenAgent) {
+      setError('Agent switching is not available in this screen.');
+      return;
+    }
+    if (!agent.running) {
+      setError('Start the container before opening it.');
+      return;
+    }
+    if (targetApiUrl === '') {
+      setError('This container has no exposed API URL/port to connect.');
+      return;
+    }
+
+    setBusy(`open:${agent.id}`);
+    setError(null);
+    setSuccess(null);
+    try {
+      await onOpenAgent(targetApiUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to switch to selected agent');
+    } finally {
+      setBusy(null);
+    }
   };
 
   return (
@@ -253,6 +300,8 @@ function A2ALocalAgentsView() {
             <div className="a2a-agent-list">
               {agents.map(agent => {
                 const actionPrefix = busy?.startsWith(`start:${agent.id}`) || busy?.startsWith(`stop:${agent.id}`) || busy?.startsWith(`remove:${agent.id}`);
+                const targetApiUrl = resolveAgentApiUrl(agent);
+                const isActiveAgent = targetApiUrl !== '' && targetApiUrl === activeApiBaseUrl;
                 return (
                   <article key={agent.id} className="a2a-agent-row">
                     <div className="a2a-agent-main">
@@ -283,6 +332,17 @@ function A2ALocalAgentsView() {
                       </div>
 
                       <div className="a2a-agent-actions local-agents-actions">
+                        <button
+                          type="button"
+                          className={`local-agent-icon-btn local-agent-icon-btn-open${isActiveAgent ? ' local-agent-icon-btn-current' : ''}`}
+                          onClick={() => void handleOpenAgent(agent, targetApiUrl)}
+                          disabled={busy !== null || !agent.running || targetApiUrl === '' || isActiveAgent}
+                          title={isActiveAgent ? 'Current active agent' : 'Open this agent UI'}
+                          aria-label={isActiveAgent ? 'Current active agent' : 'Open this agent UI'}
+                        >
+                          {busy === `open:${agent.id}` ? '…' : isActiveAgent ? '✓' : '⇄'}
+                        </button>
+
                         {agent.running ? (
                           <button
                             type="button"

@@ -3,6 +3,7 @@
 const API_BASE_URL_STORAGE_KEY = 'a2gent.api_base_url';
 const API_BASE_URL_HISTORY_KEY = 'a2gent.api_base_url_history';
 const API_BASE_URL_AGENT_NAME_MAP_KEY = 'a2gent.api_base_url_agent_names';
+const PARENT_API_BASE_URL_STORAGE_KEY = 'a2gent.parent_api_base_url';
 const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 function normalizeApiBaseUrl(url: string): string {
   return url.trim().replace(/\/$/, '');
@@ -74,6 +75,40 @@ export function setApiBaseUrl(url: string): void {
   }
 
   window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, normalized);
+}
+
+export function getParentApiBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  const stored = window.localStorage.getItem(PARENT_API_BASE_URL_STORAGE_KEY);
+  if (!stored || stored.trim() === '') {
+    return '';
+  }
+
+  return normalizeApiBaseUrl(stored);
+}
+
+export function setParentApiBaseUrl(url: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const normalized = normalizeApiBaseUrl(url);
+  if (normalized === '') {
+    window.localStorage.removeItem(PARENT_API_BASE_URL_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(PARENT_API_BASE_URL_STORAGE_KEY, normalized);
+}
+
+export function clearParentApiBaseUrl(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.removeItem(PARENT_API_BASE_URL_STORAGE_KEY);
 }
 
 export function getApiBaseUrlHistory(): string[] {
@@ -1422,6 +1457,21 @@ export async function healthCheck(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export interface HealthInfo {
+  status: string;
+  agent_name?: string;
+  docker_safe_mode?: boolean;
+  containerized?: boolean;
+}
+
+export async function fetchHealthInfo(): Promise<HealthInfo> {
+  const response = await fetch(`${getApiBaseUrl()}/health`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to fetch health info');
+  }
+  return response.json() as Promise<HealthInfo>;
 }
 
 export async function fetchAgentName(): Promise<string> {

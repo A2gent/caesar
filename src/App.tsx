@@ -23,7 +23,20 @@ import A2ARegistrySettingsView from './A2ARegistrySettingsView';
 import A2AMyAgentView from './A2AMyAgentView';
 import A2AContactView from './A2AContactView';
 import A2ALocalAgentsView from './A2ALocalAgentsView';
-import { addApiBaseUrlToHistory, buildImageAssetUrl, fetchAgentName, fetchSpeechClip, getApiBaseUrl, getSession, listSessions, saveAgentName, setApiBaseUrl } from './api';
+import {
+  addApiBaseUrlToHistory,
+  buildImageAssetUrl,
+  clearParentApiBaseUrl,
+  fetchAgentName,
+  fetchSpeechClip,
+  getApiBaseUrl,
+  getParentApiBaseUrl,
+  getSession,
+  listSessions,
+  saveAgentName,
+  setApiBaseUrl,
+  setParentApiBaseUrl,
+} from './api';
 import { THINKING_PROJECT_ID } from './thinking';
 import { SYSTEM_PROJECT_KB_ID, SYSTEM_PROJECT_AGENT_ID } from './Sidebar';
 import { readWebAppNotification } from './toolResultEvents';
@@ -36,6 +49,7 @@ const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 480;
 const SIDEBAR_WIDTH_STORAGE_KEY = 'a2gent.sidebar.width';
 const SIDEBAR_OPEN_STORAGE_KEY = 'a2gent.sidebar.open';
+const normalizeBaseUrl = (url: string) => url.trim().replace(/\/$/, '');
 
 interface CompletionNotification {
   id: string;
@@ -558,8 +572,43 @@ function AppLayout() {
     setApiBaseUrl(nextBaseUrl);
     const normalized = getApiBaseUrl();
     addApiBaseUrlToHistory(normalized);
+    if (normalizeBaseUrl(getParentApiBaseUrl()) === normalizeBaseUrl(normalized)) {
+      clearParentApiBaseUrl();
+    }
     await handleBackendChange();
   }, [handleBackendChange]);
+
+  const handleOpenSubAgent = useCallback(async (nextBaseUrl: string) => {
+    const currentBaseUrl = normalizeBaseUrl(getApiBaseUrl());
+    const targetBaseUrl = normalizeBaseUrl(nextBaseUrl);
+    if (targetBaseUrl === '' || targetBaseUrl === currentBaseUrl) {
+      return;
+    }
+
+    setParentApiBaseUrl(currentBaseUrl);
+    setApiBaseUrl(targetBaseUrl);
+    addApiBaseUrlToHistory(targetBaseUrl);
+    await handleBackendChange();
+    navigate(`/projects/${SYSTEM_PROJECT_KB_ID}`);
+  }, [handleBackendChange, navigate]);
+
+  const handleReturnToParentAgent = useCallback(async () => {
+    const parentBaseUrl = normalizeBaseUrl(getParentApiBaseUrl());
+    const activeBaseUrl = normalizeBaseUrl(getApiBaseUrl());
+    if (parentBaseUrl === '') {
+      return;
+    }
+    if (parentBaseUrl === activeBaseUrl) {
+      clearParentApiBaseUrl();
+      return;
+    }
+
+    setApiBaseUrl(parentBaseUrl);
+    addApiBaseUrlToHistory(parentBaseUrl);
+    await handleBackendChange();
+    clearParentApiBaseUrl();
+    navigate(`/projects/${SYSTEM_PROJECT_KB_ID}`);
+  }, [handleBackendChange, navigate]);
 
   const handleAppTitleChange = useCallback((nextTitle: string) => {
     const trimmed = nextTitle.trim() || '🤖 A2';
@@ -615,6 +664,7 @@ function AppLayout() {
           title={appTitle} 
           onTitleChange={handleAppTitleChange}
           onAgentSelect={handleAgentSelect}
+          onReturnToParentAgent={handleReturnToParentAgent}
           onNavigate={handleSidebarNavigate}
           notificationCount={notifications.length}
           refreshKey={backendRefreshKey}
@@ -742,7 +792,7 @@ function AppLayout() {
           <Route path="/a2a" element={<A2ARegistryView />} />
           <Route path="/a2a/registry-settings" element={<A2ARegistrySettingsView />} />
           <Route path="/a2a/my-agent" element={<A2AMyAgentView />} />
-          <Route path="/a2a/local-agents" element={<A2ALocalAgentsView />} />
+          <Route path="/a2a/local-agents" element={<A2ALocalAgentsView onOpenAgent={handleOpenSubAgent} />} />
           <Route path="/a2a/contact/:agentId" element={<A2AContactView />} />
         </Routes>
       </div>

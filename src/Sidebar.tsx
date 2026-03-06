@@ -3,6 +3,7 @@ import type { ChangeEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   getApiBaseUrl,
+  getParentApiBaseUrl,
   getStoredAgentEndpoints,
   listProjects,
   createProject,
@@ -19,6 +20,7 @@ interface SidebarProps {
   title: string;
   onTitleChange: (title: string) => void;
   onAgentSelect: (baseUrl: string) => void | Promise<void>;
+  onReturnToParentAgent?: () => void | Promise<void>;
   onNavigate?: () => void;
   notificationCount?: number;
   refreshKey?: number;
@@ -50,20 +52,44 @@ const navSections: NavSection[] = [
       { id: 'integrations', label: '🔌 Integrations', path: '/integrations' },
       { id: 'providers', label: '🤖 LLM providers', path: '/providers' },
       { id: 'settings', label: '⚙️ Settings', path: '/settings' },
+    ],
+  },
+  {
+    id: 'agents',
+    label: '🤖 Agents',
+    items: [
       { id: 'sub-agents', label: '🤖 Sub-agents', path: '/sub-agents' },
       { id: 'a2a-local-agents', label: '🐳 Local agents', path: '/a2a/local-agents' },
+      { id: 'a2a-registry', label: '📡 External agents', path: '/a2a' },
     ],
   },
   {
     id: 'a2a',
     label: '🌐 A2 Network',
     items: [
-      { id: 'a2a-registry', label: '📡 External agents', path: '/a2a' },
       { id: 'a2a-registry-settings', label: '⚙️ Registry settings', path: '/a2a/registry-settings' },
       { id: 'a2a-my-agent', label: '🤖 My agent', path: '/a2a/my-agent' },
     ],
   },
 ];
+
+function getVisibleNavSections(hideLocalAgents: boolean): NavSection[] {
+  if (!hideLocalAgents) {
+    return navSections;
+  }
+
+  return navSections
+    .map((section) => {
+      if (section.id !== 'agents') {
+        return section;
+      }
+      return {
+        ...section,
+        items: section.items.filter((item) => item.path !== '/a2a/local-agents'),
+      };
+    })
+    .filter((section) => section.items.length > 0);
+}
 
 function isNavItemActive(pathname: string, itemPath: string): boolean {
   if (itemPath === '/a2a') {
@@ -75,9 +101,18 @@ function isNavItemActive(pathname: string, itemPath: string): boolean {
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
-function Sidebar({ title, onTitleChange, onAgentSelect, onNavigate, notificationCount = 0, refreshKey }: SidebarProps) {
+function Sidebar({
+  title,
+  onTitleChange,
+  onAgentSelect,
+  onReturnToParentAgent,
+  onNavigate,
+  notificationCount = 0,
+  refreshKey,
+}: SidebarProps) {
   const location = useLocation();
   const [activeBaseUrl, setActiveBaseUrl] = useState(() => getApiBaseUrl());
+  const [parentBaseUrl, setParentBaseUrl] = useState(() => getParentApiBaseUrl());
   const [isSwitchingAgent, setIsSwitchingAgent] = useState(false);
   const [agentOptions, setAgentOptions] = useState(() => getStoredAgentEndpoints());
   const [titleDraft, setTitleDraft] = useState(title);
@@ -93,6 +128,7 @@ function Sidebar({ title, onTitleChange, onAgentSelect, onNavigate, notification
 
   const reloadAgentOptions = useCallback(() => {
     setActiveBaseUrl(getApiBaseUrl());
+    setParentBaseUrl(getParentApiBaseUrl());
     setAgentOptions(getStoredAgentEndpoints());
   }, []);
 
@@ -196,6 +232,23 @@ function Sidebar({ title, onTitleChange, onAgentSelect, onNavigate, notification
 
   const alternateAgents = agentOptions.filter((endpoint) => endpoint.url !== activeBaseUrl);
   const hasAlternateAgents = alternateAgents.length > 0;
+  const canReturnToParentAgent = parentBaseUrl !== '' && parentBaseUrl !== activeBaseUrl;
+  const visibleNavSections = getVisibleNavSections(canReturnToParentAgent);
+
+  const handleReturnToParent = async () => {
+    if (!onReturnToParentAgent || !canReturnToParentAgent || isSwitchingAgent) {
+      return;
+    }
+
+    setIsSwitchingAgent(true);
+    try {
+      await onReturnToParentAgent();
+    } finally {
+      setIsSwitchingAgent(false);
+      setIsDropdownOpen(false);
+      reloadAgentOptions();
+    }
+  };
 
   return (
     <div className="sidebar">
@@ -249,6 +302,17 @@ function Sidebar({ title, onTitleChange, onAgentSelect, onNavigate, notification
             </ul>
           ) : null}
         </div>
+        {canReturnToParentAgent && onReturnToParentAgent ? (
+          <button
+            type="button"
+            className="sidebar-return-parent-btn"
+            onClick={() => void handleReturnToParent()}
+            disabled={isSwitchingAgent}
+            title={`Return to ${parentBaseUrl}`}
+          >
+            ↩ Back to parent agent
+          </button>
+        ) : null}
       </div>
 
       <nav className="sidebar-nav">
@@ -312,7 +376,7 @@ function Sidebar({ title, onTitleChange, onAgentSelect, onNavigate, notification
         </div>
 
         {/* Agent/Settings Sections */}
-        {navSections.map(section => (
+        {visibleNavSections.map(section => (
           <div key={section.id} className="nav-section">
             <div className="nav-section-header">{section.label}</div>
             <ul className="nav-list">

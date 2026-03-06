@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
-import { listIntegrations, updateIntegration, type Integration } from './api';
+import {
+  getSettings,
+  listIntegrations,
+  listProjects,
+  listSubAgents,
+  updateIntegration,
+  updateSettings,
+  type Integration,
+  type Project,
+  type SubAgent,
+} from './api';
 import {
   clearStoredLocalA2AAgentID,
   fetchRegistrySelfAgent,
@@ -19,17 +29,31 @@ function A2ARegistrySettingsView() {
   const [ownerEmail, setOwnerEmail] = useState<string>(getStoredA2ARegistryOwnerEmail());
   const [localAgentID, setLocalAgentID] = useState<string>(getStoredLocalA2AAgentID());
   const [registryIntegration, setRegistryIntegration] = useState<Integration | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
+  const [inboundProjectID, setInboundProjectID] = useState<string>('');
+  const [inboundSubAgentID, setInboundSubAgentID] = useState<string>('');
 
   const [savingSettings, setSavingSettings] = useState(false);
+  const [savingInboundDefaults, setSavingInboundDefaults] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     const resolveSettings = async () => {
       try {
-        const integrations = await listIntegrations();
+        const [integrations, projs, sas, settings] = await Promise.all([
+          listIntegrations(),
+          listProjects(),
+          listSubAgents(),
+          getSettings(),
+        ]);
         const integration = integrations.find(i => i.provider === 'a2_registry') ?? null;
         setRegistryIntegration(integration);
+        setProjects(projs);
+        setSubAgents(sas);
+        setInboundProjectID(settings['A2A_INBOUND_PROJECT_ID'] ?? '');
+        setInboundSubAgentID(settings['A2A_INBOUND_SUB_AGENT_ID'] ?? '');
 
         const configuredOwnerEmail = integration?.config?.owner_email?.trim() || '';
         if (configuredOwnerEmail) {
@@ -97,6 +121,26 @@ function A2ARegistrySettingsView() {
       setError(err instanceof Error ? err.message : 'Failed to save A2 Registry settings');
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const handleSaveInboundRouting = async (projectID: string, subAgentID: string) => {
+    setSavingInboundDefaults(true);
+    setError(null);
+    try {
+      const current = await getSettings();
+      await updateSettings({
+        ...current,
+        A2A_INBOUND_PROJECT_ID: projectID,
+        A2A_INBOUND_SUB_AGENT_ID: subAgentID,
+      });
+      setInboundProjectID(projectID);
+      setInboundSubAgentID(subAgentID);
+      setSuccess('Inbound session defaults saved.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save inbound defaults');
+    } finally {
+      setSavingInboundDefaults(false);
     }
   };
 
@@ -193,6 +237,51 @@ function A2ARegistrySettingsView() {
                 {savingSettings ? 'Saving...' : 'Save registry settings'}
               </button>
             </div>
+          </div>
+
+          <div className="settings-group" style={{ marginTop: 18, marginBottom: 0 }}>
+            <div className="integration-form-title-row">
+              <h3 style={{ margin: 0 }}>Inbound session defaults</h3>
+            </div>
+            <p className="settings-help" style={{ marginTop: 8, marginBottom: 10 }}>
+              Configure how inbound A2A registry requests are handled locally.
+            </p>
+            <label className="settings-field" style={{ gap: 6 }}>
+              <span>Handler</span>
+              <select
+                value={inboundSubAgentID}
+                onChange={e => {
+                  setInboundSubAgentID(e.target.value);
+                  void handleSaveInboundRouting(inboundProjectID, e.target.value);
+                }}
+                disabled={savingInboundDefaults}
+              >
+                <option value="">Main agent</option>
+                {subAgents.map(sa => (
+                  <option key={sa.id} value={sa.id}>{sa.name}</option>
+                ))}
+              </select>
+              <span className="settings-help" style={{ margin: 0 }}>
+                Choose a sub-agent to process inbound registry requests, or keep the main agent.
+              </span>
+            </label>
+            <label className="settings-field" style={{ gap: 6 }}>
+              <span>Project</span>
+              <select
+                value={inboundProjectID}
+                onChange={e => {
+                  setInboundProjectID(e.target.value);
+                  void handleSaveInboundRouting(e.target.value, inboundSubAgentID);
+                }}
+                disabled={savingInboundDefaults}
+              >
+                <option value="">— No project —</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+            {savingInboundDefaults && <span style={{ fontSize: '0.82em', color: 'var(--text-2)' }}>Saving…</span>}
           </div>
         </section>
       </div>
