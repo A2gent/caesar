@@ -59,6 +59,7 @@ import {
 import { updateSettings } from './api';
 
 type MarkdownMode = 'kanban' | 'preview' | 'source';
+type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'git';
 
 const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);
 const TODO_TASK_LINE_PATTERN = /^(\s*)-\s+\[( |x|X)\]\s+(.*?)(?:\s+<!--\s*task-file:\s*([^\s][^>]*)\s*-->)?\s*$/;
@@ -217,7 +218,6 @@ const MAX_TREE_PANEL_WIDTH = 720;
 const TREE_PANEL_WIDTH_STORAGE_KEY = 'a2gent.project.tree.width';
 const EXPANDED_DIRS_STORAGE_KEY_PREFIX = 'a2gent.project.expandedDirs.';
 const SELECTED_FILE_STORAGE_KEY_PREFIX = 'a2gent.project.selectedFile.';
-const SESSIONS_COLLAPSED_STORAGE_KEY = 'a2gent.project.sessionsCollapsed';
 const SELECTED_AGENT_STORAGE_KEY_PREFIX = 'a2gent.project.selectedAgent.';
 const SYSTEM_PROJECT_KB_ID = 'system-kb';
 const SYSTEM_PROJECT_BODY_ID = 'system-agent';
@@ -274,22 +274,6 @@ function writeStoredSelectedFile(projectId: string, path: string): void {
     }
   } catch {
     // ignore storage errors
-  }
-}
-
-function readStoredSessionsCollapsed(): boolean {
-  try {
-    return localStorage.getItem(SESSIONS_COLLAPSED_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function writeStoredSessionsCollapsed(collapsed: boolean): void {
-  try {
-    localStorage.setItem(SESSIONS_COLLAPSED_STORAGE_KEY, String(collapsed));
-  } catch {
-    // ignore
   }
 }
 
@@ -638,11 +622,10 @@ function ProjectView() {
   const [projectSearchResults, setProjectSearchResults] = useState<ProjectSearchResponse | null>(null);
   const [isSearchingProject, setIsSearchingProject] = useState(false);
   const [projectSearchError, setProjectSearchError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ProjectViewTab>('explorer');
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [gitChangedFiles, setGitChangedFiles] = useState<ProjectGitChangedFile[]>([]);
-  const [firstLayerGitChangeCounts, setFirstLayerGitChangeCounts] = useState<Record<string, number>>({});
   const [isLoadingGitStatus, setIsLoadingGitStatus] = useState(false);
-  const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [commitRepoPath, setCommitRepoPath] = useState('');
   const [commitRepoLabel, setCommitRepoLabel] = useState('');
   const [commitDialogFiles, setCommitDialogFiles] = useState<ProjectGitChangedFile[]>([]);
@@ -691,7 +674,6 @@ function ProjectView() {
   const [isQueuingSession, setIsQueuingSession] = useState(false);
   const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
   const [startingSessionID, setStartingSessionID] = useState<string | null>(null);
-  const [sessionsCollapsed, setSessionsCollapsed] = useState(readStoredSessionsCollapsed);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
   const [hasLoadedProviders, setHasLoadedProviders] = useState(false);
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
@@ -807,52 +789,24 @@ function ProjectView() {
     if (!projectId || !rootFolder) {
       setIsGitRepo(false);
       setGitChangedFiles([]);
-      setFirstLayerGitChangeCounts({});
       return;
     }
 
     setIsLoadingGitStatus(true);
     try {
-      const rootEntries = treeEntries[''] || [];
-      const firstLayerDirectories = rootEntries
-        .filter((entry) => entry.type === 'directory')
-        .map((entry) => entry.path);
-
-      const [status, firstLayerStatuses] = await Promise.all([
-        getProjectGitStatus(projectId),
-        Promise.all(
-          firstLayerDirectories.map(async (folderPath) => {
-            try {
-              const folderStatus = await getProjectGitStatus(projectId, folderPath);
-              return { folderPath, status: folderStatus };
-            } catch (err) {
-              console.error(`Failed to load git status for ${folderPath}:`, err);
-              return { folderPath, status: null };
-            }
-          }),
-        ),
-      ]);
+      const status = await getProjectGitStatus(projectId);
 
       setIsGitRepo(status.has_git);
       setGitChangedFiles(status.files || []);
-      const nextCounts: Record<string, number> = {};
-      firstLayerStatuses.forEach(({ folderPath, status: folderStatus }) => {
-        if (!folderStatus || !folderStatus.has_git || !Array.isArray(folderStatus.files)) return;
-        if (folderStatus.files.length > 0) {
-          nextCounts[folderPath] = folderStatus.files.length;
-        }
-      });
-      setFirstLayerGitChangeCounts(nextCounts);
     } catch (err) {
       console.error('Failed to load git status:', err);
       setIsGitRepo(false);
       setGitChangedFiles([]);
-      setFirstLayerGitChangeCounts({});
       setError(err instanceof Error ? err.message : 'Failed to load git status');
     } finally {
       setIsLoadingGitStatus(false);
     }
-  }, [projectId, rootFolder, treeEntries]);
+  }, [projectId, rootFolder]);
 
   useEffect(() => {
     void loadGitStatus();
@@ -910,11 +864,6 @@ function ProjectView() {
       // Ignore storage failures
     }
   }, [hasLoadedProviders, selectedAgentValue, projectId]);
-
-  // Persist sessions collapsed state
-  useEffect(() => {
-    writeStoredSessionsCollapsed(sessionsCollapsed);
-  }, [sessionsCollapsed]);
 
   // File tree loading
   const loadTree = useCallback(async (path: string) => {
@@ -1003,12 +952,6 @@ function ProjectView() {
       writeStoredSelectedFile(projectId, selectedFilePath);
     }
   }, [selectedFilePath, projectId]);
-
-  useEffect(() => {
-    if (!isGitRepo && commitRepoPath === '') {
-      setIsCommitDialogOpen(false);
-    }
-  }, [isGitRepo, commitRepoPath]);
 
   // Persist tree panel width
   useEffect(() => {
@@ -1386,6 +1329,21 @@ function ProjectView() {
     }
   };
 
+  const createTodoFile = async () => {
+    if (!projectId) return;
+    const todoPath = 'todo.md';
+    try {
+      await saveProjectFile(projectId, todoPath, '# Backlog\n\n- [ ] First task\n');
+      await loadTree('');
+      await openFile(todoPath);
+      setActiveTab('tasks');
+      setSuccess(`Created ${todoPath}.`);
+      await loadGitStatus();
+    } catch (todoError) {
+      setError(todoError instanceof Error ? todoError.message : 'Failed to create todo.md');
+    }
+  };
+
   const startRename = (path: string, currentName: string) => {
     setRenamingPath(path);
     setRenameValue(currentName);
@@ -1529,7 +1487,7 @@ function ProjectView() {
     }
   };
 
-  const openCommitDialog = async (repoPath = '', repoLabel = project?.name || 'Project') => {
+  const openGitViewForRepo = async (repoPath = '', repoLabel = project?.name || 'Project') => {
     if (!projectId) return;
     setError(null);
     try {
@@ -1544,8 +1502,7 @@ function ProjectView() {
       const firstPath = (status.files || [])[0]?.path || '';
       setSelectedCommitFilePath(firstPath);
       setSelectedCommitFileDiff('');
-      setCommitMessage('');
-      setIsCommitDialogOpen(true);
+      setActiveTab('git');
       if (firstPath) {
         void loadCommitFileDiff(firstPath, repoPath);
       }
@@ -1588,20 +1545,6 @@ function ProjectView() {
     } finally {
       setIsInitializingGit(false);
     }
-  };
-
-  const closeCommitDialog = () => {
-    if (isCommitting || isPushing) return;
-    setIsCommitDialogOpen(false);
-    setCommitDialogFiles([]);
-    setCommitRepoPath('');
-    setCommitRepoLabel('');
-    setGitFileActionPath(null);
-    setSelectedCommitFilePath('');
-    setSelectedCommitFileDiff('');
-    setIsGeneratingCommitMessage(false);
-    setIsPushing(false);
-    commitDiffRequestRef.current += 1;
   };
 
   const refreshCommitDialogFiles = useCallback(async () => {
@@ -1748,12 +1691,8 @@ function ProjectView() {
       const result = await commitProjectGit(projectId, message, commitRepoPath);
       setSuccess(`Committed ${result.files_committed} file(s) as ${result.commit}.`);
       setCommitMessage('');
-      setIsCommitDialogOpen(false);
-      setCommitDialogFiles([]);
-      setSelectedCommitFilePath('');
-      setSelectedCommitFileDiff('');
-      setGitFileActionPath(null);
       await loadGitStatus();
+      await refreshCommitDialogFiles();
     } catch (commitError) {
       setError(commitError instanceof Error ? commitError.message : 'Failed to commit changes');
     } finally {
@@ -1779,12 +1718,8 @@ function ProjectView() {
       await pushProjectGit(projectId, commitRepoPath);
       setSuccess(`Committed ${commitResult.files_committed} file(s) and pushed ${commitResult.commit}.`);
       setCommitMessage('');
-      setIsCommitDialogOpen(false);
-      setCommitDialogFiles([]);
-      setSelectedCommitFilePath('');
-      setSelectedCommitFileDiff('');
-      setGitFileActionPath(null);
       await loadGitStatus();
+      await refreshCommitDialogFiles();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : 'Failed to commit and push';
       const normalized = messageText.toLowerCase();
@@ -1815,7 +1750,6 @@ function ProjectView() {
     setSessionTargetLabel(label);
     setSessionContextMessage(buildMindSessionContext(type, fullPath));
     setIsSessionContextExpanded(true);
-    setSessionsCollapsed(false);
     
     // Scroll to the sessions form
     setTimeout(() => {
@@ -1832,7 +1766,20 @@ function ProjectView() {
   const hasUnsavedChanges = selectedFileContent !== savedFileContent;
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
   const todoBoard = useMemo(() => parseTodoBoard(selectedFileContent), [selectedFileContent]);
-  const canUseKanban = isTodoFilePath(selectedFilePath);
+  const knownTodoFilePaths = useMemo(() => {
+    const found = new Set<string>();
+    for (const entries of Object.values(treeEntries)) {
+      for (const entry of entries) {
+        if (entry.type === 'file' && isTodoFilePath(entry.path)) {
+          found.add(entry.path);
+        }
+      }
+    }
+    return Array.from(found).sort();
+  }, [treeEntries]);
+  const activeTodoFilePath = isTodoFilePath(selectedFilePath)
+    ? selectedFilePath
+    : (knownTodoFilePaths[0] || '');
   const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
   const commitDiffOptions = useMemo(() => ({
     theme: {
@@ -2008,13 +1955,13 @@ function ProjectView() {
   };
 
   useEffect(() => {
-    if (!isCommitDialogOpen) return;
+    if (activeTab !== 'git') return;
     if (!selectedCommitFilePath) {
       setSelectedCommitFileDiff('');
       return;
     }
     void loadCommitFileDiff(selectedCommitFilePath);
-  }, [isCommitDialogOpen, selectedCommitFilePath, loadCommitFileDiff]);
+  }, [activeTab, selectedCommitFilePath, loadCommitFileDiff]);
 
   useEffect(() => {
     if (!projectId || !rootFolder) {
@@ -2055,6 +2002,22 @@ function ProjectView() {
       window.clearTimeout(timer);
     };
   }, [projectId, projectSearchQuery, rootFolder]);
+
+  useEffect(() => {
+    if (activeTab !== 'tasks') return;
+    if (!activeTodoFilePath) return;
+    if (selectedFilePath === activeTodoFilePath) return;
+    void openFile(activeTodoFilePath);
+  }, [activeTab, activeTodoFilePath, selectedFilePath, openFile]);
+
+  useEffect(() => {
+    if (activeTab !== 'git') return;
+    if (!projectId || !rootFolder || !isGitRepo) return;
+    if (commitRepoPath.trim() === '') {
+      setCommitRepoLabel(project?.name || 'Project');
+    }
+    void refreshCommitDialogFiles();
+  }, [activeTab, projectId, rootFolder, isGitRepo, project?.name, commitRepoPath, refreshCommitDialogFiles]);
   
   const selectedFilePathNormalized = normalizeMindPath(selectedFilePath);
   const selectedFileAbsolutePath = rootFolder && selectedFilePath
@@ -2237,7 +2200,6 @@ function ProjectView() {
             const isDropTarget = dropTargetPath === entry.path;
             const isDraggingFolder = draggedFilePath === entry.path;
             const isDescendantOfDragged = draggedFilePath && entry.path.startsWith(draggedFilePath + '/');
-            const firstLayerGitChanges = depth === 0 ? (firstLayerGitChangeCounts[entry.path] || 0) : 0;
             return (
               <div key={entry.path}>
                 <div
@@ -2313,25 +2275,23 @@ function ProjectView() {
                       {isLoading ? <span className="mind-tree-meta">Loading...</span> : null}
                     </button>
                   )}
-                  {firstLayerGitChanges > 0 ? (
-                    <button
-                      type="button"
-                      className="mind-tree-commit-btn"
-                      title={`Commit changes in ${entry.name}`}
-                      aria-label={`Commit changes in folder ${entry.name}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void openCommitDialog(entry.path, entry.name);
-                      }}
-                    >
-                      <svg viewBox="0 0 16 16" aria-hidden="true" className="mind-tree-commit-icon">
-                        <path
-                          fill="currentColor"
-                          d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38c0-.19-.01-.82-.01-1.49C4 14.09 3.48 13.22 3.32 12.77c-.09-.23-.48-.94-.82-1.13c-.28-.15-.68-.52-.01-.53c.63-.01 1.08.58 1.23.82c.72 1.21 1.87.87 2.33.66c.07-.52.28-.87.5-1.07c-1.78-.2-3.64-.89-3.64-3.95c0-.87.31-1.59.82-2.15c-.08-.2-.36-1.02.08-2.12c0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 4.82c.68 0 1.37.09 2.01.27c1.53-1.04 2.2-.82 2.2-.82c.44 1.1.16 1.92.08 2.12c.51.56.82 1.27.82 2.15c0 3.07-1.87 3.75-3.65 3.95c.29.25.54.73.54 1.48c0 1.07-.01 1.93-.01 2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
-                        />
-                      </svg>
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="mind-tree-commit-btn"
+                    title={`Open Git changes for ${entry.name}`}
+                    aria-label={`Open Git changes for folder ${entry.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void openGitViewForRepo(entry.path, entry.name);
+                    }}
+                  >
+                    <svg viewBox="0 0 16 16" aria-hidden="true" className="mind-tree-commit-icon">
+                      <path
+                        fill="currentColor"
+                        d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38c0-.19-.01-.82-.01-1.49C4 14.09 3.48 13.22 3.32 12.77c-.09-.23-.48-.94-.82-1.13c-.28-.15-.68-.52-.01-.53c.63-.01 1.08.58 1.23.82c.72 1.21 1.87.87 2.33.66c.07-.52.28-.87.5-1.07c-1.78-.2-3.64-.89-3.64-3.95c0-.87.31-1.59.82-2.15c-.08-.2-.36-1.02.08-2.12c0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 4.82c.68 0 1.37.09 2.01.27c1.53-1.04 2.2-.82 2.2-.82c.44 1.1.16 1.92.08 2.12c.51.56.82 1.27.82 2.15c0 3.07-1.87 3.75-3.65 3.95c.29.25.54.73.54 1.48c0 1.07-.01 1.93-.01 2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                      />
+                    </svg>
+                  </button>
                   <button
                     type="button"
                     className="mind-tree-session-btn"
@@ -2511,6 +2471,121 @@ function ProjectView() {
   const firstSearchHitPath = fileNameSearchMatches[0]?.path || contentSearchMatches[0]?.path || '';
   const hasSearchHits = fileNameSearchMatches.length > 0 || contentSearchMatches.length > 0;
   const viewerPlaceholder = getProjectViewerPlaceholder(project);
+  const showSessionComposer = activeTab === 'explorer' || activeTab === 'sessions';
+
+  const sessionsListBlock = (
+    <>
+      {isLoadingSessions ? (
+        <div className="sessions-loading">Loading sessions...</div>
+      ) : sessions.length === 0 ? (
+        <EmptyState className="sessions-empty">
+          <EmptyStateTitle>No sessions yet.</EmptyStateTitle>
+          <EmptyStateHint>Start speaking or typing below to create one.</EmptyStateHint>
+        </EmptyState>
+      ) : (
+        <div className="sessions-list project-sessions-list">
+          {sessionRows.map(({ session, depth }) => {
+            const isChild = isChildSession(session);
+            const linkLabel = linkTypeLabel(session);
+            return (
+              <div
+                key={session.id}
+                className={`session-card ${isChild ? 'session-child' : ''}`}
+                style={depth > 0 ? { marginLeft: `${Math.min(depth, 6) * 18}px` } : undefined}
+                onClick={() => handleSelectSession(session.id)}
+              >
+                <div className="session-card-row">
+                  <div className="session-name-wrap">
+                    {isChild && (
+                      <span
+                        className="session-hierarchy-marker"
+                        title="Sub-agent session"
+                        aria-label="Sub-agent session"
+                      >
+                        ↳
+                      </span>
+                    )}
+                    <span
+                      className={`session-status-dot status-${session.status}`}
+                      title={`Status: ${formatStatusLabel(session.status)}`}
+                      aria-label={`Status: ${formatStatusLabel(session.status)}`}
+                    />
+                    <h3 className="session-name">{formatSessionTitle(session)}</h3>
+                    {linkLabel ? <span className="session-link-type-chip">{linkLabel}</span> : null}
+                  </div>
+                  <div className="session-row-right">
+                    <div className="session-meta">
+                      {session.task_progress && (() => {
+                        const progress = parseTaskProgress(session.task_progress);
+                        if (progress.total > 0) {
+                          return (
+                            <span
+                              className="session-task-progress-bar"
+                              title={`${progress.completed}/${progress.total} tasks (${progress.progressPct}%)`}
+                            >
+                              <span className="session-task-progress-fill" style={{ width: `${progress.progressPct}%` }} />
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+                      <span
+                        className="session-token-count"
+                        title={`Ran for ${formatDurationSeconds(session.run_duration_seconds ?? 0)}`}
+                      >
+                        {formatTokenCount(session.total_tokens ?? 0)}
+                      </span>
+                      <span className="session-date">{formatDate(session.updated_at)}</span>
+                    </div>
+                    <div className="session-actions">
+                      {session.status === 'queued' ? (
+                        <button
+                          className="session-play-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleStartQueuedSession(session);
+                          }}
+                          title="Start session"
+                          aria-label={`Start ${formatSessionTitle(session)}`}
+                          disabled={startingSessionID === session.id}
+                        >
+                          ▶
+                        </button>
+                      ) : (
+                        <button
+                          className="session-duplicate-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDuplicateSession(session);
+                          }}
+                          title="Duplicate session"
+                          aria-label={`Duplicate ${formatSessionTitle(session)}`}
+                          disabled={duplicatingSessionID === session.id}
+                        >
+                          ↻
+                        </button>
+                      )}
+                      <button
+                        className="session-delete-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleDeleteSession(session.id);
+                        }}
+                        title="Delete session"
+                        aria-label={`Delete ${formatSessionTitle(session)}`}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
 
   if (isLoadingProject) {
     return (
@@ -2628,28 +2703,6 @@ function ProjectView() {
               Change folder
             </button>
           ) : null}
-          {rootFolder && isGitRepo ? (
-            <button
-              type="button"
-              className="settings-save-btn"
-              onClick={() => void openCommitDialog()}
-              disabled={isLoadingGitStatus || isCommitting}
-              title="Commit changed files"
-            >
-              {isLoadingGitStatus ? 'Loading Git...' : `Commit (${gitChangedFiles.length})`}
-            </button>
-          ) : null}
-          {rootFolder && !isGitRepo ? (
-            <button
-              type="button"
-              className="settings-save-btn"
-              onClick={openGitInitDialog}
-              disabled={isLoadingGitStatus || isInitializingGit}
-              title="Initialize Git repository for this folder"
-            >
-              {isInitializingGit ? 'Initializing Git...' : 'Init Git'}
-            </button>
-          ) : null}
           {!project.is_system && (
             <button
               type="button"
@@ -2679,651 +2732,585 @@ function ProjectView() {
       ) : null}
 
       <div className="page-content project-view-content">
-        {/* Files Section */}
-        <div className="project-files-section">
-          {!rootFolder ? (
-            <div className="project-files-empty">
-              <p>No folder configured for this project.</p>
-              <p>Configure a folder to browse and edit files.</p>
-              <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
-                Configure folder
-              </button>
-            </div>
-          ) : (
-            <div
-              className="mind-layout"
-              style={
-                {
-                  '--mind-tree-width': `${treePanelWidth}px`,
-                } as CSSProperties
-              }
-            >
-              <div
-                className={`mind-tree-panel ${dropTargetPath === '' ? 'mind-tree-drop-target' : ''}`}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (draggedFilePath) {
-                    const targetPath = '';
-                    const draggedDir = dirname(draggedFilePath);
-                    if (draggedDir !== targetPath) {
-                      setDropTargetPath(targetPath);
-                    }
-                  }
-                }}
-                onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                    if (dropTargetPath === '') {
-                      setDropTargetPath(null);
-                    }
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (draggedFilePath) {
-                    const draggedDir = dirname(draggedFilePath);
-                    if (draggedDir !== '') {
-                      void handleFileDrop(draggedFilePath, '');
-                    }
-                  }
-                  setDropTargetPath(null);
-                }}
-              >
-                <div className="mind-tree-toolbar">
-                  <button type="button" className="settings-add-btn" onClick={() => void createNewFile()} disabled={isSavingFile}>
-                    New file
-                  </button>
-                  <button type="button" className="settings-add-btn" onClick={() => void createNewFolder()}>
-                    New folder
-                  </button>
-                </div>
-                {renderTree('')}
+        <div className="project-view-tabs" role="tablist" aria-label="Project workflow views">
+          <button type="button" role="tab" aria-selected={activeTab === 'explorer'} className={`project-view-tab ${activeTab === 'explorer' ? 'active' : ''}`} onClick={() => setActiveTab('explorer')}>
+            Explorer
+          </button>
+          <button type="button" role="tab" aria-selected={activeTab === 'tasks'} className={`project-view-tab ${activeTab === 'tasks' ? 'active' : ''}`} onClick={() => setActiveTab('tasks')}>
+            Tasks
+          </button>
+          <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`project-view-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
+            Sessions ({sessions.length})
+          </button>
+          <button type="button" role="tab" aria-selected={activeTab === 'git'} className={`project-view-tab ${activeTab === 'git' ? 'active' : ''}`} onClick={() => setActiveTab('git')}>
+            Git ({gitChangedFiles.length})
+          </button>
+        </div>
+
+        {activeTab === 'explorer' ? (
+          <div className="project-files-section">
+            {!rootFolder ? (
+              <div className="project-files-empty">
+                <p>No folder configured for this project.</p>
+                <p>Configure a folder to browse and edit files.</p>
+                <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+                  Configure folder
+                </button>
               </div>
+            ) : (
               <div
-                className="mind-tree-resize-handle"
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize file tree panel"
-                onPointerDown={handleStartTreeResize}
-              />
-              <div className="mind-viewer-panel">
-                <div className="mind-viewer-header">
-                  <div className="mind-viewer-path">{selectedFilePath || 'Select a file from the tree'}</div>
-                  <div className="mind-viewer-mode">
-                    {selectedFilePath ? (
-                      <button
-                        type="button"
-                        className="mind-create-session-btn"
-                        onClick={() => openSessionDialogForPath('file', selectedFilePath)}
-                        title="Create session for this file"
-                      >
-                        💭 Session
-                      </button>
-                    ) : null}
-                    {selectedFilePath ? (
-                      <div className="mind-file-actions-menu" ref={fileActionsMenuRef}>
+                className="mind-layout"
+                style={
+                  {
+                    '--mind-tree-width': `${treePanelWidth}px`,
+                  } as CSSProperties
+                }
+              >
+                <div
+                  className={`mind-tree-panel ${dropTargetPath === '' ? 'mind-tree-drop-target' : ''}`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (draggedFilePath) {
+                      const targetPath = '';
+                      const draggedDir = dirname(draggedFilePath);
+                      if (draggedDir !== targetPath) {
+                        setDropTargetPath(targetPath);
+                      }
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      if (dropTargetPath === '') {
+                        setDropTargetPath(null);
+                      }
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (draggedFilePath) {
+                      const draggedDir = dirname(draggedFilePath);
+                      if (draggedDir !== '') {
+                        void handleFileDrop(draggedFilePath, '');
+                      }
+                    }
+                    setDropTargetPath(null);
+                  }}
+                >
+                  <div className="mind-tree-toolbar">
+                    <button type="button" className="settings-add-btn" onClick={() => void createNewFile()} disabled={isSavingFile}>
+                      New file
+                    </button>
+                    <button type="button" className="settings-add-btn" onClick={() => void createNewFolder()}>
+                      New folder
+                    </button>
+                  </div>
+                  {renderTree('')}
+                </div>
+                <div
+                  className="mind-tree-resize-handle"
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize file tree panel"
+                  onPointerDown={handleStartTreeResize}
+                />
+                <div className="mind-viewer-panel">
+                  <div className="mind-viewer-header">
+                    <div className="mind-viewer-path">{selectedFilePath || 'Select a file from the tree'}</div>
+                    <div className="mind-viewer-mode">
+                      {selectedFilePath ? (
                         <button
                           type="button"
-                          className="mind-file-actions-trigger"
-                          onClick={() => setIsFileActionsMenuOpen((prev) => !prev)}
-                          title="Use this file..."
-                          aria-haspopup="menu"
-                          aria-expanded={isFileActionsMenuOpen}
+                          className="mind-create-session-btn"
+                          onClick={() => openSessionDialogForPath('file', selectedFilePath)}
+                          title="Create session for this file"
                         >
-                          ⋯
+                          💭 Session
                         </button>
-                        {isFileActionsMenuOpen ? (
-                          <div className="mind-file-actions-dropdown" role="menu">
-                            <button
-                              type="button"
-                              className="mind-file-actions-item"
-                              onClick={() => void addSelectedFileToAgentInstructions()}
-                              disabled={isAddingAgentInstructionFile || isSelectedFileAgentInstruction}
-                              title="Add this file as a global Agent Instructions file block"
-                            >
-                              {isAddingAgentInstructionFile
-                                ? 'Adding...'
-                                : isSelectedFileAgentInstruction
-                                  ? 'In Agent Instructions'
-                                  : 'Use for Agent Instructions'}
-                            </button>
-                            <button
-                              type="button"
-                              className="mind-file-actions-item"
-                              onClick={addSelectedFileToRecurringJob}
-                              title="Create a recurring job prefilled to use this file"
-                            >
-                              Use in Recurring Job
-                            </button>
-                          </div>
-                        ) : null}
+                      ) : null}
+                      {selectedFilePath ? (
+                        <div className="mind-file-actions-menu" ref={fileActionsMenuRef}>
+                          <button
+                            type="button"
+                            className="mind-file-actions-trigger"
+                            onClick={() => setIsFileActionsMenuOpen((prev) => !prev)}
+                            title="Use this file..."
+                            aria-haspopup="menu"
+                            aria-expanded={isFileActionsMenuOpen}
+                          >
+                            ⋯
+                          </button>
+                          {isFileActionsMenuOpen ? (
+                            <div className="mind-file-actions-dropdown" role="menu">
+                              <button
+                                type="button"
+                                className="mind-file-actions-item"
+                                onClick={() => void addSelectedFileToAgentInstructions()}
+                                disabled={isAddingAgentInstructionFile || isSelectedFileAgentInstruction}
+                                title="Add this file as a global Agent Instructions file block"
+                              >
+                                {isAddingAgentInstructionFile
+                                  ? 'Adding...'
+                                  : isSelectedFileAgentInstruction
+                                    ? 'In Agent Instructions'
+                                    : 'Use for Agent Instructions'}
+                              </button>
+                              <button
+                                type="button"
+                                className="mind-file-actions-item"
+                                onClick={addSelectedFileToRecurringJob}
+                                title="Create a recurring job prefilled to use this file"
+                              >
+                                Use in Recurring Job
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {selectedFilePath && hasUnsavedChanges ? (
+                        <button
+                          type="button"
+                          className="settings-save-btn"
+                          onClick={() => void saveCurrentFile()}
+                          disabled={isLoadingFile || isSavingFile || isDeletingFile}
+                          title="Save changes"
+                        >
+                          {isSavingFile ? 'Saving...' : 'Save'}
+                        </button>
+                      ) : null}
+                      {selectedFilePath ? (
+                        <button
+                          type="button"
+                          className="mind-delete-file-btn"
+                          onClick={() => void deleteCurrentFile()}
+                          disabled={isLoadingFile || isSavingFile || isDeletingFile}
+                          title="Delete this file"
+                        >
+                          {isDeletingFile ? 'Deleting...' : 'Delete'}
+                        </button>
+                      ) : null}
+                      <div className="mind-mode-tabs" role="tablist" aria-label="File viewer mode">
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={markdownMode === 'preview'}
+                          className={`mind-mode-tab ${markdownMode === 'preview' ? 'active' : ''}`}
+                          onClick={() => setMarkdownMode('preview')}
+                          disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
+                          title="Markdown preview"
+                        >
+                          Preview
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={markdownMode === 'source'}
+                          className={`mind-mode-tab ${markdownMode === 'source' ? 'active' : ''}`}
+                          onClick={() => setMarkdownMode('source')}
+                          disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
+                          title="Edit markdown source"
+                        >
+                          Edit
+                        </button>
                       </div>
-                    ) : null}
-                    {selectedFilePath && hasUnsavedChanges ? (
-                      <button
-                        type="button"
-                        className="settings-save-btn"
-                        onClick={() => void saveCurrentFile()}
-                        disabled={isLoadingFile || isSavingFile || isDeletingFile}
-                        title="Save changes"
-                      >
-                        {isSavingFile ? 'Saving...' : 'Save'}
-                      </button>
-                    ) : null}
-                    {selectedFilePath ? (
-                      <button
-                        type="button"
-                        className="mind-delete-file-btn"
-                        onClick={() => void deleteCurrentFile()}
-                        disabled={isLoadingFile || isSavingFile || isDeletingFile}
-                        title="Delete this file"
-                      >
-                        {isDeletingFile ? 'Deleting...' : 'Delete'}
-                      </button>
-                    ) : null}
-                    <div className="mind-mode-tabs" role="tablist" aria-label="File viewer mode">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={markdownMode === 'kanban'}
-                        className={`mind-mode-tab ${markdownMode === 'kanban' ? 'active' : ''}`}
-                        onClick={() => setMarkdownMode('kanban')}
-                        disabled={!selectedFilePath || isLoadingFile || isDeletingFile || !canUseKanban}
-                        title={canUseKanban ? 'Task board view' : 'Kanban mode is available for TODO.md or to-do.md'}
-                      >
-                        Kanban
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={markdownMode === 'preview'}
-                        className={`mind-mode-tab ${markdownMode === 'preview' ? 'active' : ''}`}
-                        onClick={() => setMarkdownMode('preview')}
-                        disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
-                        title="Markdown preview"
-                      >
-                        Preview
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={markdownMode === 'source'}
-                        className={`mind-mode-tab ${markdownMode === 'source' ? 'active' : ''}`}
-                        onClick={() => setMarkdownMode('source')}
-                        disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
-                        title="Edit markdown source"
-                      >
-                        Edit
-                      </button>
                     </div>
                   </div>
-                </div>
 
-                <div className="mind-viewer-body">
-                  {isLoadingFile ? <div className="sessions-loading">Loading file...</div> : null}
-                  {!isLoadingFile && !selectedFilePath ? (
-                    <EmptyState className="sessions-empty project-viewer-empty">
-                      <div className="project-viewer-empty-icon" aria-hidden="true">{viewerPlaceholder.icon}</div>
-                      <EmptyStateTitle>{viewerPlaceholder.title}</EmptyStateTitle>
-                      <EmptyStateHint>{viewerPlaceholder.hint}</EmptyStateHint>
-                    </EmptyState>
-                  ) : null}
-                  {!isLoadingFile && selectedFilePath && markdownMode === 'source' ? (
-                    <textarea
-                      className="mind-markdown-editor"
-                      value={selectedFileContent}
-                      onChange={(event) => setSelectedFileContent(event.target.value)}
-                      disabled={isSavingFile}
-                      spellCheck={false}
-                    />
-                  ) : null}
-                  {!isLoadingFile && selectedFilePath && markdownMode === 'preview' ? (
-                    <div className="mind-markdown-preview" onClick={(event) => void handlePreviewClick(event)} dangerouslySetInnerHTML={{ __html: markdownHtml }} />
-                  ) : null}
-                  {!isLoadingFile && selectedFilePath && markdownMode === 'kanban' && !canUseKanban ? (
-                    <div className="mind-todo-empty">
-                      Kanban mode is only available for files named TODO.md or to-do.md.
-                    </div>
-                  ) : null}
-                  {!isLoadingFile && selectedFilePath && markdownMode === 'kanban' && canUseKanban ? (
-                    <div className="mind-todo-board">
-                      {todoBoard.columns.map((column, columnIndex) => (
-                        <div key={column.id} className="mind-todo-column">
-                          <div className="mind-todo-column-header">
-                            <h3>{column.title}</h3>
-                            <button
-                              type="button"
-                              className="mind-todo-add-btn"
-                              onClick={() => void handleAddTaskToColumn(column)}
-                              disabled={isUpdatingTodoBoard || isSavingFile}
-                              title={`Add task to ${column.title}`}
-                            >
-                              + Task
-                            </button>
-                          </div>
-                          <div className="mind-todo-column-body">
-                            {column.tasks.length === 0 ? (
-                              <div className="mind-todo-empty">No tasks</div>
-                            ) : null}
-                            {column.tasks.map((task) => {
-                              const taskID = `${column.id}:${task.id}`;
-                              return (
-                                <article key={task.id} className="mind-todo-card">
-                                  <div className="mind-todo-card-title">{task.text}</div>
-                                  <div className="mind-todo-card-meta">Line {task.lineIndex + 1}</div>
-                                  <div className="mind-todo-card-actions">
-                                    {columnIndex > 0 ? (
-                                      <button
-                                        type="button"
-                                        className="mind-todo-action-btn"
-                                        onClick={() => void handleMoveTask(task, todoBoard.columns[columnIndex - 1])}
-                                        disabled={isUpdatingTodoBoard}
-                                        title="Move left"
-                                      >
-                                        ←
-                                      </button>
-                                    ) : null}
-                                    {columnIndex < todoBoard.columns.length - 1 ? (
-                                      <button
-                                        type="button"
-                                        className="mind-todo-action-btn"
-                                        onClick={() => void handleMoveTask(task, todoBoard.columns[columnIndex + 1])}
-                                        disabled={isUpdatingTodoBoard}
-                                        title="Move right"
-                                      >
-                                        →
-                                      </button>
-                                    ) : null}
-                                    <button
-                                      type="button"
-                                      className="mind-todo-action-btn"
-                                      onClick={() => void handleDeleteTodoTask(task)}
-                                      disabled={isUpdatingTodoBoard}
-                                      title="Delete task"
-                                    >
-                                      Delete
-                                    </button>
-                                    {task.linkedFilePath !== '' ? (
-                                      <button
-                                        type="button"
-                                        className="mind-todo-action-btn"
-                                        onClick={() => void handleOpenTodoTaskFile(task.linkedFilePath)}
-                                        title="Open linked task file"
-                                      >
-                                        File
-                                      </button>
-                                    ) : null}
-                                    <button
-                                      type="button"
-                                      className="mind-todo-action-btn primary"
-                                      onClick={() => void handleStartTaskSession(task, column)}
-                                      disabled={startingTaskSessionID === taskID}
-                                      title="Start a new session for this task"
-                                    >
-                                      {startingTaskSessionID === taskID ? 'Starting...' : 'Session'}
-                                    </button>
-                                  </div>
-                                </article>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
+                  <div className="mind-viewer-body">
+                    {isLoadingFile ? <div className="sessions-loading">Loading file...</div> : null}
+                    {!isLoadingFile && !selectedFilePath ? (
+                      <EmptyState className="sessions-empty project-viewer-empty">
+                        <div className="project-viewer-empty-icon" aria-hidden="true">{viewerPlaceholder.icon}</div>
+                        <EmptyStateTitle>{viewerPlaceholder.title}</EmptyStateTitle>
+                        <EmptyStateHint>{viewerPlaceholder.hint}</EmptyStateHint>
+                      </EmptyState>
+                    ) : null}
+                    {!isLoadingFile && selectedFilePath && markdownMode === 'source' ? (
+                      <textarea
+                        className="mind-markdown-editor"
+                        value={selectedFileContent}
+                        onChange={(event) => setSelectedFileContent(event.target.value)}
+                        disabled={isSavingFile}
+                        spellCheck={false}
+                      />
+                    ) : null}
+                    {!isLoadingFile && selectedFilePath && markdownMode === 'preview' ? (
+                      <div className="mind-markdown-preview" onClick={(event) => void handlePreviewClick(event)} dangerouslySetInnerHTML={{ __html: markdownHtml }} />
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        ) : null}
 
-        {/* Sessions Section (Collapsible) */}
-        <div className={`project-sessions-section ${sessionsCollapsed ? 'collapsed' : ''}`}>
-          <button
-            type="button"
-            className="project-sessions-header"
-            onClick={() => setSessionsCollapsed(!sessionsCollapsed)}
-            aria-expanded={!sessionsCollapsed}
-          >
-            <span className="project-sessions-toggle">{sessionsCollapsed ? '▶' : '▼'}</span>
-            <span className="project-sessions-title">Sessions ({sessions.length})</span>
-          </button>
-          
-          {!sessionsCollapsed && (
-            <div className="project-sessions-body">
-              {isLoadingSessions ? (
-                <div className="sessions-loading">Loading sessions...</div>
-              ) : sessions.length === 0 ? (
-                <EmptyState className="sessions-empty">
-                  <EmptyStateTitle>No sessions yet.</EmptyStateTitle>
-                  <EmptyStateHint>Start speaking or typing below to create one.</EmptyStateHint>
-                </EmptyState>
-              ) : (
-                <div className="sessions-list project-sessions-list">
-                  {sessionRows.map(({ session, depth }) => {
-                    const isChild = isChildSession(session);
-                    const linkLabel = linkTypeLabel(session);
-                    return (
-                    <div
-                      key={session.id}
-                      className={`session-card ${isChild ? 'session-child' : ''}`}
-                      style={depth > 0 ? { marginLeft: `${Math.min(depth, 6) * 18}px` } : undefined}
-                      onClick={() => handleSelectSession(session.id)}
-                    >
-                      <div className="session-card-row">
-                        <div className="session-name-wrap">
-                          {isChild && (
-                            <span
-                              className="session-hierarchy-marker"
-                              title="Sub-agent session"
-                              aria-label="Sub-agent session"
-                            >
-                              ↳
-                            </span>
-                          )}
-                          <span
-                            className={`session-status-dot status-${session.status}`}
-                            title={`Status: ${formatStatusLabel(session.status)}`}
-                            aria-label={`Status: ${formatStatusLabel(session.status)}`}
-                          />
-                          <h3 className="session-name">{formatSessionTitle(session)}</h3>
-                          {linkLabel ? <span className="session-link-type-chip">{linkLabel}</span> : null}
-                        </div>
-                        <div className="session-row-right">
-                          <div className="session-meta">
-                            {session.task_progress && (() => {
-                              const progress = parseTaskProgress(session.task_progress);
-                              if (progress.total > 0) {
-                                return (
-                                  <span
-                                    className="session-task-progress-bar"
-                                    title={`${progress.completed}/${progress.total} tasks (${progress.progressPct}%)`}
+        {activeTab === 'tasks' ? (
+          <div className="project-tab-panel">
+            {!rootFolder ? (
+              <div className="project-files-empty">
+                <p>No folder configured for this project.</p>
+                <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+                  Configure folder
+                </button>
+              </div>
+            ) : !activeTodoFilePath ? (
+              <EmptyState className="sessions-empty project-task-empty">
+                <EmptyStateTitle>No `todo.md` file found.</EmptyStateTitle>
+                <EmptyStateHint>Create one to use the Kanban board.</EmptyStateHint>
+                <button type="button" className="settings-add-btn" onClick={() => void createTodoFile()}>
+                  Create todo.md
+                </button>
+              </EmptyState>
+            ) : isLoadingFile || selectedFilePath !== activeTodoFilePath ? (
+              <div className="sessions-loading">Loading TODO board...</div>
+            ) : (
+              <div className="project-task-board-wrap">
+                <div className="project-task-header">
+                  <h2>{activeTodoFilePath}</h2>
+                  <div className="project-task-header-actions">
+                    <button type="button" className="settings-add-btn" onClick={() => setActiveTab('explorer')}>
+                      Open in Explorer
+                    </button>
+                    <button type="button" className="mind-create-session-btn" onClick={() => openSessionDialogForPath('file', activeTodoFilePath)}>
+                      💭 Session
+                    </button>
+                  </div>
+                </div>
+                <div className="mind-todo-board">
+                  {todoBoard.columns.map((column, columnIndex) => (
+                    <div key={column.id} className="mind-todo-column">
+                      <div className="mind-todo-column-header">
+                        <h3>{column.title}</h3>
+                        <button
+                          type="button"
+                          className="mind-todo-add-btn"
+                          onClick={() => void handleAddTaskToColumn(column)}
+                          disabled={isUpdatingTodoBoard || isSavingFile}
+                          title={`Add task to ${column.title}`}
+                        >
+                          + Task
+                        </button>
+                      </div>
+                      <div className="mind-todo-column-body">
+                        {column.tasks.length === 0 ? <div className="mind-todo-empty">No tasks</div> : null}
+                        {column.tasks.map((task) => {
+                          const taskID = `${column.id}:${task.id}`;
+                          return (
+                            <article key={task.id} className="mind-todo-card">
+                              <div className="mind-todo-card-title">{task.text}</div>
+                              <div className="mind-todo-card-meta">Line {task.lineIndex + 1}</div>
+                              <div className="mind-todo-card-actions">
+                                {columnIndex > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="mind-todo-action-btn"
+                                    onClick={() => void handleMoveTask(task, todoBoard.columns[columnIndex - 1])}
+                                    disabled={isUpdatingTodoBoard}
+                                    title="Move left"
                                   >
-                                    <span className="session-task-progress-fill" style={{ width: `${progress.progressPct}%` }} />
-                                  </span>
-                                );
-                              }
-                              return null;
-                            })()}
-                            <span
-                              className="session-token-count"
-                              title={`Ran for ${formatDurationSeconds(session.run_duration_seconds ?? 0)}`}
-                            >
-                              {formatTokenCount(session.total_tokens ?? 0)}
-                            </span>
-                            <span className="session-date">{formatDate(session.updated_at)}</span>
-                          </div>
-                          <div className="session-actions">
-                            {session.status === 'queued' ? (
-                              <button
-                                className="session-play-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleStartQueuedSession(session);
-                                }}
-                                title="Start session"
-                                aria-label={`Start ${formatSessionTitle(session)}`}
-                                disabled={startingSessionID === session.id}
-                              >
-                                ▶
-                              </button>
-                            ) : (
-                              <button
-                                className="session-duplicate-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleDuplicateSession(session);
-                                }}
-                                title="Duplicate session"
-                                aria-label={`Duplicate ${formatSessionTitle(session)}`}
-                                disabled={duplicatingSessionID === session.id}
-                              >
-                                ↻
-                              </button>
-                            )}
-                            <button
-                              className="session-delete-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleDeleteSession(session.id);
-                              }}
-                              title="Delete session"
-                              aria-label={`Delete ${formatSessionTitle(session)}`}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
+                                    ←
+                                  </button>
+                                ) : null}
+                                {columnIndex < todoBoard.columns.length - 1 ? (
+                                  <button
+                                    type="button"
+                                    className="mind-todo-action-btn"
+                                    onClick={() => void handleMoveTask(task, todoBoard.columns[columnIndex + 1])}
+                                    disabled={isUpdatingTodoBoard}
+                                    title="Move right"
+                                  >
+                                    →
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="mind-todo-action-btn"
+                                  onClick={() => void handleDeleteTodoTask(task)}
+                                  disabled={isUpdatingTodoBoard}
+                                  title="Delete task"
+                                >
+                                  Delete
+                                </button>
+                                {task.linkedFilePath !== '' ? (
+                                  <button
+                                    type="button"
+                                    className="mind-todo-action-btn"
+                                    onClick={() => void handleOpenTodoTaskFile(task.linkedFilePath)}
+                                    title="Open linked task file"
+                                  >
+                                    File
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="mind-todo-action-btn primary"
+                                  onClick={() => void handleStartTaskSession(task, column)}
+                                  disabled={startingTaskSessionID === taskID}
+                                  title="Start a new session for this task"
+                                >
+                                  {startingTaskSessionID === taskID ? 'Starting...' : 'Session'}
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
                       </div>
                     </div>
-                    );
-                  })}
+                  ))}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        ) : null}
 
-        {/* Sessions Composer - Always visible at bottom */}
-        <div className="project-sessions-composer">
-          {sessionContextMessage && (
-            <div className="session-context-section">
-              {isSessionContextExpanded ? (
+        {activeTab === 'sessions' ? (
+          <div className="project-tab-panel project-sessions-tab">
+            <div className="project-sessions-header-static">Sessions ({sessions.length})</div>
+            <div className="project-sessions-body">{sessionsListBlock}</div>
+          </div>
+        ) : null}
+
+        {activeTab === 'git' ? (
+          <div className="project-tab-panel project-git-tab">
+            {!rootFolder ? (
+              <div className="project-files-empty">
+                <p>No folder configured for this project.</p>
+                <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+                  Configure folder
+                </button>
+              </div>
+            ) : !isGitRepo ? (
+              <EmptyState className="sessions-empty">
+                <EmptyStateTitle>This folder is not a Git repository.</EmptyStateTitle>
+                <button type="button" className="settings-save-btn" onClick={openGitInitDialog} disabled={isLoadingGitStatus || isInitializingGit}>
+                  {isInitializingGit ? 'Initializing Git...' : 'Initialize Git'}
+                </button>
+              </EmptyState>
+            ) : (
+              <div className="project-git-panel">
+                <h2>Git Changes</h2>
+                {commitRepoLabel ? <p className="project-commit-target">Repository: {commitRepoLabel}</p> : null}
+                <p className="project-commit-summary">
+                  {commitDialogFiles.length > 0
+                    ? `${commitDialogFiles.length} changed file(s), ${stagedCommitFilesCount} staged`
+                    : 'No changed files.'}
+                </p>
                 <textarea
-                  className="mind-session-textarea context-textarea"
-                  value={sessionContextMessage}
-                  onChange={(event) => setSessionContextMessage(event.target.value)}
-                  disabled={isCreatingSession}
-                  placeholder="Generated context"
+                  className="project-commit-message"
+                  value={commitMessage}
+                  onChange={(event) => setCommitMessage(event.target.value)}
+                  placeholder="Commit message"
+                  rows={4}
+                  disabled={isCommitting || isPushing}
                 />
-              ) : null}
-              <div className="session-context-controls">
-                {sessionTargetLabel && (
-                  <span className="session-target-label">
-                    Creating session for {sessionTargetLabel}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  className="mind-session-context-toggle"
-                  onClick={() => setIsSessionContextExpanded((prev) => !prev)}
-                  disabled={isCreatingSession}
-                >
-                  {isSessionContextExpanded ? 'Hide context' : 'Show context'}
-                </button>
-                <button
-                  type="button"
-                  className="settings-remove-btn"
-                  onClick={() => {
-                    setSessionContextMessage('');
-                    setSessionTargetLabel('');
-                    setIsSessionContextExpanded(false);
-                  }}
-                  disabled={isCreatingSession}
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-          )}
-          <ChatInput
-            onSend={handleStartSession}
-            onQueue={handleQueueSession}
-            disabled={isCreatingSession || isQueuingSession}
-            autoFocus={!rootFolder}
-            showQueueButton={true}
-            placeholder={sessionTargetLabel
-              ? `Describe the task for ${sessionTargetLabel}...`
-              : 'Start a new chat...'}
-            actionControls={
-              subAgents.length > 0 ? (
-                <div className="sessions-new-chat-controls">
-                  <label className="chat-provider-select">
-                    <select
-                      value={selectedAgentValue}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val.startsWith('subagent:')) {
-                          setSelectedAgentValue(val);
-                        } else {
-                          setSelectedAgentValue('main');
-                        }
-                      }}
-                      title="Agent"
-                      aria-label="Agent"
-                    >
-                      <option value="main">Main Agent</option>
-                      {subAgents.map((sa) => (
-                        <option key={sa.id} value={`subagent:${sa.id}`}>
-                          {sa.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                <div className="project-commit-controls">
+                  <button
+                    type="button"
+                    className="settings-add-btn"
+                    onClick={() => void handleGenerateCommitMessage()}
+                    disabled={isCommitting || isPushing || isGeneratingCommitMessage || commitDialogFiles.length === 0}
+                  >
+                    {isGeneratingCommitMessage ? 'Generating...' : 'Suggest message'}
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-add-btn"
+                    onClick={() => void handleStageAllFiles()}
+                    disabled={isCommitting || isPushing || isStagingAll || commitDialogFiles.filter((f) => !f.staged).length === 0}
+                  >
+                    {isStagingAll ? 'Adding...' : 'Add All'}
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-add-btn"
+                    onClick={() => void loadGitStatus()}
+                    disabled={isLoadingGitStatus || isCommitting || isPushing}
+                  >
+                    Refresh
+                  </button>
                 </div>
-              ) : null
-            }
-          />
-        </div>
-      </div>
-
-      {/* Git Commit Dialog */}
-      {isCommitDialogOpen ? (
-        <div className="mind-picker-overlay" role="dialog" aria-modal="true" aria-label="Commit changes">
-          <div className="mind-picker-dialog project-commit-dialog">
-            <h2>Commit Changes</h2>
-            {commitRepoLabel ? <p className="project-commit-target">Repository: {commitRepoLabel}</p> : null}
-            <p className="project-commit-summary">
-              {commitDialogFiles.length > 0
-                ? `${commitDialogFiles.length} changed file(s), ${stagedCommitFilesCount} staged`
-                : 'No changed files.'}
-            </p>
-            <textarea
-              className="project-commit-message"
-              value={commitMessage}
-              onChange={(event) => setCommitMessage(event.target.value)}
-              placeholder="Commit message"
-              rows={4}
-              disabled={isCommitting || isPushing}
-            />
-            <div className="project-commit-controls">
-              <button
-                type="button"
-                className="settings-add-btn"
-                onClick={() => void handleGenerateCommitMessage()}
-                disabled={isCommitting || isPushing || isGeneratingCommitMessage || commitDialogFiles.length === 0}
-              >
-                {isGeneratingCommitMessage ? 'Generating...' : 'Suggest message'}
-              </button>
-              <button
-                type="button"
-                className="settings-add-btn"
-                onClick={() => void handleStageAllFiles()}
-                disabled={isCommitting || isPushing || isStagingAll || commitDialogFiles.filter((f) => !f.staged).length === 0}
-              >
-                {isStagingAll ? 'Adding...' : 'Add All'}
-              </button>
-            </div>
-            <div className="project-commit-content">
-              <div className="project-commit-files">
-                {commitDialogFiles.length === 0 ? (
-                  <div className="project-commit-empty">Working tree is clean.</div>
-                ) : (
-                  commitDialogFiles.map((file) => (
-                    <div
-                      key={`${file.status}-${file.path}`}
-                      className={`project-commit-file ${file.staged ? 'staged' : 'unstaged'} ${file.untracked ? 'untracked' : ''} ${selectedCommitFilePath === file.path ? 'selected' : ''}`}
-                      onClick={() => setSelectedCommitFilePath(file.path)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          setSelectedCommitFilePath(file.path);
-                        }
-                      }}
-                    >
-                      <code className="project-commit-status">{file.status || '??'}</code>
-                      <span className="project-commit-path">{file.path}</span>
-                      <span className={`project-commit-state-badge ${file.staged ? 'staged' : 'not-staged'}`}>
-                        {file.staged ? 'Staged' : 'Not staged'}
-                      </span>
-                      {file.untracked ? <span className="project-commit-state-badge untracked">Untracked</span> : null}
-                      <button
-                        type="button"
-                        className="project-commit-toggle-btn"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleToggleGitFileStage(file);
-                        }}
-                        disabled={isCommitting || isPushing || gitFileActionPath === file.path}
-                      >
-                        {gitFileActionPath === file.path
-                          ? 'Updating...'
-                          : file.staged
-                            ? 'Remove'
-                            : 'Add'}
-                      </button>
-                      <button
-                        type="button"
-                        className="project-commit-discard-btn"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleDiscardGitFileChanges(file);
-                        }}
-                        disabled={isCommitting || isPushing || gitDiscardPath === file.path}
-                        title="Discard changes in this file"
-                      >
-                        {gitDiscardPath === file.path ? 'Discarding...' : 'Discard'}
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="project-commit-diff">
-                <div className="project-commit-diff-header">
-                  {selectedCommitFilePath || 'Select a file'}
-                </div>
-                {isLoadingCommitFileDiff ? (
-                  <div className="project-commit-diff-empty">Loading diff...</div>
-                ) : (
-                  <div className="project-commit-diff-body">
-                    {parsedCommitDiffFile ? (
-                      <FileDiff
-                        fileDiff={parsedCommitDiffFile}
-                        options={commitDiffOptions}
-                        className="project-commit-diff-renderer"
-                      />
+                <div className="project-commit-content">
+                  <div className="project-commit-files">
+                    {commitDialogFiles.length === 0 ? (
+                      <div className="project-commit-empty">Working tree is clean.</div>
                     ) : (
-                      <div className="project-commit-diff-empty">No diff preview.</div>
+                      commitDialogFiles.map((file) => (
+                        <div
+                          key={`${file.status}-${file.path}`}
+                          className={`project-commit-file ${file.staged ? 'staged' : 'unstaged'} ${file.untracked ? 'untracked' : ''} ${selectedCommitFilePath === file.path ? 'selected' : ''}`}
+                          onClick={() => setSelectedCommitFilePath(file.path)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSelectedCommitFilePath(file.path);
+                            }
+                          }}
+                        >
+                          <code className="project-commit-status">{file.status || '??'}</code>
+                          <span className="project-commit-path">{file.path}</span>
+                          <span className={`project-commit-state-badge ${file.staged ? 'staged' : 'not-staged'}`}>
+                            {file.staged ? 'Staged' : 'Not staged'}
+                          </span>
+                          {file.untracked ? <span className="project-commit-state-badge untracked">Untracked</span> : null}
+                          <button
+                            type="button"
+                            className="project-commit-toggle-btn"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleToggleGitFileStage(file);
+                            }}
+                            disabled={isCommitting || isPushing || gitFileActionPath === file.path}
+                          >
+                            {gitFileActionPath === file.path
+                              ? 'Updating...'
+                              : file.staged
+                                ? 'Remove'
+                                : 'Add'}
+                          </button>
+                          <button
+                            type="button"
+                            className="project-commit-discard-btn"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleDiscardGitFileChanges(file);
+                            }}
+                            disabled={isCommitting || isPushing || gitDiscardPath === file.path}
+                            title="Discard changes in this file"
+                          >
+                            {gitDiscardPath === file.path ? 'Discarding...' : 'Discard'}
+                          </button>
+                        </div>
+                      ))
                     )}
                   </div>
-                )}
+                  <div className="project-commit-diff">
+                    <div className="project-commit-diff-header">
+                      {selectedCommitFilePath || 'Select a file'}
+                    </div>
+                    {isLoadingCommitFileDiff ? (
+                      <div className="project-commit-diff-empty">Loading diff...</div>
+                    ) : (
+                      <div className="project-commit-diff-body">
+                        {parsedCommitDiffFile ? (
+                          <FileDiff
+                            fileDiff={parsedCommitDiffFile}
+                            options={commitDiffOptions}
+                            className="project-commit-diff-renderer"
+                          />
+                        ) : (
+                          <div className="project-commit-diff-empty">No diff preview.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="project-git-actions">
+                  <button
+                    type="button"
+                    className="settings-add-btn"
+                    onClick={() => void handleCommitChanges()}
+                    disabled={isCommitting || isPushing || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
+                  >
+                    {isCommitting && !isPushing ? 'Committing...' : 'Commit'}
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-save-btn"
+                    onClick={() => void handleCommitAndPushChanges()}
+                    disabled={isCommitting || isPushing || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
+                  >
+                    {isCommitting && isPushing ? 'Committing & pushing...' : 'Commit & Push'}
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="mind-picker-actions">
-              <button
-                type="button"
-                className="settings-add-btn"
-                onClick={() => void handleCommitChanges()}
-                disabled={isCommitting || isPushing || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
-              >
-                {isCommitting && !isPushing ? 'Committing...' : 'Commit'}
-              </button>
-              <button
-                type="button"
-                className="settings-save-btn"
-                onClick={() => void handleCommitAndPushChanges()}
-                disabled={isCommitting || isPushing || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
-              >
-                {isCommitting && isPushing ? 'Committing & pushing...' : 'Commit & Push'}
-              </button>
-              <button type="button" className="settings-remove-btn" onClick={closeCommitDialog} disabled={isCommitting || isPushing}>
-                Cancel
-              </button>
-            </div>
+            )}
           </div>
-        </div>
-      ) : null}
+        ) : null}
+
+        {showSessionComposer ? (
+          <div className="project-sessions-composer">
+            {sessionContextMessage && (
+              <div className="session-context-section">
+                {isSessionContextExpanded ? (
+                  <textarea
+                    className="mind-session-textarea context-textarea"
+                    value={sessionContextMessage}
+                    onChange={(event) => setSessionContextMessage(event.target.value)}
+                    disabled={isCreatingSession}
+                    placeholder="Generated context"
+                  />
+                ) : null}
+                <div className="session-context-controls">
+                  {sessionTargetLabel && (
+                    <span className="session-target-label">
+                      Creating session for {sessionTargetLabel}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="mind-session-context-toggle"
+                    onClick={() => setIsSessionContextExpanded((prev) => !prev)}
+                    disabled={isCreatingSession}
+                  >
+                    {isSessionContextExpanded ? 'Hide context' : 'Show context'}
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-remove-btn"
+                    onClick={() => {
+                      setSessionContextMessage('');
+                      setSessionTargetLabel('');
+                      setIsSessionContextExpanded(false);
+                    }}
+                    disabled={isCreatingSession}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
+            <ChatInput
+              onSend={handleStartSession}
+              onQueue={handleQueueSession}
+              disabled={isCreatingSession || isQueuingSession}
+              autoFocus={!rootFolder}
+              showQueueButton={true}
+              placeholder={sessionTargetLabel
+                ? `Describe the task for ${sessionTargetLabel}...`
+                : 'Start a new chat...'}
+              actionControls={
+                subAgents.length > 0 ? (
+                  <div className="sessions-new-chat-controls">
+                    <label className="chat-provider-select">
+                      <select
+                        value={selectedAgentValue}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val.startsWith('subagent:')) {
+                            setSelectedAgentValue(val);
+                          } else {
+                            setSelectedAgentValue('main');
+                          }
+                        }}
+                        title="Agent"
+                        aria-label="Agent"
+                      >
+                        <option value="main">Main Agent</option>
+                        {subAgents.map((sa) => (
+                          <option key={sa.id} value={`subagent:${sa.id}`}>
+                            {sa.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ) : null
+              }
+            />
+          </div>
+        ) : null}
+      </div>
 
       {/* Git Init Dialog */}
       {isGitInitDialogOpen ? (
