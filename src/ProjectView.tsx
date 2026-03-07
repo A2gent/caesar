@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { PatchDiff } from '@pierre/diffs/react';
+import { FileDiff, type FileDiffMetadata } from '@pierre/diffs/react';
+import { parsePatchFiles } from '@pierre/diffs';
 import {
   browseMindDirectories,
   commitProjectGit,
@@ -1834,6 +1835,10 @@ function ProjectView() {
   const canUseKanban = isTodoFilePath(selectedFilePath);
   const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
   const commitDiffOptions = useMemo(() => ({
+    theme: {
+      light: 'pierre-light' as const,
+      dark: 'pierre-dark' as const,
+    },
     themeType: commitDiffThemeMode,
     diffStyle: 'unified' as const,
     diffIndicators: 'classic' as const,
@@ -1841,6 +1846,24 @@ function ProjectView() {
     lineDiffType: 'word' as const,
     overflow: 'scroll' as const,
   }), [commitDiffThemeMode]);
+  const parsedCommitDiffFile = useMemo<FileDiffMetadata | null>(() => {
+    if (!selectedCommitFileDiff) return null;
+    try {
+      const parsed = parsePatchFiles(selectedCommitFileDiff);
+      const files = parsed.flatMap((patch) => patch.files || []) as FileDiffMetadata[];
+      if (files.length === 0) return null;
+      if (files.length === 1) return files[0];
+      const normalizedPath = selectedCommitFilePath.replace(/^\.\/+/, '');
+      const byExactPath = files.find((file: FileDiffMetadata) => file.name === normalizedPath || file.prevName === normalizedPath);
+      if (byExactPath) return byExactPath;
+      const bySuffixPath = files.find((file: FileDiffMetadata) =>
+        file.name.endsWith(`/${normalizedPath}`) || (file.prevName || '').endsWith(`/${normalizedPath}`),
+      );
+      return bySuffixPath || files[0];
+    } catch {
+      return null;
+    }
+  }, [selectedCommitFileDiff, selectedCommitFilePath]);
 
   const persistTodoContent = useCallback(async (nextContent: string) => {
     if (!projectId || !selectedFilePath) return;
@@ -3264,9 +3287,9 @@ function ProjectView() {
                   <div className="project-commit-diff-empty">Loading diff...</div>
                 ) : (
                   <div className="project-commit-diff-body">
-                    {selectedCommitFileDiff ? (
-                      <PatchDiff
-                        patch={selectedCommitFileDiff}
+                    {parsedCommitDiffFile ? (
+                      <FileDiff
+                        fileDiff={parsedCommitDiffFile}
                         options={commitDiffOptions}
                         className="project-commit-diff-renderer"
                       />

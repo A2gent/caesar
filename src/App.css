@@ -6910,6 +6910,12 @@ input[type="checkbox"]:disabled {
 
 .project-commit-dialog {
   width: min(1240px, 96vw);
+  max-height: min(88vh, 980px);
+  overflow: auto;
+}
+
+.project-commit-dialog .mind-picker-actions {
+  justify-content: flex-end;
 }
 
 .project-commit-summary {
@@ -6951,6 +6957,7 @@ input[type="checkbox"]:disabled {
   border-radius: 8px;
   background: #0d1117;
   padding: 6px;
+  min-height: 0;
 }
 
 .project-commit-controls {
@@ -7003,7 +7010,13 @@ input[type="checkbox"]:disabled {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(520px, 1.6fr);
   gap: 10px;
-  min-height: 420px;
+  min-height: 0;
+  max-height: min(52vh, 620px);
+  overflow: hidden;
+}
+
+.project-commit-content > * {
+  min-height: 0;
 }
 
 .project-commit-empty {
@@ -7557,6 +7570,7 @@ input[type="checkbox"]:disabled {
   .project-commit-content {
     grid-template-columns: 1fr;
     min-height: 0;
+    max-height: min(48vh, 520px);
   }
   
   .project-sessions-body {
@@ -8644,6 +8658,21 @@ button.session-provider-chip:hover {
   border-color: #c9d3e2;
 }
 
+[data-theme='light'] .sidebar-agent-combo-dropdown {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .sidebar-agent-combo-option-btn {
+  background: #eef3fa;
+  border-color: #c9d3e2;
+  color: #223049;
+}
+
+[data-theme='light'] .sidebar-agent-combo-option-btn:hover {
+  background: #dde7f6;
+}
+
 [data-theme='light'] .sidebar-agent-combo-toggle:hover:not(:disabled),
 [data-theme='light'] .agent-url-combo-toggle:hover {
   background: #dde7f6;
@@ -8674,6 +8703,37 @@ button.session-provider-chip:hover {
 [data-theme='light'] .sessions-empty p,
 [data-theme='light'] .sidebar .session-item.empty {
   color: #55657d;
+}
+
+[data-theme='light'] .session-delete-btn,
+[data-theme='light'] .session-duplicate-btn {
+  background: #e6edf8;
+  border-color: #c9d3e2;
+  color: #273247;
+}
+
+[data-theme='light'] .session-duplicate-btn:hover {
+  background: #dbe7f8;
+  border-color: #8ea8cf;
+  color: #1f3556;
+}
+
+[data-theme='light'] .session-delete-btn:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+[data-theme='light'] .session-play-btn {
+  background: #e8f5ec;
+  border-color: #86c99a;
+  color: #1f6a33;
+}
+
+[data-theme='light'] .session-play-btn:hover {
+  background: #4caf50;
+  border-color: #4caf50;
+  color: #ffffff;
 }
 
 [data-theme='light'] .settings-add-btn,
@@ -8802,6 +8862,21 @@ button.session-provider-chip:hover {
 
 [data-theme='light'] .skill-card-title-row h3 {
   color: #162033;
+}
+
+[data-theme='light'] .skill-tool-details {
+  border-color: #c9d3e2;
+  background: #eef3fa;
+}
+
+[data-theme='light'] .skill-tool-details summary {
+  color: #223049;
+}
+
+[data-theme='light'] .skill-tool-schema {
+  border-color: #c9d3e2;
+  background: #f8fbff;
+  color: #3e5578;
 }
 
 [data-theme='light'] .a2a-agent-chips .integration-mode-chip,
@@ -9059,7 +9134,98 @@ button.session-provider-chip:hover {
   border-color: #c9d3e2;
 }
 
+[data-theme='light'] .page-content.project-view-content {
+  background: #f8fbff;
+}
+
+[data-theme='light'] .project-commit-files {
+  border-color: #c9d3e2;
+  background: #f8fbff;
+}
+
+[data-theme='light'] .project-commit-empty {
+  color: #55657d;
+}
+
+[data-theme='light'] .project-commit-file {
+  color: #1f2b40;
+}
+
+[data-theme='light'] .project-commit-status {
+  color: #1f6a33;
+}
+
+[data-theme='light'] .project-commit-path {
+  color: #1f2b40;
+}
+
+[data-theme='light'] .project-commit-file.selected {
+  outline-color: #2d5bdb;
+  background: rgba(45, 91, 219, 0.16);
+}
+
+[data-theme='light'] .project-commit-file.staged {
+  background: rgba(34, 197, 94, 0.14);
+}
+
+[data-theme='light'] .project-commit-file.unstaged {
+  background: rgba(148, 163, 184, 0.24);
+}
+
+[data-theme='light'] .project-commit-file.untracked {
+  border-color: #b08a37;
+}
+
+[data-theme='light'] .project-commit-file.selected.unstaged {
+  background: rgba(45, 91, 219, 0.18);
+}
+
+[data-theme='light'] .project-commit-file.selected .project-commit-path,
+[data-theme='light'] .project-commit-file.selected .project-commit-status,
+[data-theme='light'] .project-commit-file.selected .project-commit-state-badge {
+  color: #163468;
+}
+
+[data-theme='light'] .project-commit-state-badge {
+  border-color: #b9c6db;
+  color: #3f516c;
+  background: rgba(185, 198, 219, 0.24);
+}
+
+[data-theme='light'] .project-commit-state-badge.staged {
+  border-color: #7ab58a;
+  color: #1f5f36;
+  background: rgba(122, 181, 138, 0.2);
+}
+
+[data-theme='light'] .project-commit-state-badge.not-staged {
+  border-color: #a7b5ca;
+  color: #475a75;
+  background: rgba(167, 181, 202, 0.24);
+}
+
+[data-theme='light'] .project-commit-state-badge.untracked {
+  border-color: #b08a37;
+  color: #6f5318;
+  background: rgba(176, 138, 55, 0.2);
+}
+
+[data-theme='light'] .project-commit-file:hover {
+  background: #eef3fa;
+}
+
 [data-theme='light'] .project-sessions-header {
+  background: #f8fbff;
+  border-bottom-color: #d7deea;
+}
+
+[data-theme='light'] .project-sessions-header:hover {
+  background: #eef3fa;
+}
+
+[data-theme='light'] .project-sessions-body,
+[data-theme='light'] .project-sessions-composer {
+  background: #f8fbff;
   border-bottom-color: #d7deea;
 }
 
@@ -9077,6 +9243,201 @@ button.session-provider-chip:hover {
 [data-theme='light'] .project-sessions-list .session-card:hover {
   background: #eef3fa;
   border-color: #b8c5d9;
+}
+
+[data-theme='light'] .project-viewer-empty-icon {
+  border-color: #c9d3e2;
+  background: linear-gradient(180deg, #eef3fb 0%, #e3eaf6 100%);
+  color: #2a3a56;
+}
+
+[data-theme='light'] .task-prompt {
+  background: #eef3fa;
+  border-color: #c9d3e2;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .thinking-global-instructions {
+  border-color: #bfd0ea;
+  background: #eef4ff;
+}
+
+[data-theme='light'] .thinking-global-instructions-title {
+  color: #243a61;
+}
+
+[data-theme='light'] .thinking-global-instructions-body {
+  color: #3e5578;
+}
+
+[data-theme='light'] .thinking-global-instructions a {
+  color: #2d5bdb;
+}
+
+[data-theme='light'] .instruction-block {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .instruction-block-link {
+  color: #2d5bdb;
+}
+
+[data-theme='light'] .instruction-block-link:hover {
+  color: #244cb8;
+}
+
+[data-theme='light'] .instruction-block-enabled-toggle {
+  color: #4e6079;
+}
+
+[data-theme='light'] .instruction-block textarea,
+[data-theme='light'] .instruction-block input[type="text"],
+[data-theme='light'] .instruction-block-type-select {
+  background: #eef3fa;
+  border-color: #c9d3e2;
+  color: #111a29;
+}
+
+[data-theme='light'] .skill-category-section {
+  border-color: #c9d3e2;
+  background: #f8fbff;
+}
+
+[data-theme='light'] .skill-category-header {
+  background: #eef3fa;
+  border-bottom-color: #c9d3e2;
+}
+
+[data-theme='light'] .skill-category-title h3 {
+  color: #162033;
+}
+
+[data-theme='light'] .skill-category-description {
+  color: #55657d;
+}
+
+[data-theme='light'] .builtin-system-prompt {
+  border-color: #c9d3e2;
+  background: #f8fbff;
+}
+
+[data-theme='light'] .builtin-system-prompt summary {
+  color: #2d5bdb;
+}
+
+[data-theme='light'] .builtin-system-prompt-panel {
+  border-color: #c9d3e2;
+  background: #eef3fa;
+}
+
+[data-theme='light'] .builtin-system-prompt-panel h3 {
+  color: #162033;
+}
+
+[data-theme='light'] .builtin-system-prompt-panel pre {
+  color: #1f2b40;
+}
+
+[data-theme='light'] .success-banner {
+  background-color: rgba(22, 163, 74, 0.15);
+  color: #166534;
+  border-bottom-color: #16a34a;
+}
+
+[data-theme='light'] .a2a-security-warning {
+  border-color: rgba(220, 38, 38, 0.6);
+  background: rgba(254, 226, 226, 0.85);
+  color: #7f1d1d;
+}
+
+[data-theme='light'] .a2a-security-warning strong {
+  color: #991b1b;
+}
+
+[data-theme='light'] .instruction-total-tokens,
+[data-theme='light'] .instruction-block-token-count {
+  color: #1e3a8a;
+  border-color: #93a7d8;
+  background: #e6edff;
+}
+
+[data-theme='light'] .session-provider-chip {
+  background: #e0e9fb;
+  color: #223d72;
+}
+
+[data-theme='light'] .session-title {
+  color: #162033;
+}
+
+[data-theme='light'] .session-title-separator {
+  color: #6b7d96;
+}
+
+[data-theme='light'] .integration-connected-section h4 {
+  color: #223049;
+}
+
+[data-theme='light'] .integration-status.enabled {
+  background: rgba(34, 197, 94, 0.2);
+  color: #166534;
+}
+
+[data-theme='light'] .skill-card-meta-link {
+  color: #1d4ed8;
+}
+
+[data-theme='light'] .skill-card-meta-link:hover {
+  color: #1e40af;
+}
+
+[data-theme='light'] .skill-badge {
+  border-color: #9db2dc;
+  color: #29457a;
+  background: #e8effd;
+}
+
+[data-theme='light'] .skill-badge-external {
+  border-color: #8fc7a0;
+  color: #1f5f36;
+  background: #e6f4ea;
+}
+
+[data-theme='light'] .message-user,
+[data-theme='light'] .message-user .message-content,
+[data-theme='light'] .message-user .message-time,
+[data-theme='light'] .message-user .message-role,
+[data-theme='light'] .message-user .message-copy {
+  color: #f5f9ff;
+}
+
+[data-theme='light'] .mind-picker-dialog {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .mind-picker-dialog h2 {
+  color: #162033;
+}
+
+[data-theme='light'] .mind-picker-path {
+  color: #4e6079;
+  border-color: #c9d3e2;
+  background: #eef3fa;
+}
+
+[data-theme='light'] .mind-picker-list {
+  border-color: #c9d3e2;
+  background: #ffffff;
+}
+
+[data-theme='light'] .mind-picker-item {
+  color: #223049;
+}
+
+[data-theme='light'] .mind-picker-item:hover {
+  background: #eef3fa;
 }
 
 [data-theme='light'] .message-tool {
