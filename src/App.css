@@ -7144,15 +7144,10 @@ input[type="checkbox"]:disabled {
 
 .project-commit-diff-body {
   margin: 0;
-  padding: 10px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: #d7deea;
+  padding: 0;
   overflow: auto;
-  white-space: pre;
-  word-break: normal;
   flex: 1;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  min-height: 0;
 }
 
 .project-commit-diff-empty {
@@ -7161,26 +7156,19 @@ input[type="checkbox"]:disabled {
   font-size: 13px;
 }
 
-.project-commit-diff-line {
-  white-space: pre;
-}
-
-.project-commit-diff-line.meta {
-  color: #8ea3c5;
-}
-
-.project-commit-diff-line.hunk {
-  color: #b8a6f0;
-}
-
-.project-commit-diff-line.add {
-  background: rgba(47, 145, 79, 0.22);
-  color: #b7f1c5;
-}
-
-.project-commit-diff-line.remove {
-  background: rgba(163, 63, 63, 0.2);
-  color: #f3bbbb;
+.project-commit-diff-renderer {
+  display: block;
+  min-height: 100%;
+  --diffs-font-size: 12px;
+  --diffs-line-height: 1.4;
+  --diffs-gap-inline: 8px;
+  --diffs-gap-block: 8px;
+  --diffs-header-font-family: inherit;
+  --diffs-font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --diffs-light-bg: #f5f8fc;
+  --diffs-dark-bg: #0d1117;
+  --diffs-light: #1a2533;
+  --diffs-dark: #d7deea;
 }
 
 .project-delete-btn {
@@ -8522,4 +8510,605 @@ button.session-provider-chip {
 
 button.session-provider-chip:hover {
   background: rgba(100, 108, 255, 0.25);
+}
+
+.settings-field label {
+  display: inline-block;
+  margin-bottom: 6px;
+}
+
+.settings-theme-toggle-row {
+  align-items: center;
+}
+
+/* Theme overrides */
+[data-theme='light'] body {
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+[data-theme='light'] .app-container,
+[data-theme='light'] .main-content {
+  background: var(--app-bg-2);
+  color: var(--app-text-1);
+}
+
+[data-theme='light'] .sidebar-shell,
+[data-theme='light'] .sidebar,
+[data-theme='light'] .top-bar,
+[data-theme='light'] .chat-input-container {
+  background-color: var(--app-bg-1);
+  color: var(--app-text-1);
+}
+
+[data-theme='light'] .sidebar-backdrop {
+  background: var(--app-sidebar-backdrop);
+}
+
+[data-theme='light'] .sidebar-toggle,
+[data-theme='light'] .sidebar-toggle-handle,
+[data-theme='light'] .voice-button,
+[data-theme='light'] .image-button,
+[data-theme='light'] .send-button,
+[data-theme='light'] .stop-button {
+  background: var(--app-control-bg);
+  color: var(--app-text-2);
+  border-color: var(--app-border-1);
+}
+
+[data-theme='light'] .sidebar-toggle-handle-line {
+  background: var(--app-text-muted);
+}
+
+[data-theme='light'] .sidebar-toggle:hover,
+[data-theme='light'] .voice-button:hover,
+[data-theme='light'] .image-button:hover,
+[data-theme='light'] .send-button:hover:not(:disabled) {
+  background: var(--app-control-bg-hover);
+  color: var(--app-text-1);
+}
+
+[data-theme='light'] .search-input,
+[data-theme='light'] .chat-textarea,
+[data-theme='light'] .sidebar-title-input,
+[data-theme='light'] input,
+[data-theme='light'] select,
+[data-theme='light'] textarea {
+  background-color: var(--app-bg-3);
+  color: var(--app-text-1);
+  border-color: var(--app-border-1);
+}
+
+[data-theme='light'] .search-input::placeholder,
+[data-theme='light'] .empty-state,
+[data-theme='light'] .session-item-meta,
+[data-theme='light'] .settings-help {
+  color: var(--app-text-muted);
+}
+
+[data-theme='light'] .search-input:focus,
+[data-theme='light'] .chat-textarea:focus {
+  background-color: var(--app-bg-4);
+}
+
+[data-theme='light'] .session-item:hover,
+[data-theme='light'] .sidebar-section-header:hover,
+[data-theme='light'] .sidebar-section-header.active,
+[data-theme='light'] .message-assistant {
+  background-color: var(--app-bg-3);
+}
+
+[data-theme='light'] .session-item.active {
+  background-color: var(--app-bg-4);
+}
+
+[data-theme='light'] .page-shell,
+[data-theme='light'] .settings-panel,
+[data-theme='light'] .provider-edit-view,
+[data-theme='light'] .tools-view,
+[data-theme='light'] .jobs-list,
+[data-theme='light'] .chat-history,
+[data-theme='light'] .message-list {
+  color: var(--app-text-1);
+}
+
+[data-theme='light'] .sidebar,
+[data-theme='light'] .sidebar-title-button,
+[data-theme='light'] .sidebar-section-header,
+[data-theme='light'] .nav-link,
+[data-theme='light'] .settings-field,
+[data-theme='light'] .session-item-title,
+[data-theme='light'] .page-header h1,
+[data-theme='light'] .settings-panel h2,
+[data-theme='light'] .job-edit-header h2,
+[data-theme='light'] .header-left h2,
+[data-theme='light'] .project-header-left h1,
+[data-theme='light'] .empty-state h2 {
+  color: #162033;
+}
+
+[data-theme='light'] .sidebar-return-parent-btn,
+[data-theme='light'] .sidebar-agent-combo-toggle,
+[data-theme='light'] .agent-url-combo-toggle,
+[data-theme='light'] .sidebar-agent-combo-option-btn,
+[data-theme='light'] .nav-link:hover,
+[data-theme='light'] .new-session-btn,
+[data-theme='light'] .session-delete-btn,
+[data-theme='light'] .session-duplicate-btn {
+  color: #273247;
+}
+
+[data-theme='light'] .sidebar-agent-combo-toggle,
+[data-theme='light'] .agent-url-combo-toggle {
+  background: #e6edf8;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .sidebar-agent-combo-toggle:hover:not(:disabled),
+[data-theme='light'] .agent-url-combo-toggle:hover {
+  background: #dde7f6;
+  color: #162033;
+}
+
+[data-theme='light'] .agent-url-combo-toggle[aria-expanded="true"] {
+  color: #1d4ed8;
+  border-color: #2d5bdb;
+  background: #d7e4fb;
+}
+
+[data-theme='light'] .nav-link:hover {
+  background-color: #e6edf8;
+}
+
+[data-theme='light'] .nav-link.active {
+  background-color: #dde7f6;
+  color: #1d4ed8;
+}
+
+[data-theme='light'] .nav-section-header {
+  color: #5f6f86;
+}
+
+[data-theme='light'] .session-item-meta,
+[data-theme='light'] .sessions-empty,
+[data-theme='light'] .sessions-empty p,
+[data-theme='light'] .sidebar .session-item.empty {
+  color: #55657d;
+}
+
+[data-theme='light'] .settings-add-btn,
+[data-theme='light'] .settings-remove-btn {
+  background: #e6edf8;
+  color: #223049;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .settings-add-btn:hover,
+[data-theme='light'] .settings-remove-btn:hover {
+  background: #dde7f6;
+  color: #162033;
+}
+
+[data-theme='light'] .settings-save-btn {
+  background: #2d5bdb;
+  border-color: #2d5bdb;
+  color: #ffffff;
+}
+
+[data-theme='light'] .settings-save-btn:hover:not(:disabled) {
+  background: #244cb8;
+  border-color: #244cb8;
+}
+
+[data-theme='light'] .settings-save-btn:disabled,
+[data-theme='light'] .settings-add-btn:disabled,
+[data-theme='light'] .settings-remove-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+[data-theme='light'] .jobs-list .job-card,
+[data-theme='light'] .job-task-section {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .jobs-list .job-name-link,
+[data-theme='light'] .jobs-list .job-primary-schedule,
+[data-theme='light'] .job-task-section h3 {
+  color: #162033;
+}
+
+[data-theme='light'] .jobs-list .job-card:hover {
+  border-color: #b8c5d9;
+}
+
+[data-theme='light'] .integration-form {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .integration-form-title-row h3,
+[data-theme='light'] .integrations-list h3 {
+  color: #162033;
+}
+
+[data-theme='light'] .project-files-section .mind-tree-panel,
+[data-theme='light'] .project-files-section .mind-viewer-panel {
+  background: #ffffff;
+}
+
+[data-theme='light'] .project-files-section .mind-tree-toolbar,
+[data-theme='light'] .project-files-section .mind-viewer-header {
+  border-color: #d7deea;
+  background: #f8fbff;
+}
+
+[data-theme='light'] .project-files-section .mind-tree-item {
+  color: #1f2b40;
+}
+
+[data-theme='light'] .project-files-section .mind-tree-item:hover {
+  background: #eaf0f9;
+}
+
+[data-theme='light'] .project-files-section .mind-tree-file.active {
+  background: #dde7f6;
+  color: #1d4ed8;
+}
+
+[data-theme='light'] .thinking-card {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .thinking-checkbox-row,
+[data-theme='light'] .thinking-field,
+[data-theme='light'] .thinking-source-toggle {
+  color: #1f2b40;
+}
+
+[data-theme='light'] .thinking-note,
+[data-theme='light'] .thinking-frequency-input span {
+  color: #55657d;
+}
+
+[data-theme='light'] .thinking-field input[type="text"],
+[data-theme='light'] .thinking-field input[type="number"],
+[data-theme='light'] .thinking-field select,
+[data-theme='light'] .thinking-field textarea {
+  background: #eef3fa;
+  border-color: #c9d3e2;
+  color: #111a29;
+}
+
+[data-theme='light'] .skill-card,
+[data-theme='light'] .skill-card-external {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .skill-card-disabled {
+  background: #f2f5fa;
+  border-color: #c4ccda;
+  opacity: 0.9;
+}
+
+[data-theme='light'] .skill-card p,
+[data-theme='light'] .skill-enabled-label,
+[data-theme='light'] .skill-card-meta {
+  color: #4e6079;
+}
+
+[data-theme='light'] .skill-card-title-row h3 {
+  color: #162033;
+}
+
+[data-theme='light'] .a2a-agent-chips .integration-mode-chip,
+[data-theme='light'] .integration-mode-chip {
+  background: #e7eefb;
+  color: #2a416e;
+  border-color: #bfd0ea;
+}
+
+[data-theme='light'] .integration-mode-chip.enabled {
+  background: #e8f7ec;
+  color: #1f6a33;
+  border-color: #b9e2c4;
+}
+
+[data-theme='light'] .integration-mode-chip.disabled {
+  background: #edf1f7;
+  color: #52627a;
+  border-color: #cbd6e5;
+}
+
+[data-theme='light'] .integration-list-header-row h3,
+[data-theme='light'] .integration-composer-header-row h3,
+[data-theme='light'] .integration-provider-section h3 {
+  color: #162033;
+}
+
+[data-theme='light'] .integration-provider-card,
+[data-theme='light'] .integration-row,
+[data-theme='light'] .integration-card,
+[data-theme='light'] .integration-form {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .integration-provider-card.active {
+  background: #e8effc;
+  border-color: #9db6e5;
+}
+
+[data-theme='light'] .integration-provider-card p,
+[data-theme='light'] .integration-row-meta,
+[data-theme='light'] .integration-updated {
+  color: #55657d;
+}
+
+[data-theme='light'] .settings-custom-row input:not([type="checkbox"]):not([type="radio"]),
+[data-theme='light'] .settings-custom-row select,
+[data-theme='light'] .settings-custom-row textarea {
+  background: #eef3fa;
+  border-color: #c9d3e2;
+  color: #111a29;
+}
+
+[data-theme='light'] .provider-settings-card,
+[data-theme='light'] .provider-list-item,
+[data-theme='light'] .provider-edit-panel,
+[data-theme='light'] .provider-safe-mode-fieldset,
+[data-theme='light'] .provider-fallback-chain-item,
+[data-theme='light'] .provider-oauth-section {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .provider-settings-header h3,
+[data-theme='light'] .provider-list-main h3,
+[data-theme='light'] .provider-list-header h3,
+[data-theme='light'] .provider-oauth-section-title {
+  color: #162033;
+}
+
+[data-theme='light'] .provider-chain-empty,
+[data-theme='light'] .provider-oauth-section-description,
+[data-theme='light'] .provider-oauth-benefit,
+[data-theme='light'] .provider-test-duration {
+  color: #55657d;
+}
+
+[data-theme='light'] .provider-router-tree {
+  border-color: #bfd0ea;
+  background: radial-gradient(circle at top left, #eef4ff 0%, #e8eef9 45%, #e2eaf7 100%);
+}
+
+[data-theme='light'] .provider-router-root-label {
+  color: #54688e;
+}
+
+[data-theme='light'] .provider-router-rule {
+  border-color: #b5c5df;
+  background: #edf3fc;
+  color: #2b3d60;
+}
+
+[data-theme='light'] .provider-router-target {
+  border-color: #b4c3dc;
+  background: #eef3fb;
+  color: #2a3d5e;
+}
+
+[data-theme='light'] .provider-chain-node {
+  border-color: #b4c3dc;
+  background: linear-gradient(145deg, #edf3fb, #e5ecf8);
+  color: #2a3d5f;
+}
+
+[data-theme='light'] .mcp-server-card,
+[data-theme='light'] .mcp-test-result,
+[data-theme='light'] .mcp-server-meta code {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .mcp-last-test-line,
+[data-theme='light'] .mcp-card-toggle {
+  color: #55657d;
+}
+
+[data-theme='light'] .skills-registry-section {
+  border-top-color: #c9d3e2;
+}
+
+[data-theme='light'] .mind-mode-tabs {
+  background: #eef3fa;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .mind-mode-tab {
+  background: #e6edf8;
+  border-right-color: #c9d3e2;
+  color: #273247;
+}
+
+[data-theme='light'] .mind-mode-tab:hover {
+  background: #dde7f6;
+  color: #162033;
+}
+
+[data-theme='light'] .mind-mode-tab.active {
+  background: #2d5bdb;
+  color: #ffffff;
+}
+
+[data-theme='light'] .mind-mode-tab:disabled {
+  opacity: 0.5;
+}
+
+[data-theme='light'] .skills-registry-results h4,
+[data-theme='light'] .skills-discovery-list h3 {
+  color: #223049;
+}
+
+[data-theme='light'] .skills-search-input {
+  background: #eef3fa;
+  border-color: #c9d3e2;
+  color: #111a29;
+}
+
+[data-theme='light'] .skills-search-btn {
+  background: #e6edf8;
+  border-color: #c1cee1;
+  color: #223049;
+}
+
+[data-theme='light'] .skills-search-btn:hover:not(:disabled) {
+  background: #dde7f6;
+  border-color: #b2c2d9;
+  color: #162033;
+}
+
+[data-theme='light'] .skill-card-registry {
+  background: #f2f7ff;
+  border-color: #bcd0ee;
+}
+
+[data-theme='light'] .skill-card-meta-row,
+[data-theme='light'] .skill-card-description {
+  color: #55657d;
+}
+
+[data-theme='light'] .skill-install-btn {
+  border-color: #7fb292;
+  background: #e8f5ec;
+  color: #205f36;
+}
+
+[data-theme='light'] .skill-install-btn:hover:not(:disabled) {
+  border-color: #6aa581;
+  background: #dff0e5;
+  color: #184c2b;
+}
+
+[data-theme='light'] .skill-install-btn.installed {
+  background: #d4eadc;
+  border-color: #6ca885;
+  color: #1f5b33;
+}
+
+[data-theme='light'] .sessions-composer {
+  background-color: #f8fbff;
+  border-top-color: #c9d3e2;
+}
+
+[data-theme='light'] .sessions-composer-inner {
+  background: transparent;
+}
+
+[data-theme='light'] .sessions-list-container,
+[data-theme='light'] .sessions-list {
+  background: transparent;
+}
+
+[data-theme='light'] .session-card {
+  background-color: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .session-card:hover {
+  background-color: #eef3fa;
+  border-color: #b8c5d9;
+}
+
+[data-theme='light'] .session-name {
+  color: #162033;
+}
+
+[data-theme='light'] .session-project-badge {
+  background: #e7edf8;
+  color: #4e6079;
+}
+
+[data-theme='light'] .session-link-type-chip {
+  border-color: #b6c6e0;
+  background: #e7eefb;
+  color: #2a416e;
+}
+
+[data-theme='light'] .session-date,
+[data-theme='light'] .session-token-count,
+[data-theme='light'] .sessions-group-title,
+[data-theme='light'] .sessions-group-count,
+[data-theme='light'] .sessions-collapse-btn {
+  color: #55657d;
+}
+
+[data-theme='light'] .session-task-progress-bar {
+  background: #d3ddeb;
+}
+
+[data-theme='light'] .project-sessions-section,
+[data-theme='light'] .project-sessions-section.collapsed {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .project-sessions-header {
+  border-bottom-color: #d7deea;
+}
+
+[data-theme='light'] .project-sessions-title,
+[data-theme='light'] .project-sessions-meta,
+[data-theme='light'] .project-sessions-toggle {
+  color: #273247;
+}
+
+[data-theme='light'] .project-sessions-list .session-card {
+  background: #ffffff;
+  border-color: #c9d3e2;
+}
+
+[data-theme='light'] .project-sessions-list .session-card:hover {
+  background: #eef3fa;
+  border-color: #b8c5d9;
+}
+
+[data-theme='light'] .message-tool {
+  background-color: #eaf5ea;
+  color: #1f4b2a;
+}
+
+[data-theme='light'] .error-banner {
+  background-color: rgba(244, 67, 54, 0.12);
+}
+
+[data-theme='light'] .sidebar-resize-handle::after,
+[data-theme='light'] .top-bar,
+[data-theme='light'] .chat-input-container,
+[data-theme='light'] .settings-panel,
+[data-theme='light'] .session-item,
+[data-theme='light'] .message,
+[data-theme='light'] .provider-fieldset,
+[data-theme='light'] .settings-field input:not([type="checkbox"]):not([type="radio"]),
+[data-theme='light'] .settings-field select,
+[data-theme='light'] .settings-field-select,
+[data-theme='light'] .settings-field textarea,
+[data-theme='light'] .form-group input,
+[data-theme='light'] .form-group select,
+[data-theme='light'] .form-group textarea {
+  border-color: var(--app-border-1);
+}
+
+[data-theme='light'] .settings-field input:not([type="checkbox"]):not([type="radio"]),
+[data-theme='light'] .settings-field select,
+[data-theme='light'] .settings-field-select,
+[data-theme='light'] .settings-field textarea {
+  background: var(--app-bg-3);
+  color: var(--app-text-1);
 }

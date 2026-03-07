@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { PatchDiff } from '@pierre/diffs/react';
 import {
   browseMindDirectories,
   commitProjectGit,
@@ -650,6 +651,10 @@ function ProjectView() {
   const [selectedCommitFilePath, setSelectedCommitFilePath] = useState('');
   const [selectedCommitFileDiff, setSelectedCommitFileDiff] = useState('');
   const [isLoadingCommitFileDiff, setIsLoadingCommitFileDiff] = useState(false);
+  const [commitDiffThemeMode, setCommitDiffThemeMode] = useState<'dark' | 'light'>(() => {
+    if (typeof document === 'undefined') return 'dark';
+    return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  });
   const [isGeneratingCommitMessage, setIsGeneratingCommitMessage] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [isInitializingGit, setIsInitializingGit] = useState(false);
@@ -658,6 +663,25 @@ function ProjectView() {
   const commitDiffRequestRef = useRef(0);
   const [gitDiscardPath, setGitDiscardPath] = useState<string | null>(null);
   const [isStagingAll, setIsStagingAll] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const syncTheme = () => {
+      setCommitDiffThemeMode(root.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+    };
+    syncTheme();
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
+          syncTheme();
+          break;
+        }
+      }
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
 
   // Sessions state
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -1608,10 +1632,10 @@ function ProjectView() {
     try {
       const diffResponse = await getProjectGitFileDiff(projectId, path, targetRepoPath);
       if (requestID !== commitDiffRequestRef.current) return;
-      setSelectedCommitFileDiff(diffResponse.preview || 'No diff available for this file.');
+      setSelectedCommitFileDiff(diffResponse.preview || '');
     } catch (diffError) {
       if (requestID !== commitDiffRequestRef.current) return;
-      setSelectedCommitFileDiff('Failed to load diff preview.');
+      setSelectedCommitFileDiff('');
       setError(diffError instanceof Error ? diffError.message : 'Failed to load diff preview');
     } finally {
       if (requestID !== commitDiffRequestRef.current) return;
@@ -1809,7 +1833,14 @@ function ProjectView() {
   const todoBoard = useMemo(() => parseTodoBoard(selectedFileContent), [selectedFileContent]);
   const canUseKanban = isTodoFilePath(selectedFilePath);
   const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
-  const commitDiffLines = useMemo(() => selectedCommitFileDiff.split('\n'), [selectedCommitFileDiff]);
+  const commitDiffOptions = useMemo(() => ({
+    themeType: commitDiffThemeMode,
+    diffStyle: 'unified' as const,
+    diffIndicators: 'classic' as const,
+    hunkSeparators: 'line-info' as const,
+    lineDiffType: 'word' as const,
+    overflow: 'scroll' as const,
+  }), [commitDiffThemeMode]);
 
   const persistTodoContent = useCallback(async (nextContent: string) => {
     if (!projectId || !selectedFilePath) return;
@@ -3234,23 +3265,11 @@ function ProjectView() {
                 ) : (
                   <div className="project-commit-diff-body">
                     {selectedCommitFileDiff ? (
-                      commitDiffLines.map((line, index) => {
-                        let lineClass = 'context';
-                        if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff --git') || line.startsWith('index ')) {
-                          lineClass = 'meta';
-                        } else if (line.startsWith('@@')) {
-                          lineClass = 'hunk';
-                        } else if (line.startsWith('+')) {
-                          lineClass = 'add';
-                        } else if (line.startsWith('-')) {
-                          lineClass = 'remove';
-                        }
-                        return (
-                          <div key={`diff-line-${index}`} className={`project-commit-diff-line ${lineClass}`}>
-                            {line || ' '}
-                          </div>
-                        );
-                      })
+                      <PatchDiff
+                        patch={selectedCommitFileDiff}
+                        options={commitDiffOptions}
+                        className="project-commit-diff-renderer"
+                      />
                     ) : (
                       <div className="project-commit-diff-empty">No diff preview.</div>
                     )}

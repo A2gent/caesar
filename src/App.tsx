@@ -49,7 +49,10 @@ const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 480;
 const SIDEBAR_WIDTH_STORAGE_KEY = 'a2gent.sidebar.width';
 const SIDEBAR_OPEN_STORAGE_KEY = 'a2gent.sidebar.open';
+const THEME_STORAGE_KEY = 'a2gent.theme';
 const normalizeBaseUrl = (url: string) => url.trim().replace(/\/$/, '');
+
+type ThemeMode = 'dark' | 'light';
 
 interface CompletionNotification {
   id: string;
@@ -85,6 +88,11 @@ const readStoredOpenState = () => {
   return stored === '1';
 };
 
+const readStoredTheme = (): ThemeMode => {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === 'light' ? 'light' : 'dark';
+};
+
 function isTerminalSessionStatus(status: string): boolean {
   const normalized = status.trim().toLowerCase();
   return normalized === 'completed' || normalized === 'failed';
@@ -116,6 +124,7 @@ function AppLayout() {
   const [toastNotifications, setToastNotifications] = useState<CompletionNotification[]>([]);
   const toastTimeoutsRef = useRef<Map<string, number>>(new Map());
   const [backendRefreshKey, setBackendRefreshKey] = useState(0);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(readStoredTheme);
 
   const isSidebarOpen = isMobile ? isMobileSidebarOpen : isDesktopSidebarOpen;
 
@@ -146,6 +155,11 @@ function AppLayout() {
   useEffect(() => {
     document.title = appTitle;
   }, [appTitle]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', themeMode);
+    localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+  }, [themeMode]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
@@ -787,7 +801,10 @@ function AppLayout() {
           <Route path="/sub-agents" element={<SubAgentsView />} />
           <Route path="/notifications" element={<NotificationsView notifications={notifications} onClearAll={clearAllNotifications} onDismiss={dismissNotification} />} />
           <Route path="/skills" element={<SkillsView />} />
-          <Route path="/settings" element={<SettingsView onAgentNameRefresh={handleBackendChange} />} />
+          <Route
+            path="/settings"
+            element={<SettingsView onAgentNameRefresh={handleBackendChange} themeMode={themeMode} onThemeChange={setThemeMode} />}
+          />
           <Route path="/projects/:projectId" element={<ProjectView />} />
           <Route path="/a2a" element={<A2ARegistryView />} />
           <Route path="/a2a/registry-settings" element={<A2ARegistrySettingsView />} />

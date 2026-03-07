@@ -13,9 +13,11 @@ import {
 
 interface SettingsViewProps {
   onAgentNameRefresh?: () => void | Promise<void>;
+  themeMode: 'dark' | 'light';
+  onThemeChange: (nextTheme: 'dark' | 'light') => void;
 }
 
-function SettingsView({ onAgentNameRefresh }: SettingsViewProps) {
+function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: SettingsViewProps) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -114,6 +116,27 @@ function SettingsView({ onAgentNameRefresh }: SettingsViewProps) {
       )}
 
       <div className="page-content page-content-narrow settings-sections">
+        <div className="settings-panel">
+          <h2>Appearance</h2>
+          <p className="settings-help">
+            Choose how the interface is rendered in this browser.
+          </p>
+          <div className="settings-field settings-field-inline settings-theme-toggle-row">
+            <span>Light mode</span>
+            <button
+              type="button"
+              className={`ios-switch ${themeMode === 'light' ? 'on' : ''}`}
+              role="switch"
+              aria-checked={themeMode === 'light'}
+              aria-label={themeMode === 'light' ? 'Disable light mode' : 'Enable light mode'}
+              title={themeMode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+              onClick={() => onThemeChange(themeMode === 'light' ? 'dark' : 'light')}
+            >
+              <span className="ios-switch-thumb" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
         <div className="settings-panel">
           <h2>Agent Connection</h2>
           <p className="settings-help">
