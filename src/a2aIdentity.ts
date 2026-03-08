@@ -1,6 +1,7 @@
 const A2A_LOCAL_AGENT_ID_KEY = 'a2gent.a2a_local_agent_id';
 const A2A_REGISTRY_URL_KEY = 'a2gent.a2a_registry_url';
 const A2A_REGISTRY_OWNER_EMAIL_KEY = 'a2gent.a2a_registry_owner_email';
+const A2A_FAVORITE_AGENTS_KEY = 'a2gent.a2a_favorite_agents';
 const DEFAULT_REGISTRY_URL = 'http://localhost:5174';
 
 export interface RegistrySelfAgent {
@@ -12,6 +13,14 @@ export interface RegistrySelfAgent {
   discoverable: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface FavoriteA2AAgent {
+  id: string;
+  name?: string;
+  description?: string;
+  registry_url?: string;
+  saved_at: string;
 }
 
 export function getStoredA2ARegistryURL(): string {
@@ -87,4 +96,62 @@ export function storeA2ARegistryOwnerEmail(email: string): void {
     return;
   }
   localStorage.setItem(A2A_REGISTRY_OWNER_EMAIL_KEY, normalized);
+}
+
+export function getStoredFavoriteA2AAgents(): FavoriteA2AAgent[] {
+  try {
+    const raw = localStorage.getItem(A2A_FAVORITE_AGENTS_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((item): item is FavoriteA2AAgent => !!item && typeof item === 'object' && typeof (item as FavoriteA2AAgent).id === 'string')
+      .map((item) => ({
+        id: item.id.trim(),
+        name: item.name?.trim() || '',
+        description: item.description?.trim() || '',
+        registry_url: item.registry_url?.trim() || '',
+        saved_at: item.saved_at || new Date().toISOString(),
+      }))
+      .filter((item) => item.id !== '');
+  } catch {
+    return [];
+  }
+}
+
+export function isFavoriteA2AAgent(agentID: string): boolean {
+  const normalized = agentID.trim();
+  if (!normalized) {
+    return false;
+  }
+  return getStoredFavoriteA2AAgents().some((item) => item.id === normalized);
+}
+
+export function storeFavoriteA2AAgent(agent: Omit<FavoriteA2AAgent, 'saved_at'>): void {
+  const normalizedID = agent.id.trim();
+  if (!normalizedID) {
+    return;
+  }
+  const all = getStoredFavoriteA2AAgents().filter((item) => item.id !== normalizedID);
+  all.unshift({
+    id: normalizedID,
+    name: agent.name?.trim() || '',
+    description: agent.description?.trim() || '',
+    registry_url: agent.registry_url?.trim() || '',
+    saved_at: new Date().toISOString(),
+  });
+  localStorage.setItem(A2A_FAVORITE_AGENTS_KEY, JSON.stringify(all.slice(0, 200)));
+}
+
+export function removeFavoriteA2AAgent(agentID: string): void {
+  const normalizedID = agentID.trim();
+  if (!normalizedID) {
+    return;
+  }
+  const remaining = getStoredFavoriteA2AAgents().filter((item) => item.id !== normalizedID);
+  localStorage.setItem(A2A_FAVORITE_AGENTS_KEY, JSON.stringify(remaining));
 }

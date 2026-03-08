@@ -10,6 +10,7 @@ import {
   setApiBaseUrl,
   updateSettings,
 } from './api';
+import { getAgentEmoji, setAgentEmoji } from './agentVisuals';
 
 interface SettingsViewProps {
   onAgentNameRefresh?: () => void | Promise<void>;
@@ -28,6 +29,7 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
   const [apiBaseUrlHistory, setApiBaseUrlHistory] = useState<string[]>(() => getApiBaseUrlHistory());
   const [apiBaseUrlMessage, setApiBaseUrlMessage] = useState<string | null>(null);
   const [saveRequestKey, setSaveRequestKey] = useState(0);
+  const [mainAgentEmoji, setMainAgentEmoji] = useState(() => getAgentEmoji('main'));
 
   const loadSettings = async () => {
     try {
@@ -135,6 +137,20 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
               <span className="ios-switch-thumb" aria-hidden="true" />
             </button>
           </div>
+          <label className="settings-field" style={{ marginTop: 12 }}>
+            <span>Main agent emoji</span>
+            <input
+              type="text"
+              value={mainAgentEmoji}
+              onChange={(event) => {
+                const next = event.target.value;
+                setMainAgentEmoji(next);
+                setAgentEmoji('main', next);
+              }}
+              placeholder="🤖"
+              maxLength={4}
+            />
+          </label>
         </div>
 
         <div className="settings-panel">

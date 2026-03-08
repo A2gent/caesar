@@ -26,6 +26,7 @@ import {
   type InstructionBlockType,
 } from './instructionBlocks';
 import { toolIconForName } from './toolIcons';
+import { getAgentEmoji, setAgentEmoji, withAgentEmoji } from './agentVisuals';
 
 const MANAGED_INSTRUCTION_BLOCK_TYPES: InstructionBlockType[] = [
   BUILTIN_TOOLS_BLOCK_TYPE,
@@ -89,6 +90,7 @@ function SubAgentsView() {
   const [isFormOpen, setIsFormOpen] = useState(false);
 
   const [name, setName] = useState('');
+  const [emoji, setEmoji] = useState(() => getAgentEmoji('subagent'));
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
   const [enabledTools, setEnabledTools] = useState<Set<string>>(new Set());
@@ -223,6 +225,7 @@ function SubAgentsView() {
 
   const resetForm = () => {
     setName('');
+    setEmoji(getAgentEmoji('subagent'));
     setProvider('');
     setModel('');
     setEnabledTools(new Set());
@@ -242,6 +245,7 @@ function SubAgentsView() {
   const startEditing = (sa: SubAgent) => {
     setEditingId(sa.id);
     setName(sa.name);
+    setEmoji(getAgentEmoji('subagent', sa.id));
     setProvider(sa.provider);
     setModel(sa.model);
     if (sa.enabled_tools.length === 0) {
@@ -287,10 +291,12 @@ function SubAgentsView() {
 
       if (editingId) {
         const updated = await updateSubAgent(editingId, payload);
+        setAgentEmoji('subagent', emoji, editingId);
         setSubAgents(prev => prev.map(a => a.id === updated.id ? updated : a));
         setSuccess('Sub-agent updated.');
       } else {
         const created = await createSubAgent(payload);
+        setAgentEmoji('subagent', emoji, created.id);
         setSubAgents(prev => [...prev, created]);
         setSuccess('Sub-agent created.');
       }
@@ -352,6 +358,16 @@ function SubAgentsView() {
     <div className="page-shell">
       <div className="page-header">
         <h1>Sub-agents</h1>
+        {isFormOpen && (
+          <button
+            type="submit"
+            form="subagent-form"
+            className="settings-save-btn"
+            disabled={saving || !name.trim()}
+          >
+            {saving ? 'Saving...' : editingId ? 'Save sub-agent' : 'Create sub-agent'}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -377,7 +393,7 @@ function SubAgentsView() {
         {loading ? (
           <div className="sessions-loading">Loading sub-agents...</div>
         ) : isFormOpen ? (
-          <form className="integration-form" onSubmit={handleSubmit}>
+          <form id="subagent-form" className="integration-form" onSubmit={handleSubmit}>
             <div className="integration-form-title-row">
               <h3>{editingId ? 'Edit sub-agent' : 'Create sub-agent'}</h3>
               <button type="button" className="settings-remove-btn" onClick={resetForm}>
@@ -393,6 +409,17 @@ function SubAgentsView() {
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder="e.g. Research Agent, Code Reviewer"
+                />
+              </label>
+              <label className="settings-field">
+                <span>Emoji</span>
+                <input
+                  className="agent-emoji-input"
+                  type="text"
+                  value={emoji}
+                  onChange={e => setEmoji(e.target.value)}
+                  placeholder="🧩"
+                  maxLength={4}
                 />
               </label>
 
@@ -524,9 +551,6 @@ function SubAgentsView() {
               />
             </div>
 
-            <button type="submit" className="settings-add-btn" disabled={saving || !name.trim()}>
-              {saving ? 'Saving...' : editingId ? 'Save sub-agent' : 'Create sub-agent'}
-            </button>
           </form>
         ) : (
           <div className="mcp-server-list">
@@ -546,7 +570,7 @@ function SubAgentsView() {
                 <article key={sa.id} className="integration-card mcp-server-card">
                   <div className="integration-card-headline">
                     <div className="integration-card-title-wrap">
-                      <h3>{sa.name}</h3>
+                      <h3>{withAgentEmoji(sa.name, 'subagent', sa.id)}</h3>
                       <span className="integration-mode-chip">
                         {providerDisplayName(sa.provider)}
                       </span>

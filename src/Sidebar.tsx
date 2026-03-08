@@ -59,6 +59,7 @@ const navSections: NavSection[] = [
     label: '🤖 Agents',
     items: [
       { id: 'sub-agents', label: '🤖 Sub-agents', path: '/sub-agents' },
+      { id: 'workflows', label: '🔀 Workflows', path: '/workflows' },
       { id: 'a2a-local-agents', label: '🐳 Local agents', path: '/a2a/local-agents' },
       { id: 'a2a-registry', label: '📡 External agents', path: '/a2a' },
     ],

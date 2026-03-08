@@ -23,7 +23,6 @@ import {
   listProjectTree,
   listProviders,
   listSessions,
-  listSubAgents,
   moveProjectFile,
   parseTaskProgress,
   pushProjectGit,
@@ -44,7 +43,6 @@ import {
   type Project,
   type ProjectSearchResponse,
   type Session,
-  type SubAgent,
 } from './api';
 import ChatInput from './ChatInput';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from './EmptyState';
@@ -57,6 +55,12 @@ import {
   type InstructionBlock,
 } from './instructionBlocks';
 import { updateSettings } from './api';
+import {
+  DEFAULT_WORKFLOW_ID,
+  listWorkflows,
+  resolveWorkflowLaunchTarget,
+  type WorkflowDefinition,
+} from './workflows';
 
 type MarkdownMode = 'kanban' | 'preview' | 'source';
 type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'git';
@@ -218,7 +222,7 @@ const MAX_TREE_PANEL_WIDTH = 720;
 const TREE_PANEL_WIDTH_STORAGE_KEY = 'a2gent.project.tree.width';
 const EXPANDED_DIRS_STORAGE_KEY_PREFIX = 'a2gent.project.expandedDirs.';
 const SELECTED_FILE_STORAGE_KEY_PREFIX = 'a2gent.project.selectedFile.';
-const SELECTED_AGENT_STORAGE_KEY_PREFIX = 'a2gent.project.selectedAgent.';
+const SELECTED_WORKFLOW_STORAGE_KEY_PREFIX = 'a2gent.project.selectedWorkflow.';
 const SYSTEM_PROJECT_KB_ID = 'system-kb';
 const SYSTEM_PROJECT_BODY_ID = 'system-agent';
 const SYSTEM_PROJECT_SOUL_ID = 'system-soul';
@@ -675,10 +679,8 @@ function ProjectView() {
   const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
   const [startingSessionID, setStartingSessionID] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
-  const [hasLoadedProviders, setHasLoadedProviders] = useState(false);
-  const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
-  // selectedAgentValue: "main" for main agent, "subagent:<id>" for sub-agent
-  const [selectedAgentValue, setSelectedAgentValue] = useState<string>('main');
+  const [workflowOptions, setWorkflowOptions] = useState<WorkflowDefinition[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(DEFAULT_WORKFLOW_ID);
 
   // Files state
   const [rootFolder, setRootFolder] = useState('');
@@ -812,30 +814,11 @@ function ProjectView() {
     void loadGitStatus();
   }, [loadGitStatus]);
 
-  // Load providers and sub-agents
+  // Load providers
   useEffect(() => {
     const loadProviders = async () => {
       try {
-        const [data, agents] = await Promise.all([
-          listProviders(),
-          listSubAgents().catch(() => [] as SubAgent[]),
-        ]);
-        setSubAgents(agents);
-
-        // Restore selected agent for this project
-        const storedAgent = projectId
-          ? localStorage.getItem(SELECTED_AGENT_STORAGE_KEY_PREFIX + projectId) || ''
-          : '';
-        if (storedAgent.startsWith('subagent:')) {
-          const saId = storedAgent.slice('subagent:'.length);
-          if (agents.some(a => a.id === saId)) {
-            setSelectedAgentValue(storedAgent);
-          } else {
-            setSelectedAgentValue('main');
-          }
-        } else {
-          setSelectedAgentValue('main');
-        }
+        const data = await listProviders();
 
         // Set active provider for internal use (session creation)
         const active = data.find((provider) => provider.is_active);
@@ -846,24 +829,49 @@ function ProjectView() {
         }
       } catch (err) {
         console.error('Failed to load providers:', err);
-      } finally {
-        setHasLoadedProviders(true);
       }
     };
     loadProviders();
+  }, []);
+
+  // Load workflows and restore project selection
+  useEffect(() => {
+    let cancelled = false;
+    const loadWorkflowOptions = async () => {
+      try {
+        const available = await listWorkflows();
+        if (cancelled) return;
+        setWorkflowOptions(available);
+        const stored = projectId
+          ? localStorage.getItem(SELECTED_WORKFLOW_STORAGE_KEY_PREFIX + projectId) || ''
+          : '';
+        if (stored && available.some((workflow) => workflow.id === stored)) {
+          setSelectedWorkflowId(stored);
+          return;
+        }
+        setSelectedWorkflowId(DEFAULT_WORKFLOW_ID);
+      } catch (loadError) {
+        if (cancelled) return;
+        setWorkflowOptions([]);
+        setSelectedWorkflowId(DEFAULT_WORKFLOW_ID);
+        setError(loadError instanceof Error ? loadError.message : 'Failed to load workflows');
+      }
+    };
+    void loadWorkflowOptions();
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
-  // Persist selected agent for this project
+  // Persist selected workflow for this project
   useEffect(() => {
-    if (!hasLoadedProviders) return;
     try {
-      if (projectId) {
-        localStorage.setItem(SELECTED_AGENT_STORAGE_KEY_PREFIX + projectId, selectedAgentValue);
-      }
+      if (!projectId) return;
+      localStorage.setItem(SELECTED_WORKFLOW_STORAGE_KEY_PREFIX + projectId, selectedWorkflowId);
     } catch {
       // Ignore storage failures
     }
-  }, [hasLoadedProviders, selectedAgentValue, projectId]);
+  }, [selectedWorkflowId, projectId]);
 
   // File tree loading
   const loadTree = useCallback(async (path: string) => {
@@ -1010,6 +1018,11 @@ function ProjectView() {
   }, [isFileActionsMenuOpen]);
 
   // Session handlers
+  const selectedWorkflow = useMemo(
+    () => workflowOptions.find((workflow) => workflow.id === selectedWorkflowId) || null,
+    [selectedWorkflowId, workflowOptions],
+  );
+
   const handleSelectSession = (sessionId: string, initialMessage?: string, initialImages?: MessageImage[]) => {
     navigate(`/chat/${sessionId}`, {
       state: (initialMessage || (initialImages && initialImages.length > 0))
@@ -1039,13 +1052,40 @@ function ProjectView() {
         ? `${sessionContextMessage}\n\n---\n\n${message}`
         : message;
 
-      const isSubAgent = selectedAgentValue.startsWith('subagent:');
-      const subAgentId = isSubAgent ? selectedAgentValue.slice('subagent:'.length) : undefined;
+      const workflow = selectedWorkflow;
+      if (!workflow) {
+        throw new Error('Select a workflow first.');
+      }
+      const target = resolveWorkflowLaunchTarget(workflow);
+
+      if (target.kind === 'external') {
+        setSessionContextMessage('');
+        setSessionTargetLabel('');
+        setIsSessionContextExpanded(false);
+        navigate(`/a2a/contact/${encodeURIComponent(target.externalAgentId)}`, {
+          state: {
+            agent: {
+              id: target.externalAgentId,
+              name: target.externalAgentName || target.node.label,
+            },
+            forceNewSession: true,
+            initialMessage: combinedMessage,
+            initialImages: images,
+          },
+        });
+        return;
+      }
+      if (target.kind === 'local') {
+        throw new Error('Launching local-agent workflows is not implemented yet. Use Main/Sub-agent or External targets for now.');
+      }
+      if (target.kind === 'none') {
+        throw new Error('This workflow has no launchable agent target.');
+      }
 
       const created = await createSession({
         agent_id: 'build',
-        provider: isSubAgent ? undefined : (selectedProvider || undefined),
-        sub_agent_id: subAgentId,
+        provider: target.kind === 'main' ? (selectedProvider || undefined) : undefined,
+        sub_agent_id: target.kind === 'subagent' ? target.subAgentId : undefined,
         project_id: projectId || undefined,
       });
 
@@ -1072,15 +1112,24 @@ function ProjectView() {
         ? `${sessionContextMessage}\n\n---\n\n${message}`
         : message;
 
-      const isSubAgentQ = selectedAgentValue.startsWith('subagent:');
-      const subAgentIdQ = isSubAgentQ ? selectedAgentValue.slice('subagent:'.length) : undefined;
+      const workflow = selectedWorkflow;
+      if (!workflow) {
+        throw new Error('Select a workflow first.');
+      }
+      const target = resolveWorkflowLaunchTarget(workflow);
+      if (target.kind === 'external' || target.kind === 'local') {
+        throw new Error('Queued runs currently support only Main/Sub-agent workflow targets.');
+      }
+      if (target.kind === 'none') {
+        throw new Error('This workflow has no launchable agent target.');
+      }
 
       await createSession({
         agent_id: 'build',
         task: combinedMessage,
         images,
-        provider: isSubAgentQ ? undefined : (selectedProvider || undefined),
-        sub_agent_id: subAgentIdQ,
+        provider: target.kind === 'main' ? (selectedProvider || undefined) : undefined,
+        sub_agent_id: target.kind === 'subagent' ? target.subAgentId : undefined,
         project_id: projectId || undefined,
         queued: true,
       });
@@ -1929,12 +1978,21 @@ function ProjectView() {
 
     try {
       const linkedFilePath = await ensureTodoTaskFile(task, column);
-      const isSubAgent = selectedAgentValue.startsWith('subagent:');
-      const subAgentId = isSubAgent ? selectedAgentValue.slice('subagent:'.length) : undefined;
+      const workflow = selectedWorkflow;
+      if (!workflow) {
+        throw new Error('Select a workflow first.');
+      }
+      const target = resolveWorkflowLaunchTarget(workflow);
+      if (target.kind === 'external' || target.kind === 'local') {
+        throw new Error('Task sessions currently support only Main/Sub-agent workflow targets.');
+      }
+      if (target.kind === 'none') {
+        throw new Error('This workflow has no launchable agent target.');
+      }
       const created = await createSession({
         agent_id: 'build',
-        provider: isSubAgent ? undefined : (selectedProvider || undefined),
-        sub_agent_id: subAgentId,
+        provider: target.kind === 'main' ? (selectedProvider || undefined) : undefined,
+        sub_agent_id: target.kind === 'subagent' ? target.subAgentId : undefined,
         project_id: projectId,
       });
       const initialMessage = [
@@ -3280,32 +3338,22 @@ function ProjectView() {
                 ? `Describe the task for ${sessionTargetLabel}...`
                 : 'Start a new chat...'}
               actionControls={
-                subAgents.length > 0 ? (
-                  <div className="sessions-new-chat-controls">
-                    <label className="chat-provider-select">
-                      <select
-                        value={selectedAgentValue}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val.startsWith('subagent:')) {
-                            setSelectedAgentValue(val);
-                          } else {
-                            setSelectedAgentValue('main');
-                          }
-                        }}
-                        title="Agent"
-                        aria-label="Agent"
-                      >
-                        <option value="main">Main Agent</option>
-                        {subAgents.map((sa) => (
-                          <option key={sa.id} value={`subagent:${sa.id}`}>
-                            {sa.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                ) : null
+                <div className="sessions-new-chat-controls">
+                  <label className="chat-provider-select">
+                    <select
+                      value={selectedWorkflowId}
+                      onChange={(event) => setSelectedWorkflowId(event.target.value)}
+                      title="Workflow"
+                      aria-label="Workflow"
+                    >
+                      {workflowOptions.map((workflow) => (
+                        <option key={workflow.id} value={workflow.id}>
+                          {workflow.name}{workflow.builtIn ? ' (Built-in)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               }
             />
           </div>

@@ -1,0 +1,995 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { listLocalDockerAgents, listSubAgents, type LocalDockerAgent, type SubAgent } from './api';
+import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
+import {
+  createWorkflowTemplate,
+  duplicateWorkflow,
+  getWorkflowFilePath,
+  getWorkflowById,
+  saveWorkflow,
+  SYSTEM_SOUL_PROJECT_ID,
+  type WorkflowDefinition,
+  type WorkflowEdge,
+  type WorkflowNode,
+  type WorkflowNodeKind,
+  type WorkflowStopCondition,
+} from './workflows';
+import {
+  computeWorkflowGraphLayout,
+  WORKFLOW_CANVAS_HEIGHT,
+  WORKFLOW_CANVAS_WIDTH,
+} from './workflowGraph';
+import WorkflowGraphCanvas from './WorkflowGraphCanvas';
+import { withAgentEmoji } from './agentVisuals';
+import { getStoredFavoriteA2AAgents, type FavoriteA2AAgent } from './a2aIdentity';
+
+const WORKFLOW_EDIT_CANVAS_WIDTH = 980;
+const WORKFLOW_EDIT_CANVAS_HEIGHT = 760;
+
+type ParsedGraph = {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  errors: string[];
+  warnings: string[];
+};
+
+type NodeSeed = {
+  key: string;
+  label: string;
+  kind: WorkflowNodeKind;
+  ref: string;
+  isAgentIdRef?: boolean;
+};
+
+function stableNodeIdFromKey(key: string): string {
+  const normalized = key.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
+  return `node-${normalized || 'x'}`;
+}
+
+function cloneWorkflow(workflow: WorkflowDefinition): WorkflowDefinition {
+  return {
+    ...workflow,
+    nodes: workflow.nodes.map((node) => ({ ...node })),
+    edges: workflow.edges.map((edge) => ({ ...edge })),
+    policy: { ...workflow.policy },
+  };
+}
+
+function kindLabel(kind: WorkflowNodeKind): string {
+  switch (kind) {
+    case 'user':
+      return 'User';
+    case 'main':
+      return 'Main agent';
+    case 'subagent':
+      return 'Sub-agent';
+    case 'local':
+      return 'Local agent';
+    case 'external':
+      return 'External agent';
+    default:
+      return kind;
+  }
+}
+
+function parseMode(raw: string): 'sequential' | 'parallel' | null {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === '' || normalized === 'sequential' || normalized === 'seq') {
+    return 'sequential';
+  }
+  if (normalized === 'parallel' || normalized === 'par') {
+    return 'parallel';
+  }
+  return null;
+}
+
+function parseNodeToken(token: string): { label: string; kind: WorkflowNodeKind; ref: string; isAgentIdRef?: boolean } | null {
+  const trimmed = token.trim();
+  if (trimmed === '') return null;
+  const idRefMatch = /^@([A-Za-z0-9._:-]+)$/.exec(trimmed);
+  if (idRefMatch) {
+    const ref = (idRefMatch[1] || '').trim();
+    const lowered = ref.toLowerCase();
+    if (lowered === 'user') {
+      return { label: 'User', kind: 'user', ref: '' };
+    }
+    if (lowered === 'main') {
+      return { label: 'Main agent', kind: 'main', ref: '' };
+    }
+    return { label: ref, kind: 'subagent', ref, isAgentIdRef: true };
+  }
+  const match = /^(.+?)(?:@([a-z_]+)(?:@([A-Za-z0-9._:-]+))?)?(?:\(([^)]+)\))?$/.exec(trimmed);
+  if (!match) return null;
+
+  const label = (match[1] || '').trim();
+  const kindRaw = (match[2] || '').trim().toLowerCase();
+  const refFromAt = (match[3] || '').trim();
+  const refFromParens = (match[4] || '').trim();
+  const ref = refFromParens !== '' ? refFromParens : refFromAt;
+  if (label === '') return null;
+
+  let kind: WorkflowNodeKind = 'main';
+  if (kindRaw === '') {
+    const lower = label.toLowerCase();
+    if (lower === 'user' || lower === 'you') {
+      kind = 'user';
+    }
+  } else if (kindRaw === 'user' || kindRaw === 'main' || kindRaw === 'subagent' || kindRaw === 'local' || kindRaw === 'external') {
+    kind = kindRaw;
+  } else {
+    return null;
+  }
+
+  return { label, kind, ref };
+}
+
+function workflowToGraphYaml(workflow: WorkflowDefinition): string {
+  return stringifyYAML({
+    nodes: workflow.nodes.map((node) => ({
+      id: node.id,
+      label: node.label,
+      kind: node.kind,
+      ref: node.kind === 'subagent'
+        ? node.subAgentId
+        : node.kind === 'local'
+          ? node.localAgentId
+          : node.kind === 'external'
+            ? node.externalAgentId
+            : undefined,
+    })),
+    edges: workflow.edges.map((edge) => ({
+      from: edge.from,
+      to: edge.to,
+    })),
+    entryNodeId: workflow.entryNodeId,
+  });
+}
+
+function defaultGraphTemplate(): string {
+  return [
+    '# YAML graph definition',
+    'nodes:',
+    '  - id: user',
+    '    label: User',
+    '    kind: user',
+    '  - id: worker_a',
+    '    label: Research A',
+    '    kind: subagent',
+    '    ref: subagent-id-1',
+    '  - id: worker_b',
+    '    label: Research B',
+    '    kind: subagent',
+    '    ref: subagent-id-2',
+    '  - id: synth',
+    '    label: Synthesis',
+    '    kind: main',
+    'edges:',
+    '  - from: user',
+    '    to: worker_a',
+    '  - from: user',
+    '    to: worker_b',
+    '  - from: worker_a',
+    '    to: synth',
+    '  - from: worker_b',
+    '    to: synth',
+    'entryNodeId: user',
+  ].join('\n');
+}
+
+type YamlNodeSeed = {
+  id: string;
+  label: string;
+  kind: WorkflowNodeKind | null;
+  ref: string;
+};
+
+type YamlEdgeSeed = {
+  from: string;
+  to: string;
+  mode: 'sequential' | 'parallel' | null;
+};
+
+function parseYamlGraph(
+  source: string,
+  subAgents: SubAgent[],
+  localAgents: LocalDockerAgent[],
+  favoriteExternalAgents: FavoriteA2AAgent[],
+): ParsedGraph {
+  const raw = parseYAML(source) as unknown;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { nodes: [], edges: [], errors: ['YAML root must be an object with nodes and edges.'], warnings: [] };
+  }
+  const obj = raw as Record<string, unknown>;
+  const rawNodes = Array.isArray(obj.nodes) ? obj.nodes : [];
+  const rawEdges = Array.isArray(obj.edges) ? obj.edges : [];
+  if (rawNodes.length === 0) {
+    return { nodes: [], edges: [], errors: ['YAML must include at least one node in nodes[].'], warnings: [] };
+  }
+
+  const yamlNodes: YamlNodeSeed[] = [];
+  const yamlEdges: YamlEdgeSeed[] = [];
+  const errors: string[] = [];
+
+  rawNodes.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push(`nodes[${index}] must be an object.`);
+      return;
+    }
+    const nodeObj = entry as Record<string, unknown>;
+    const id = typeof nodeObj.id === 'string' ? nodeObj.id.trim() : '';
+    const label = typeof nodeObj.label === 'string' ? nodeObj.label.trim() : '';
+    const kindRaw = typeof nodeObj.kind === 'string' ? nodeObj.kind.trim().toLowerCase() : '';
+    const ref = typeof nodeObj.ref === 'string' ? nodeObj.ref.trim() : '';
+    const kind = kindRaw === ''
+      ? null
+      : (kindRaw === 'user' || kindRaw === 'main' || kindRaw === 'subagent' || kindRaw === 'local' || kindRaw === 'external')
+        ? kindRaw as WorkflowNodeKind
+        : null;
+    if (id === '') {
+      errors.push(`nodes[${index}].id is required.`);
+      return;
+    }
+    if (kindRaw !== '' && !kind) {
+      errors.push(`nodes[${index}].kind must be one of user|main|subagent|local|external.`);
+      return;
+    }
+    const resolvedLabel = label !== '' ? label : (ref !== '' ? ref : id);
+    yamlNodes.push({ id, label: resolvedLabel, kind, ref });
+  });
+
+  rawEdges.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push(`edges[${index}] must be an object.`);
+      return;
+    }
+    const edgeObj = entry as Record<string, unknown>;
+    const from = typeof edgeObj.from === 'string' ? edgeObj.from.trim() : '';
+    const to = typeof edgeObj.to === 'string' ? edgeObj.to.trim() : '';
+    const modeRaw = typeof edgeObj.mode === 'string' ? edgeObj.mode.trim().toLowerCase() : '';
+    let mode: 'sequential' | 'parallel' | null = null;
+    if (modeRaw !== '') {
+      if (modeRaw === 'sequential' || modeRaw === 'seq') {
+        mode = 'sequential';
+      } else if (modeRaw === 'parallel' || modeRaw === 'par') {
+        mode = 'parallel';
+      } else {
+        errors.push(`edges[${index}].mode must be sequential|parallel when provided.`);
+        return;
+      }
+    }
+    if (from === '' || to === '') {
+      errors.push(`edges[${index}] requires from and to.`);
+      return;
+    }
+    yamlEdges.push({ from, to, mode });
+  });
+
+  if (errors.length > 0) {
+    return { nodes: [], edges: [], errors, warnings: [] };
+  }
+
+  const tokenById = new Map(yamlNodes.map((node) => {
+    const inferredKind: WorkflowNodeKind = node.kind || (() => {
+      const lower = node.label.trim().toLowerCase();
+      if (lower === 'user' || lower === 'you') return 'user';
+      if (lower === 'main' || lower === 'main agent') return 'main';
+      if (node.ref !== '') return 'subagent';
+      return 'main';
+    })();
+
+    let token = `${node.label}@${inferredKind}`;
+    if (node.ref !== '' && !node.kind) {
+      token = `@${node.ref}`;
+    } else if (inferredKind === 'subagent' && node.ref !== '') {
+      token = `${node.label}@subagent@${node.ref}`;
+    } else if (inferredKind === 'local' && node.ref !== '') {
+      token = `${node.label}@local@${node.ref}`;
+    } else if (inferredKind === 'external' && node.ref !== '') {
+      token = `${node.label}@external@${node.ref}`;
+    }
+    return [node.id, token] as const;
+  }));
+  const generatedLines: string[] = [];
+  const explicitModeByIndex: boolean[] = [];
+  const outgoingCounts = new Map<string, number>();
+
+  for (const edge of yamlEdges) {
+    const fromToken = tokenById.get(edge.from);
+    const toToken = tokenById.get(edge.to);
+    if (!fromToken || !toToken) {
+      errors.push(`Edge "${edge.from} -> ${edge.to}" references unknown node id.`);
+      continue;
+    }
+    if (edge.mode) {
+      generatedLines.push(`${fromToken} -->|${edge.mode}| ${toToken}`);
+      explicitModeByIndex.push(true);
+    } else {
+      generatedLines.push(`${fromToken} --> ${toToken}`);
+      explicitModeByIndex.push(false);
+    }
+    outgoingCounts.set(edge.from, (outgoingCounts.get(edge.from) || 0) + 1);
+  }
+
+  if (errors.length > 0) {
+    return { nodes: [], edges: [], errors, warnings: [] };
+  }
+
+  const parsed = parseGraphDsl(generatedLines.join('\n'), subAgents, localAgents, favoriteExternalAgents);
+  if (parsed.errors.length > 0) {
+    return parsed;
+  }
+
+  const inferredEdges = parsed.edges.map((edge, index) => {
+    const yamlEdge = yamlEdges[index];
+    if (!yamlEdge) {
+      return edge;
+    }
+    if (!explicitModeByIndex[index] && (outgoingCounts.get(yamlEdge.from) || 0) > 1) {
+      return { ...edge, mode: 'parallel' as const };
+    }
+    return edge;
+  });
+
+  return {
+    ...parsed,
+    edges: inferredEdges,
+  };
+}
+
+function parseGraphDefinition(
+  source: string,
+  subAgents: SubAgent[],
+  localAgents: LocalDockerAgent[],
+  favoriteExternalAgents: FavoriteA2AAgent[],
+): ParsedGraph {
+  const trimmed = source.trim();
+  const yamlIntent = trimmed === ''
+    || trimmed.startsWith('#')
+    || /\bnodes\s*:/.test(source)
+    || /\bedges\s*:/.test(source)
+    || /\bentryNodeId\s*:/.test(source);
+
+  try {
+    const yamlParsed = parseYamlGraph(source, subAgents, localAgents, favoriteExternalAgents);
+    if (yamlParsed.errors.length === 0 || yamlIntent) {
+      return yamlParsed;
+    }
+  } catch {
+    if (yamlIntent) {
+      return { nodes: [], edges: [], errors: ['Invalid YAML format.'], warnings: [] };
+    }
+  }
+  const legacy = parseGraphDsl(source, subAgents, localAgents, favoriteExternalAgents);
+  if (legacy.errors.length === 0) {
+    return {
+      ...legacy,
+      warnings: [...legacy.warnings, 'Parsed as legacy line DSL. Prefer YAML nodes/edges format.'],
+    };
+  }
+  return legacy;
+}
+
+function assignNodeLayout(nodes: NodeSeed[], edges: Array<{ from: string; to: string }>): Array<{ key: string; x: number; y: number }> {
+  const virtualNodes: WorkflowNode[] = nodes.map((node, index) => ({
+    id: node.key,
+    label: node.label,
+    kind: node.kind,
+    x: 40 + (index % 4) * 170,
+    y: 40 + Math.floor(index / 4) * 90,
+  }));
+  const virtualEdges: WorkflowEdge[] = edges.map((edge, index) => ({
+    id: `seed-edge-${index + 1}`,
+    from: edge.from,
+    to: edge.to,
+    mode: 'sequential',
+  }));
+  const positions = computeWorkflowGraphLayout(
+    virtualNodes,
+    virtualEdges,
+    WORKFLOW_CANVAS_WIDTH,
+    WORKFLOW_CANVAS_HEIGHT,
+  );
+  return nodes.map((node) => {
+    const pos = positions.get(node.key) || { x: 60, y: 60 };
+    return { key: node.key, x: pos.x, y: pos.y };
+  });
+}
+
+function parseGraphDsl(
+  dsl: string,
+  subAgents: SubAgent[],
+  localAgents: LocalDockerAgent[],
+  favoriteExternalAgents: FavoriteA2AAgent[],
+): ParsedGraph {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const nodeMap = new Map<string, NodeSeed>();
+  const edgeSeeds: Array<{ fromKey: string; toKey: string; mode: 'sequential' | 'parallel' }> = [];
+  let edgeCounter = 0;
+
+  const lines = dsl.replace(/\r\n/g, '\n').split('\n');
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) return;
+
+    const edgeMatch = /^(.+?)\s*-->\s*(?:\|([^|]+)\|)?\s*(.+)$/.exec(trimmed);
+    if (!edgeMatch) {
+      errors.push(`Line ${index + 1}: invalid legacy syntax. Use "source --> target".`);
+      return;
+    }
+
+    const leftRaw = edgeMatch[1] || '';
+    const modeRaw = edgeMatch[2] || 'sequential';
+    const rightRaw = edgeMatch[3] || '';
+
+    const left = parseNodeToken(leftRaw);
+    const right = parseNodeToken(rightRaw);
+    const mode = parseMode(modeRaw);
+
+    if (!left) {
+      errors.push(`Line ${index + 1}: invalid source node "${leftRaw.trim()}".`);
+      return;
+    }
+    if (!right) {
+      errors.push(`Line ${index + 1}: invalid target node "${rightRaw.trim()}".`);
+      return;
+    }
+    if (!mode) {
+      errors.push(`Line ${index + 1}: unsupported mode "${modeRaw.trim()}". Use sequential|parallel.`);
+      return;
+    }
+
+    const ensureNode = (parsed: { label: string; kind: WorkflowNodeKind; ref: string; isAgentIdRef?: boolean }) => {
+      const key = parsed.label.toLowerCase();
+      const existing = nodeMap.get(key);
+      if (!existing) {
+        nodeMap.set(key, { key, ...parsed });
+        return key;
+      }
+      if (existing.kind !== parsed.kind) {
+        errors.push(`Line ${index + 1}: node "${parsed.label}" has conflicting kinds (${existing.kind} vs ${parsed.kind}).`);
+      }
+      if (parsed.ref !== '' && existing.ref !== '' && parsed.ref !== existing.ref) {
+        errors.push(`Line ${index + 1}: node "${parsed.label}" has conflicting refs (${existing.ref} vs ${parsed.ref}).`);
+      }
+      if (existing.ref === '' && parsed.ref !== '') {
+        existing.ref = parsed.ref;
+      }
+      if (!existing.isAgentIdRef && parsed.isAgentIdRef) {
+        existing.isAgentIdRef = true;
+      }
+      return key;
+    };
+
+    const fromKey = ensureNode(left);
+    const toKey = ensureNode(right);
+    edgeSeeds.push({ fromKey, toKey, mode });
+    edgeCounter += 1;
+  });
+
+  const nodeSeeds = Array.from(nodeMap.values());
+  const positioned = assignNodeLayout(
+    nodeSeeds,
+    edgeSeeds.map((edge) => ({ from: edge.fromKey, to: edge.toKey })),
+  );
+  const posByKey = new Map(positioned.map((item) => [item.key, item]));
+
+  const keyToId = new Map<string, string>();
+  const usedNodeIDs = new Set<string>();
+  const nodes: WorkflowNode[] = nodeSeeds.map((seed) => {
+    const baseNodeId = stableNodeIdFromKey(seed.key);
+    let nodeId = baseNodeId;
+    let suffix = 2;
+    while (usedNodeIDs.has(nodeId)) {
+      nodeId = `${baseNodeId}-${suffix}`;
+      suffix += 1;
+    }
+    usedNodeIDs.add(nodeId);
+    keyToId.set(seed.key, nodeId);
+    const pos = posByKey.get(seed.key) || { x: 70, y: 60 };
+
+    const node: WorkflowNode = {
+      id: nodeId,
+      label: seed.label,
+      kind: seed.kind,
+      x: pos.x,
+      y: pos.y,
+    };
+
+    if (seed.kind === 'subagent') {
+      const byId = subAgents.find((agent) => agent.id === seed.ref);
+      const byName = subAgents.find((agent) => agent.name.toLowerCase() === (seed.ref || seed.label).toLowerCase());
+      const localById = localAgents.find((agent) => agent.id === seed.ref);
+      const externalById = favoriteExternalAgents.find((agent) => agent.id === seed.ref);
+      const match = byId || byName;
+      if (match && localById && seed.isAgentIdRef) {
+        warnings.push(`Agent id "${seed.ref}" matches both sub-agent and local agent. Preferring sub-agent.`);
+      }
+      if (match) {
+        node.subAgentId = match.id;
+        node.label = match.name || seed.label;
+      } else if (localById && seed.isAgentIdRef) {
+        node.kind = 'local';
+        node.localAgentId = localById.id;
+        node.localAgentName = localById.name;
+        node.localAgentBaseUrl = localById.api_url || undefined;
+        node.label = localById.name || seed.label;
+      } else if (externalById && seed.isAgentIdRef) {
+        node.kind = 'external';
+        node.externalAgentId = externalById.id;
+        node.label = externalById.name || seed.label;
+      } else {
+        errors.push(seed.isAgentIdRef
+          ? `Agent id "${seed.ref}" is unknown. It must match a sub-agent, local agent, or favorited external agent.`
+          : `Sub-agent "${seed.label}" was not matched to an existing sub-agent.`);
+      }
+    }
+
+    if (seed.kind === 'local') {
+      const search = (seed.ref || seed.label).toLowerCase();
+      const match = localAgents.find((agent) => agent.id.toLowerCase() === search)
+        || localAgents.find((agent) => agent.name.toLowerCase() === search)
+        || localAgents.find((agent) => (agent.api_url || '').toLowerCase() === search);
+      if (match) {
+        node.localAgentId = match.id;
+        node.localAgentName = match.name;
+        node.localAgentBaseUrl = match.api_url || undefined;
+        node.label = match.name || seed.label;
+      } else {
+        errors.push(`Local agent "${seed.label}" was not matched to an existing local agent.`);
+      }
+    }
+
+    if (seed.kind === 'external') {
+      if (seed.ref === '') {
+        errors.push(`External node "${seed.label}" has no external agent id. Use Name@external@agent-id.`);
+      } else {
+        const favorite = favoriteExternalAgents.find((agent) => agent.id === seed.ref);
+        if (!favorite) {
+          errors.push(`External agent id "${seed.ref}" is not in favorites. Add it in A2 Registry first.`);
+        } else {
+          node.externalAgentId = favorite.id;
+          node.label = favorite.name || seed.label;
+        }
+      }
+    }
+
+    return node;
+  });
+
+  const edges: WorkflowEdge[] = edgeSeeds.map((seed) => ({
+    id: `edge-${edgeSeeds.indexOf(seed) + 1}`,
+    from: keyToId.get(seed.fromKey) || '',
+    to: keyToId.get(seed.toKey) || '',
+    mode: seed.mode,
+  })).filter((edge) => edge.from !== '' && edge.to !== '');
+
+  if (edgeCounter === 0) {
+    warnings.push('No connections found yet.');
+  }
+
+  return { nodes, edges, errors, warnings };
+}
+
+function WorkflowEditView() {
+  const navigate = useNavigate();
+  const { workflowId } = useParams<{ workflowId: string }>();
+  const isNew = !workflowId;
+
+  const [draft, setDraft] = useState<WorkflowDefinition | null>(null);
+  const [graphDefinition, setGraphDefinition] = useState('');
+  const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
+  const [localAgents, setLocalAgents] = useState<LocalDockerAgent[]>([]);
+  const [favoriteExternalAgents, setFavoriteExternalAgents] = useState<FavoriteA2AAgent[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [selectedSourceNodeId, setSelectedSourceNodeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadWorkflow = async () => {
+      if (isNew) {
+        const created = createWorkflowTemplate('Custom workflow');
+        if (cancelled) return;
+        setDraft(created);
+        setGraphDefinition(defaultGraphTemplate());
+        setError(null);
+        return;
+      }
+      const decodedId = decodeURIComponent(workflowId || '').trim();
+      try {
+        const workflow = await getWorkflowById(decodedId);
+        if (cancelled) return;
+        if (!workflow) {
+          setError('Workflow not found.');
+          setDraft(null);
+          return;
+        }
+        const next = workflow.builtIn
+          ? { ...duplicateWorkflow(workflow), name: `${workflow.name} (custom)` }
+          : cloneWorkflow(workflow);
+        setDraft(next);
+        setGraphDefinition(workflowToGraphYaml(next));
+        setError(null);
+        if (workflow.builtIn) {
+          setSuccess('Built-in workflow was copied. You can edit and save this custom version.');
+        }
+      } catch (loadError) {
+        if (cancelled) return;
+        setError(loadError instanceof Error ? loadError.message : 'Failed to load workflow.');
+        setDraft(null);
+      }
+    };
+
+    void loadWorkflow();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isNew, workflowId]);
+
+  useEffect(() => {
+    void listSubAgents().then(setSubAgents).catch(() => setSubAgents([]));
+    void listLocalDockerAgents()
+      .then((response) => setLocalAgents(response.agents || []))
+      .catch(() => setLocalAgents([]));
+    setFavoriteExternalAgents(getStoredFavoriteA2AAgents());
+  }, []);
+
+  useEffect(() => {
+    const refreshFavorites = () => setFavoriteExternalAgents(getStoredFavoriteA2AAgents());
+    window.addEventListener('focus', refreshFavorites);
+    window.addEventListener('storage', refreshFavorites);
+    return () => {
+      window.removeEventListener('focus', refreshFavorites);
+      window.removeEventListener('storage', refreshFavorites);
+    };
+  }, []);
+
+  const parsedGraph = useMemo(
+    () => parseGraphDefinition(graphDefinition, subAgents, localAgents, favoriteExternalAgents),
+    [graphDefinition, subAgents, localAgents, favoriteExternalAgents],
+  );
+
+  const canEdit = !!draft;
+  const canSave = canEdit && parsedGraph.errors.length === 0;
+
+  const handleVisualNodeClick = (node: WorkflowNode) => {
+    if (!draft || parsedGraph.errors.length > 0) {
+      return;
+    }
+    if (!selectedSourceNodeId) {
+      setSelectedSourceNodeId(node.id);
+      setSuccess(`Source selected: ${node.label}. Click another node to connect.`);
+      setError(null);
+      return;
+    }
+    if (selectedSourceNodeId === node.id) {
+      setSelectedSourceNodeId(null);
+      return;
+    }
+
+    const duplicate = parsedGraph.edges.some((edge) => edge.from === selectedSourceNodeId && edge.to === node.id);
+    if (duplicate) {
+      setSelectedSourceNodeId(null);
+      setError('That connection already exists.');
+      return;
+    }
+
+    const nextEdges: WorkflowEdge[] = [
+      ...parsedGraph.edges.map((edge) => ({ ...edge })),
+      {
+        id: `edge-${parsedGraph.edges.length + 1}`,
+        from: selectedSourceNodeId,
+        to: node.id,
+        mode: 'sequential',
+      },
+    ];
+
+    const outgoingCount = nextEdges.filter((edge) => edge.from === selectedSourceNodeId).length;
+    if (outgoingCount > 1) {
+      for (let i = 0; i < nextEdges.length; i += 1) {
+        if (nextEdges[i].from === selectedSourceNodeId) {
+          nextEdges[i] = { ...nextEdges[i], mode: 'parallel' };
+        }
+      }
+    }
+
+    const entryNode = parsedGraph.nodes.find((item) => item.kind === 'user') || parsedGraph.nodes[0];
+    const nextWorkflow: WorkflowDefinition = {
+      ...draft,
+      builtIn: false,
+      nodes: parsedGraph.nodes.map((item) => ({ ...item })),
+      edges: nextEdges,
+      entryNodeId: entryNode?.id || draft.entryNodeId,
+      policy: { ...draft.policy },
+    };
+
+    setGraphDefinition(workflowToGraphYaml(nextWorkflow));
+    setSelectedSourceNodeId(null);
+    setSuccess('Connection added from visual map.');
+    setError(null);
+  };
+
+  const visualNodes = useMemo(() => {
+    const layout = computeWorkflowGraphLayout(
+      parsedGraph.nodes,
+      parsedGraph.edges,
+      WORKFLOW_EDIT_CANVAS_WIDTH,
+      WORKFLOW_EDIT_CANVAS_HEIGHT,
+    );
+    return parsedGraph.nodes.map((node) => ({
+      ...node,
+      x: layout.get(node.id)?.x ?? node.x,
+      y: layout.get(node.id)?.y ?? node.y,
+    }));
+  }, [parsedGraph.nodes, parsedGraph.edges]);
+
+  const visualNodeMap = useMemo(() => {
+    const map = new Map<string, WorkflowNode>();
+    visualNodes.forEach((node) => map.set(node.id, node));
+    return map;
+  }, [visualNodes]);
+
+  const handleSave = async () => {
+    if (!draft) return;
+    if (draft.name.trim() === '') {
+      setError('Workflow name is required.');
+      return;
+    }
+    if (parsedGraph.errors.length > 0) {
+      setError('Fix graph syntax errors before saving.');
+      return;
+    }
+    if (parsedGraph.nodes.length === 0) {
+      setError('Add at least one valid edge in YAML.');
+      return;
+    }
+
+    const entryNode = parsedGraph.nodes.find((node) => node.kind === 'user') || parsedGraph.nodes[0];
+
+    try {
+      await saveWorkflow({
+        ...draft,
+        builtIn: false,
+        nodes: parsedGraph.nodes,
+        edges: parsedGraph.edges,
+        entryNodeId: entryNode?.id || '',
+        policy: { ...draft.policy },
+      });
+
+      setSuccess('Workflow saved.');
+      setError(null);
+      window.setTimeout(() => navigate('/workflows'), 250);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save workflow.');
+      setSuccess(null);
+    }
+  };
+
+  const handleCreateEditableCopy = () => {
+    if (!draft) return;
+    const copy = duplicateWorkflow(draft);
+    setDraft(copy);
+    setSuccess('Editable copy created.');
+    setError(null);
+  };
+
+  return (
+    <div className="page-shell">
+      <div className="page-header">
+        <h1>{isNew ? 'New Workflow' : 'Edit Workflow'}</h1>
+      </div>
+
+      <div className="page-content settings-sections">
+        {error ? (
+          <div className="error-banner">
+            {error}
+            <button type="button" className="error-dismiss" onClick={() => setError(null)}>×</button>
+          </div>
+        ) : null}
+
+        {success ? (
+          <div className="success-banner">
+            {success}
+            <button type="button" className="success-dismiss" onClick={() => setSuccess(null)}>×</button>
+          </div>
+        ) : null}
+
+        <div className="settings-panel workflows-editor-panel">
+          <div className="settings-panel-title-row">
+            <h2>{draft?.name || 'Workflow'}</h2>
+            <div className="workflows-actions">
+              <button type="button" className="settings-remove-btn" onClick={() => navigate('/workflows')}>Back</button>
+              {draft?.builtIn ? (
+                <button type="button" className="settings-add-btn" onClick={handleCreateEditableCopy}>Create Copy</button>
+              ) : null}
+              <button type="button" className="settings-save-btn" onClick={() => void handleSave()} disabled={!canSave}>Save</button>
+            </div>
+          </div>
+
+          {draft ? (
+            <>
+              {draft.builtIn ? <p className="settings-help">Built-in workflow opened in editable copy mode.</p> : null}
+
+              <div className="workflows-form-grid">
+                <label className="settings-field">
+                  <span>Name</span>
+                  <input
+                    type="text"
+                    value={draft.name}
+                    onChange={(event) => setDraft((current) => (current ? { ...current, name: event.target.value } : current))}
+                    disabled={!canEdit}
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>Stop condition</span>
+                  <select
+                    value={draft.policy.stopCondition}
+                    onChange={(event) => setDraft((current) => (current ? {
+                      ...current,
+                      policy: { ...current.policy, stopCondition: event.target.value as WorkflowStopCondition },
+                    } : current))}
+                    disabled={!canEdit}
+                  >
+                    <option value="manual">Manual stop</option>
+                    <option value="max_turns">Max turns</option>
+                    <option value="consensus">Consensus reached</option>
+                    <option value="judge">Judge decides</option>
+                    <option value="timebox">Timebox</option>
+                  </select>
+                </label>
+                <label className="settings-field workflows-description-field">
+                  <span>Description</span>
+                  <textarea
+                    value={draft.description}
+                    onChange={(event) => setDraft((current) => (current ? { ...current, description: event.target.value } : current))}
+                    disabled={!canEdit}
+                    rows={2}
+                  />
+                </label>
+              </div>
+
+              <div className="workflows-policy-row">
+                <label className="settings-field">
+                  <span>Max turns</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={200}
+                    value={draft.policy.maxTurns}
+                    onChange={(event) => {
+                      const parsed = Number.parseInt(event.target.value, 10);
+                      setDraft((current) => (current ? {
+                        ...current,
+                        policy: {
+                          ...current.policy,
+                          maxTurns: Number.isFinite(parsed) && parsed > 0 ? parsed : 1,
+                        },
+                      } : current));
+                    }}
+                    disabled={!canEdit}
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>Timebox (minutes)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={720}
+                    value={draft.policy.timeboxMinutes || 20}
+                    onChange={(event) => {
+                      const parsed = Number.parseInt(event.target.value, 10);
+                      setDraft((current) => (current ? {
+                        ...current,
+                        policy: {
+                          ...current.policy,
+                          timeboxMinutes: Number.isFinite(parsed) && parsed > 0 ? parsed : 20,
+                        },
+                      } : current));
+                    }}
+                    disabled={!canEdit}
+                  />
+                </label>
+              </div>
+
+              <section className="workflows-block">
+                <div className="workflows-block-header">
+                  <h3>Graph Definition (YAML)</h3>
+                </div>
+                <div className="workflows-graph-split">
+                  <div className="workflows-graph-pane">
+                    {draft ? (
+                      <p className="settings-help">
+                        <a
+                          href={`/projects/${encodeURIComponent(SYSTEM_SOUL_PROJECT_ID)}?openFile=${encodeURIComponent(getWorkflowFilePath(draft.id))}`}
+                        >
+                          Open YAML file in Soul project
+                        </a>
+                        {` (${getWorkflowFilePath(draft.id)})`}
+                      </p>
+                    ) : null}
+                    <p className="settings-help">
+                      Define <code>nodes</code> with <code>id</code>. <code>label</code>, <code>kind</code>, and <code>ref</code> are optional.
+                    </p>
+                    <textarea
+                      className="mind-session-textarea"
+                      rows={14}
+                      value={graphDefinition}
+                      onChange={(event) => setGraphDefinition(event.target.value)}
+                      disabled={!canEdit}
+                      spellCheck={false}
+                      placeholder={[
+                        'nodes:',
+                        '  - id: user',
+                        '    label: User',
+                        '  - id: worker',
+                        '    label: Research A',
+                        '    ref: subagent-id-1',
+                        'edges:',
+                        '  - from: user',
+                        '    to: worker',
+                      ].join('\n')}
+                    />
+                    {parsedGraph.errors.length > 0 ? (
+                      <div className="error-banner" style={{ marginTop: 10 }}>
+                        {parsedGraph.errors.join(' ')}
+                      </div>
+                    ) : null}
+                    {parsedGraph.warnings.length > 0 ? (
+                      <div className="success-banner" style={{ marginTop: 10 }}>
+                        {parsedGraph.warnings.join(' ')}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="workflows-graph-pane workflows-map-pane">
+                    <div className="workflows-block-header">
+                      <h3>Visual Map</h3>
+                      <button
+                        type="button"
+                        className="settings-remove-btn"
+                        onClick={() => setSelectedSourceNodeId(null)}
+                        disabled={!selectedSourceNodeId}
+                      >
+                        Clear Selection
+                      </button>
+                    </div>
+                    <p className="settings-help">
+                      Click source node, then target node to create a connection.
+                    </p>
+                    <WorkflowGraphCanvas
+                      nodes={visualNodes}
+                      edges={parsedGraph.edges.filter((edge) => visualNodeMap.has(edge.from) && visualNodeMap.has(edge.to))}
+                      nodeKindLabel={kindLabel}
+                      canvasWidth={WORKFLOW_EDIT_CANVAS_WIDTH}
+                      canvasHeight={WORKFLOW_EDIT_CANVAS_HEIGHT}
+                      onNodeClick={canEdit ? handleVisualNodeClick : undefined}
+                      selectedNodeId={selectedSourceNodeId}
+                      nodeDisplayLabel={(node) => {
+                        if (node.kind === 'main') {
+                          return withAgentEmoji(node.label, 'main');
+                        }
+                        if (node.kind === 'subagent') {
+                          return withAgentEmoji(node.label, 'subagent', node.subAgentId);
+                        }
+                        if (node.kind === 'local') {
+                          return withAgentEmoji(node.label, 'local', node.localAgentId);
+                        }
+                        return node.label;
+                      }}
+                    />
+                  </div>
+                </div>
+              </section>
+            </>
+          ) : (
+            <p className="settings-help">Workflow not found.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default WorkflowEditView;

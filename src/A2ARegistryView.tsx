@@ -4,8 +4,11 @@ import { listIntegrations } from './api';
 import {
   clearStoredLocalA2AAgentID,
   fetchRegistrySelfAgent,
+  getStoredFavoriteA2AAgents,
   getStoredA2ARegistryURL,
   getStoredLocalA2AAgentID,
+  removeFavoriteA2AAgent,
+  storeFavoriteA2AAgent,
   storeLocalA2AAgentID,
 } from './a2aIdentity';
 
@@ -137,6 +140,7 @@ function A2ARegistryView() {
   const [filterType, setFilterType] = useState<AgentType | ''>('');
   const [filterStatus, setFilterStatus] = useState<AgentStatus | ''>('');
   const [localAgentID, setLocalAgentID] = useState<string>(getStoredLocalA2AAgentID());
+  const [favoriteAgentIDs, setFavoriteAgentIDs] = useState<Set<string>>(() => new Set(getStoredFavoriteA2AAgents().map((item) => item.id)));
 
   useEffect(() => {
     const prefilled = searchParams.get('agent_id')?.trim();
@@ -212,6 +216,21 @@ function A2ARegistryView() {
   }, [registryUrl]);
 
   const agents = result?.agents ?? [];
+
+  const toggleFavorite = (agent: DiscoveredAgent) => {
+    if (favoriteAgentIDs.has(agent.id)) {
+      removeFavoriteA2AAgent(agent.id);
+      setFavoriteAgentIDs(new Set(getStoredFavoriteA2AAgents().map((item) => item.id)));
+      return;
+    }
+    storeFavoriteA2AAgent({
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      registry_url: registryUrl,
+    });
+    setFavoriteAgentIDs(new Set(getStoredFavoriteA2AAgents().map((item) => item.id)));
+  };
 
   return (
     <div className="page-shell">
@@ -344,6 +363,14 @@ function A2ARegistryView() {
                         </details>
                       </div>
                       <div className="a2a-agent-actions">
+                        <button
+                          type="button"
+                          className="settings-add-btn"
+                          title={favoriteAgentIDs.has(agent.id) ? 'Remove favorite' : 'Add favorite'}
+                          onClick={() => toggleFavorite(agent)}
+                        >
+                          {favoriteAgentIDs.has(agent.id) ? '★ Favorited' : '☆ Favorite'}
+                        </button>
                         {agent.id === localAgentID ? (
                           <span
                             title="This is your connected local agent"

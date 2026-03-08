@@ -22,6 +22,8 @@ type ContactLocationState = {
     description?: string;
   };
   forceNewSession?: boolean;
+  initialMessage?: string;
+  initialImages?: MessageImage[];
 };
 
 function A2AContactView() {
@@ -33,6 +35,7 @@ function A2AContactView() {
   const [isLoading, setIsLoading] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasAutoSentInitial, setHasAutoSentInitial] = useState(false);
 
   const targetAgentID = useMemo(() => decodeURIComponent(agentId || '').trim(), [agentId]);
   const targetAgentName = useMemo(() => {
@@ -42,6 +45,12 @@ function A2AContactView() {
     return '';
   }, [locationState.agent, targetAgentID]);
   const forceNewSession = locationState.forceNewSession === true;
+  const initialMessage = (locationState.initialMessage || '').trim();
+  const initialImages = locationState.initialImages || [];
+
+  useEffect(() => {
+    setHasAutoSentInitial(false);
+  }, [targetAgentID, initialMessage]);
 
   useEffect(() => {
     if (!targetAgentID) {
@@ -126,6 +135,17 @@ function A2AContactView() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!session || isPreparing || isLoading || hasAutoSentInitial) {
+      return;
+    }
+    if (initialMessage === '' && initialImages.length === 0) {
+      return;
+    }
+    setHasAutoSentInitial(true);
+    void handleSendMessage(initialMessage, initialImages);
+  }, [session, isPreparing, isLoading, hasAutoSentInitial, initialMessage, initialImages]);
 
   const handleA2AStreamEvent = (event: A2AOutboundStreamEvent, sessionId: string) => {
     if (event.event === 'status') {

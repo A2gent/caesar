@@ -237,6 +237,9 @@ function ThinkingView() {
     <div className="page-shell">
       <div className="page-header">
         <h1>Thinking</h1>
+        <button type="button" className="settings-save-btn" onClick={() => void handleSave()} disabled={saving}>
+          {saving ? 'Saving...' : 'Save'}
+        </button>
       </div>
 
       {error ? (
@@ -320,9 +323,6 @@ function ThinkingView() {
               disabled={saving || runningNow || thinkingJobID.trim() === ''}
             >
               {runningNow ? 'Starting...' : 'Run Now'}
-            </button>
-            <button type="button" className="settings-save-btn" onClick={() => void handleSave()} disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
             </button>
           </div>
         </div>

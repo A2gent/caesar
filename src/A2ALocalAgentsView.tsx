@@ -13,6 +13,7 @@ import {
   type RegisterLocalDockerAgentResponse,
 } from './api';
 import { getStoredA2ARegistryOwnerEmail, getStoredA2ARegistryURL } from './a2aIdentity';
+import { setAgentEmoji, withAgentEmoji } from './agentVisuals';
 
 function relativeTime(iso?: string): string {
   if (!iso) return 'unknown';
@@ -54,6 +55,7 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
   const [success, setSuccess] = useState<string | null>(null);
 
   const [newName, setNewName] = useState('');
+  const [newEmoji, setNewEmoji] = useState('🐳');
   const [newPort, setNewPort] = useState('');
   const [newImage, setNewImage] = useState('a2gent-brute:latest');
   const [rebuildNoCache, setRebuildNoCache] = useState(false);
@@ -103,12 +105,14 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
   const handleCreate = () => {
     void runAction('create', async () => {
       const hostPort = Number.parseInt(newPort, 10);
-      await createLocalDockerAgent({
+      const created = await createLocalDockerAgent({
         name: newName.trim() || undefined,
         host_port: Number.isFinite(hostPort) ? hostPort : undefined,
         image: newImage.trim() || undefined,
       });
+      setAgentEmoji('local', newEmoji, created.id);
       setNewName('');
+      setNewEmoji('🐳');
       setNewPort('');
       setSuccess('Local agent container started.');
     });
@@ -235,6 +239,16 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
               />
             </label>
             <label className="settings-field" style={{ gap: 4 }}>
+              <span>Emoji</span>
+              <input
+                type="text"
+                value={newEmoji}
+                onChange={e => setNewEmoji(e.target.value)}
+                placeholder="🐳"
+                maxLength={4}
+              />
+            </label>
+            <label className="settings-field" style={{ gap: 4 }}>
               <span>Host port (optional)</span>
               <input
                 type="number"
@@ -317,7 +331,7 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
                               marginRight: 6,
                             }}
                           />
-                          {agent.name}
+                          {withAgentEmoji(agent.name, 'local', agent.id)}
                         </h3>
                         <div className="a2a-agent-chips">
                           <span className="integration-mode-chip">{agent.state}</span>

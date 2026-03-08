@@ -23,6 +23,8 @@ import A2ARegistrySettingsView from './A2ARegistrySettingsView';
 import A2AMyAgentView from './A2AMyAgentView';
 import A2AContactView from './A2AContactView';
 import A2ALocalAgentsView from './A2ALocalAgentsView';
+import WorkflowsView from './WorkflowsView';
+import WorkflowEditView from './WorkflowEditView';
 import {
   addApiBaseUrlToHistory,
   buildImageAssetUrl,
@@ -799,6 +801,9 @@ function AppLayout() {
           <Route path="/providers/:providerType" element={<ProviderEditView />} />
           <Route path="/tools" element={<ToolsView />} />
           <Route path="/sub-agents" element={<SubAgentsView />} />
+          <Route path="/workflows" element={<WorkflowsView />} />
+          <Route path="/workflows/new" element={<WorkflowEditView />} />
+          <Route path="/workflows/:workflowId/edit" element={<WorkflowEditView />} />
           <Route path="/notifications" element={<NotificationsView notifications={notifications} onClearAll={clearAllNotifications} onDismiss={dismissNotification} />} />
           <Route path="/skills" element={<SkillsView />} />
           <Route
