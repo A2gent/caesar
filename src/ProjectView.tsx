@@ -94,6 +94,11 @@ type SessionListRow = {
   depth: number;
 };
 
+type DraggedTodoTask = {
+  task: TodoTask;
+  sourceColumnId: string;
+};
+
 function isTodoFilePath(path: string): boolean {
   const base = path.split('/').filter(Boolean).pop()?.toLowerCase() || '';
   return TODO_FILE_NAMES.has(base);
@@ -734,6 +739,10 @@ function ProjectView() {
   const [markdownMode, setMarkdownMode] = useState<MarkdownMode>('preview');
   const [isUpdatingTodoBoard, setIsUpdatingTodoBoard] = useState(false);
   const [startingTaskSessionID, setStartingTaskSessionID] = useState<string | null>(null);
+  const [draggedTodoTask, setDraggedTodoTask] = useState<DraggedTodoTask | null>(null);
+  const [todoDropTargetColumnID, setTodoDropTargetColumnID] = useState<string | null>(null);
+  const [editingTodoTaskID, setEditingTodoTaskID] = useState<string | null>(null);
+  const [editingTodoTaskText, setEditingTodoTaskText] = useState('');
   const [pendingAnchor, setPendingAnchor] = useState('');
   const [treePanelWidth, setTreePanelWidth] = useState(readStoredTreePanelWidth);
   const treeResizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -1949,6 +1958,66 @@ function ProjectView() {
     await persistTodoContent(nextContent);
   };
 
+  const handleDropTaskToColumn = async (targetColumn: TodoColumn) => {
+    if (!draggedTodoTask || isUpdatingTodoBoard) return;
+    if (draggedTodoTask.sourceColumnId === targetColumn.id) {
+      setDraggedTodoTask(null);
+      setTodoDropTargetColumnID(null);
+      return;
+    }
+    const { task } = draggedTodoTask;
+    setDraggedTodoTask(null);
+    setTodoDropTargetColumnID(null);
+    await handleMoveTask(task, targetColumn);
+  };
+
+  const startEditingTodoTask = (taskID: string, taskText: string) => {
+    if (isUpdatingTodoBoard) return;
+    setEditingTodoTaskID(taskID);
+    setEditingTodoTaskText(taskText);
+  };
+
+  const cancelEditingTodoTask = () => {
+    setEditingTodoTaskID(null);
+    setEditingTodoTaskText('');
+  };
+
+  const handleSaveTodoTaskText = async (task: TodoTask, taskID: string) => {
+    if (editingTodoTaskID !== taskID || isUpdatingTodoBoard) return;
+    const nextText = editingTodoTaskText.trim();
+    if (nextText === '' || nextText === task.text) {
+      cancelEditingTodoTask();
+      return;
+    }
+    cancelEditingTodoTask();
+    const nextContent = mutateLines(selectedFileContent, (lines) => {
+      const idx = task.lineIndex;
+      if (idx < 0 || idx >= lines.length) return;
+      const match = TODO_TASK_LINE_PATTERN.exec(lines[idx]);
+      if (!match) return;
+      const checked = (match[2] || '').toLowerCase() === 'x';
+      const linkedPath = (match[4] || '').trim();
+      lines[idx] = buildTodoTaskLine(nextText, linkedPath, match[1] || '', checked);
+    });
+    await persistTodoContent(nextContent);
+    if (task.linkedFilePath.trim() !== '') {
+      // Keep linked task file header aligned with renamed task.
+      try {
+        const linkedPath = normalizeMindPath(task.linkedFilePath);
+        if (linkedPath !== '' && projectId) {
+          const linkedFile = await getProjectFile(projectId, linkedPath);
+          const linkedLines = linkedFile.content.replace(/\r\n/g, '\n').split('\n');
+          if (linkedLines.length > 0 && linkedLines[0].startsWith('# ')) {
+            linkedLines[0] = `# ${nextText}`;
+            await saveProjectFile(projectId, linkedPath, linkedLines.join('\n'));
+          }
+        }
+      } catch {
+        // Ignore linked file sync errors; board rename already succeeded.
+      }
+    }
+  };
+
   const handleOpenTodoTaskFile = async (linkedPath: string) => {
     const normalizedPath = normalizeMindPath(linkedPath);
     if (normalizedPath === '') return;
@@ -2057,6 +2126,12 @@ function ProjectView() {
     }
     void loadCommitFileDiff(selectedCommitFilePath);
   }, [activeTab, selectedCommitFilePath, loadCommitFileDiff]);
+
+  useEffect(() => {
+    setDraggedTodoTask(null);
+    setTodoDropTargetColumnID(null);
+    cancelEditingTodoTask();
+  }, [selectedFilePath, selectedFileContent]);
 
   useEffect(() => {
     if (!projectId || !rootFolder) {
@@ -2288,6 +2363,7 @@ function ProjectView() {
       <div>
         {entries.map((entry) => {
           const isBeingRenamed = renamingPath === entry.path;
+          const isHiddenEntry = entry.name.startsWith('.');
           
           if (entry.type === 'directory') {
             const isExpanded = expandedDirs.has(entry.path);
@@ -2335,7 +2411,7 @@ function ProjectView() {
                   }}
                 >
                   {isBeingRenamed ? (
-                    <div className="mind-tree-item mind-tree-directory" style={{ paddingLeft: `${12 + depth * 18}px` }}>
+                    <div className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''}`} style={{ paddingLeft: `${12 + depth * 18}px` }}>
                       <span className="mind-tree-icon" aria-hidden="true">{isExpanded ? '📂' : '📁'}</span>
                       <input
                         ref={renameInputRef}
@@ -2357,7 +2433,7 @@ function ProjectView() {
                   ) : (
                     <button
                       type="button"
-                      className="mind-tree-item mind-tree-directory"
+                      className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''}`}
                       style={{ paddingLeft: `${12 + depth * 18}px` }}
                       onClick={() => void toggleDirectory(entry.path)}
                       onDoubleClick={(e) => {
@@ -2424,7 +2500,7 @@ function ProjectView() {
               }}
             >
               {isBeingRenamed ? (
-                <div className="mind-tree-item mind-tree-file" style={{ paddingLeft: `${12 + depth * 18}px` }}>
+                <div className={`mind-tree-item mind-tree-file ${isHiddenEntry ? 'mind-tree-hidden' : ''}`} style={{ paddingLeft: `${12 + depth * 18}px` }}>
                   <span className="mind-tree-icon" aria-hidden="true">📄</span>
                   <input
                     ref={renameInputRef}
@@ -2446,7 +2522,7 @@ function ProjectView() {
               ) : (
                 <button
                   type="button"
-                  className={`mind-tree-item mind-tree-file ${selectedFilePath === entry.path ? 'active' : ''}`}
+                  className={`mind-tree-item mind-tree-file ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${selectedFilePath === entry.path ? 'active' : ''}`}
                   style={{ paddingLeft: `${12 + depth * 18}px` }}
                   onClick={() => void openFile(entry.path)}
                   onDoubleClick={(e) => {
@@ -2723,23 +2799,31 @@ function ProjectView() {
         </div>
         {rootFolder ? (
           <div className="project-header-search">
-            <input
-              type="search"
-              className="project-search-input"
-              value={projectSearchQuery}
-              onChange={(event) => setProjectSearchQuery(event.target.value)}
-              placeholder="Search files and content..."
-              aria-label="Search project files and file contents"
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && firstSearchHitPath) {
-                  event.preventDefault();
-                  void openSearchResultFile(firstSearchHitPath);
-                }
-                if (event.key === 'Escape') {
-                  setProjectSearchQuery('');
-                }
-              }}
-            />
+            <div className="project-search-input-wrap">
+              <span className="project-search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" focusable="false">
+                  <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+                  <path d="M16 16L21 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </span>
+              <input
+                type="search"
+                className="project-search-input"
+                value={projectSearchQuery}
+                onChange={(event) => setProjectSearchQuery(event.target.value)}
+                placeholder="Search files and content..."
+                aria-label="Search project files and file contents"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && firstSearchHitPath) {
+                    event.preventDefault();
+                    void openSearchResultFile(firstSearchHitPath);
+                  }
+                  if (event.key === 'Escape') {
+                    setProjectSearchQuery('');
+                  }
+                }}
+              />
+            </div>
             {projectSearchQuery.trim() !== '' ? (
               <div className="project-search-results" role="listbox" aria-label="Project search results">
                 {isSearchingProject ? <div className="project-search-status">Searching...</div> : null}
@@ -2822,7 +2906,7 @@ function ProjectView() {
       {success ? (
         <div className="success-banner">
           {success}
-          <button type="button" className="error-dismiss" onClick={() => setSuccess(null)}>×</button>
+          <button type="button" className="success-dismiss" onClick={() => setSuccess(null)}>×</button>
         </div>
       ) : null}
 
@@ -3066,12 +3150,12 @@ function ProjectView() {
                       Open in Explorer
                     </button>
                     <button type="button" className="mind-create-session-btn" onClick={() => openSessionDialogForPath('file', activeTodoFilePath)}>
-                      💭 Session
+                      Session
                     </button>
                   </div>
                 </div>
                 <div className="mind-todo-board">
-                  {todoBoard.columns.map((column, columnIndex) => (
+                  {todoBoard.columns.map((column) => (
                     <div key={column.id} className="mind-todo-column">
                       <div className="mind-todo-column-header">
                         <h3>{column.title}</h3>
@@ -3085,45 +3169,84 @@ function ProjectView() {
                           + Task
                         </button>
                       </div>
-                      <div className="mind-todo-column-body">
+                      <div
+                        className={`mind-todo-column-body ${todoDropTargetColumnID === column.id ? 'drop-target' : ''}`}
+                        onDragOver={(event) => {
+                          if (!draggedTodoTask || isUpdatingTodoBoard) return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = 'move';
+                          setTodoDropTargetColumnID(column.id);
+                        }}
+                        onDragLeave={() => {
+                          if (todoDropTargetColumnID === column.id) {
+                            setTodoDropTargetColumnID(null);
+                          }
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          void handleDropTaskToColumn(column);
+                        }}
+                      >
                         {column.tasks.length === 0 ? <div className="mind-todo-empty">No tasks</div> : null}
                         {column.tasks.map((task) => {
                           const taskID = `${column.id}:${task.id}`;
+                          const isEditing = editingTodoTaskID === taskID;
                           return (
-                            <article key={task.id} className="mind-todo-card">
-                              <div className="mind-todo-card-title">{task.text}</div>
-                              <div className="mind-todo-card-meta">Line {task.lineIndex + 1}</div>
+                            <article
+                              key={task.id}
+                              className={`mind-todo-card ${draggedTodoTask?.task.id === task.id ? 'dragging' : ''}`}
+                              draggable={!isUpdatingTodoBoard && !isEditing}
+                              onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = 'move';
+                                event.dataTransfer.setData('text/plain', task.id);
+                                setDraggedTodoTask({ task, sourceColumnId: column.id });
+                              }}
+                              onDragEnd={() => {
+                                setDraggedTodoTask(null);
+                                setTodoDropTargetColumnID(null);
+                              }}
+                            >
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  className="mind-todo-card-input"
+                                  value={editingTodoTaskText}
+                                  onChange={(event) => setEditingTodoTaskText(event.target.value)}
+                                  onBlur={() => void handleSaveTodoTaskText(task, taskID)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault();
+                                      void handleSaveTodoTaskText(task, taskID);
+                                      return;
+                                    }
+                                    if (event.key === 'Escape') {
+                                      event.preventDefault();
+                                      cancelEditingTodoTask();
+                                    }
+                                  }}
+                                  onDoubleClick={(event) => event.stopPropagation()}
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  autoFocus
+                                />
+                              ) : (
+                                <div
+                                  className="mind-todo-card-title"
+                                  onDoubleClick={() => startEditingTodoTask(taskID, task.text)}
+                                  title="Double-click to edit task"
+                                >
+                                  {task.text}
+                                </div>
+                              )}
                               <div className="mind-todo-card-actions">
-                                {columnIndex > 0 ? (
-                                  <button
-                                    type="button"
-                                    className="mind-todo-action-btn"
-                                    onClick={() => void handleMoveTask(task, todoBoard.columns[columnIndex - 1])}
-                                    disabled={isUpdatingTodoBoard}
-                                    title="Move left"
-                                  >
-                                    ←
-                                  </button>
-                                ) : null}
-                                {columnIndex < todoBoard.columns.length - 1 ? (
-                                  <button
-                                    type="button"
-                                    className="mind-todo-action-btn"
-                                    onClick={() => void handleMoveTask(task, todoBoard.columns[columnIndex + 1])}
-                                    disabled={isUpdatingTodoBoard}
-                                    title="Move right"
-                                  >
-                                    →
-                                  </button>
-                                ) : null}
                                 <button
                                   type="button"
                                   className="mind-todo-action-btn"
                                   onClick={() => void handleDeleteTodoTask(task)}
                                   disabled={isUpdatingTodoBoard}
                                   title="Delete task"
+                                  aria-label={`Delete task ${task.text}`}
                                 >
-                                  Delete
+                                  ✕
                                 </button>
                                 {task.linkedFilePath !== '' ? (
                                   <button
@@ -3131,18 +3254,20 @@ function ProjectView() {
                                     className="mind-todo-action-btn"
                                     onClick={() => void handleOpenTodoTaskFile(task.linkedFilePath)}
                                     title="Open linked task file"
+                                    aria-label={`Open linked task file for ${task.text}`}
                                   >
-                                    File
+                                    ↗
                                   </button>
                                 ) : null}
                                 <button
                                   type="button"
-                                  className="mind-todo-action-btn primary"
+                                  className="mind-todo-action-btn"
                                   onClick={() => void handleStartTaskSession(task, column)}
                                   disabled={startingTaskSessionID === taskID}
                                   title="Start a new session for this task"
+                                  aria-label={`Start a session for task ${task.text}`}
                                 >
-                                  {startingTaskSessionID === taskID ? 'Starting...' : 'Session'}
+                                  {startingTaskSessionID === taskID ? '…' : '▶'}
                                 </button>
                               </div>
                             </article>

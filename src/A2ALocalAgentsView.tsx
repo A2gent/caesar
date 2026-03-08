@@ -216,7 +216,7 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
         {success && (
           <div className="success-banner">
             {success}
-            <button type="button" onClick={() => setSuccess(null)} className="error-dismiss">×</button>
+            <button type="button" onClick={() => setSuccess(null)} className="success-dismiss">×</button>
           </div>
         )}
 

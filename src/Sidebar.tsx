@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import type { ChangeEvent } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   getApiBaseUrl,
@@ -9,6 +8,7 @@ import {
   createProject,
   type Project,
 } from './api';
+import { withAgentEmoji } from './agentVisuals';
 
 interface NavItem {
   id: string;
@@ -18,7 +18,6 @@ interface NavItem {
 
 interface SidebarProps {
   title: string;
-  onTitleChange: (title: string) => void;
   onAgentSelect: (baseUrl: string) => void | Promise<void>;
   onReturnToParentAgent?: () => void | Promise<void>;
   onNavigate?: () => void;
@@ -104,7 +103,6 @@ function isNavItemActive(pathname: string, itemPath: string): boolean {
 
 function Sidebar({
   title,
-  onTitleChange,
   onAgentSelect,
   onReturnToParentAgent,
   onNavigate,
@@ -116,10 +114,8 @@ function Sidebar({
   const [parentBaseUrl, setParentBaseUrl] = useState(() => getParentApiBaseUrl());
   const [isSwitchingAgent, setIsSwitchingAgent] = useState(false);
   const [agentOptions, setAgentOptions] = useState(() => getStoredAgentEndpoints());
-  const [titleDraft, setTitleDraft] = useState(title);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const comboRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Projects state
   const [projects, setProjects] = useState<Project[]>([]);
@@ -132,10 +128,6 @@ function Sidebar({
     setParentBaseUrl(getParentApiBaseUrl());
     setAgentOptions(getStoredAgentEndpoints());
   }, []);
-
-  useEffect(() => {
-    setTitleDraft(title);
-  }, [title]);
 
   useEffect(() => {
     if (!isDropdownOpen) {
@@ -181,15 +173,6 @@ function Sidebar({
       setIsDropdownOpen(false);
       reloadAgentOptions();
     }
-  };
-
-  const commitTitleEdit = () => {
-    onTitleChange(titleDraft);
-  };
-
-  const cancelTitleEdit = () => {
-    setTitleDraft(title);
-    inputRef.current?.blur();
   };
 
   const handleCreateProject = async () => {
@@ -256,24 +239,13 @@ function Sidebar({
       <div className="sidebar-title-wrap">
         <div className="sidebar-agent-combo" ref={comboRef}>
           <div className="sidebar-agent-combo-row">
-            <input
-              ref={inputRef}
-              className="sidebar-title-input sidebar-agent-combo-input"
-              value={titleDraft}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setTitleDraft(event.target.value)}
-              onBlur={commitTitleEdit}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  commitTitleEdit();
-                  inputRef.current?.blur();
-                } else if (event.key === 'Escape') {
-                  event.preventDefault();
-                  cancelTitleEdit();
-                }
-              }}
-              aria-label="Edit active agent name"
-            />
+            <div
+              className="sidebar-title-display sidebar-agent-combo-input"
+              aria-label="Active agent"
+              title={withAgentEmoji(title, 'main')}
+            >
+              {withAgentEmoji(title, 'main')}
+            </div>
             <button
               type="button"
               className="sidebar-agent-combo-toggle"

@@ -35,7 +35,6 @@ import {
   getParentApiBaseUrl,
   getSession,
   listSessions,
-  saveAgentName,
   setApiBaseUrl,
   setParentApiBaseUrl,
 } from './api';
@@ -626,12 +625,6 @@ function AppLayout() {
     navigate(`/projects/${SYSTEM_PROJECT_KB_ID}`);
   }, [handleBackendChange, navigate]);
 
-  const handleAppTitleChange = useCallback((nextTitle: string) => {
-    const trimmed = nextTitle.trim() || '🤖 A2';
-    setAppTitle(trimmed);
-    void saveAgentName(trimmed);
-  }, []);
-
   const openNotificationSession = (sessionId: string) => {
     navigate(`/chat/${sessionId}`);
   };
@@ -678,7 +671,6 @@ function AppLayout() {
       <div className="sidebar-shell">
         <Sidebar 
           title={appTitle} 
-          onTitleChange={handleAppTitleChange}
           onAgentSelect={handleAgentSelect}
           onReturnToParentAgent={handleReturnToParentAgent}
           onNavigate={handleSidebarNavigate}
@@ -808,7 +800,14 @@ function AppLayout() {
           <Route path="/skills" element={<SkillsView />} />
           <Route
             path="/settings"
-            element={<SettingsView onAgentNameRefresh={handleBackendChange} themeMode={themeMode} onThemeChange={setThemeMode} />}
+            element={
+              <SettingsView
+                onAgentNameRefresh={refreshAgentName}
+                onBackendChanged={handleBackendChange}
+                themeMode={themeMode}
+                onThemeChange={setThemeMode}
+              />
+            }
           />
           <Route path="/projects/:projectId" element={<ProjectView />} />
           <Route path="/a2a" element={<A2ARegistryView />} />

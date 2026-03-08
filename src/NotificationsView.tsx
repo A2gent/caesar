@@ -20,6 +20,18 @@ interface NotificationsViewProps {
 
 function NotificationsView({ notifications, onClearAll, onDismiss }: NotificationsViewProps) {
   const navigate = useNavigate();
+  const formatEuropeanDateTime = (value: string): string => {
+    const date = new Date(value);
+    return new Intl.DateTimeFormat('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(date);
+  };
 
   const handleOpenSession = (sessionId: string) => {
     navigate(`/chat/${sessionId}`);
@@ -52,10 +64,10 @@ function NotificationsView({ notifications, onClearAll, onDismiss }: Notificatio
             {notifications.map((notification) => (
               <div key={notification.id} className="notification-card">
                 <div className="notification-card-header">
-                  <strong>{notification.title}</strong>
                   <span className={`notification-status status-${notification.status}`}>
                     {notification.status}
                   </span>
+                  <strong>{notification.title}</strong>
                 </div>
                 {notification.message && (
                   <div className="notification-message">{notification.message}</div>
@@ -68,24 +80,26 @@ function NotificationsView({ notifications, onClearAll, onDismiss }: Notificatio
                     loading="lazy"
                   />
                 )}
-                <div className="notification-meta">
-                  {new Date(notification.createdAt).toLocaleString()}
-                </div>
-                <div className="notification-actions">
-                  {notification.sessionId && (
+                <div className="notification-footer">
+                  <div className="notification-meta">
+                    {formatEuropeanDateTime(notification.createdAt)}
+                  </div>
+                  <div className="notification-actions">
+                    {notification.sessionId && (
+                      <button 
+                        onClick={() => handleOpenSession(notification.sessionId!)}
+                        className="btn btn-primary btn-sm"
+                      >
+                        Open
+                      </button>
+                    )}
                     <button 
-                      onClick={() => handleOpenSession(notification.sessionId!)}
-                      className="btn btn-primary btn-sm"
+                      onClick={() => onDismiss(notification.id)}
+                      className="btn btn-secondary btn-sm"
                     >
-                      Open
+                      Dismiss
                     </button>
-                  )}
-                  <button 
-                    onClick={() => onDismiss(notification.id)}
-                    className="btn btn-secondary btn-sm"
-                  >
-                    Dismiss
-                  </button>
+                  </div>
                 </div>
               </div>
             ))}

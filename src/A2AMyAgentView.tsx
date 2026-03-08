@@ -600,7 +600,7 @@ function A2AMyAgentView() {
         {success && (
           <div className="success-banner">
             {success}
-            <button onClick={() => setSuccess(null)} className="error-dismiss">×</button>
+            <button onClick={() => setSuccess(null)} className="success-dismiss">×</button>
           </div>
         )}
 

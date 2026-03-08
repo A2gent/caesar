@@ -165,7 +165,7 @@ function A2ARegistrySettingsView() {
         {success && (
           <div className="success-banner" style={{ marginBottom: 16 }}>
             {success}
-            <button onClick={() => setSuccess(null)} className="error-dismiss">×</button>
+            <button onClick={() => setSuccess(null)} className="success-dismiss">×</button>
           </div>
         )}
 

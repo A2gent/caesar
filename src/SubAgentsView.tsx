@@ -380,7 +380,7 @@ function SubAgentsView() {
       {success && (
         <div className="success-banner">
           {success}
-          <button onClick={() => setSuccess(null)} className="error-dismiss">&times;</button>
+          <button onClick={() => setSuccess(null)} className="success-dismiss">&times;</button>
         </div>
       )}
 
@@ -569,30 +569,34 @@ function SubAgentsView() {
               sortedAgents.map(sa => (
                 <article key={sa.id} className="integration-card mcp-server-card">
                   <div className="integration-card-headline">
-                    <div className="integration-card-title-wrap">
-                      <h3>{withAgentEmoji(sa.name, 'subagent', sa.id)}</h3>
-                      <span className="integration-mode-chip">
-                        {providerDisplayName(sa.provider)}
+                    <div className="subagent-card-main">
+                      <div className="integration-card-title-wrap">
+                        <h3>{withAgentEmoji(sa.name, 'subagent', sa.id)}</h3>
+                      </div>
+                      <span className="integration-updated">
+                        Updated {new Date(sa.updated_at).toLocaleString()}
                       </span>
-                      {sa.model && (
-                        <span className="integration-mode-chip">{sa.model}</span>
-                      )}
-                      <span className="integration-mode-chip">
-                        tools: {sa.enabled_tools.length === 0 ? 'all' : sa.enabled_tools.length}
-                      </span>
+                      <div className="subagent-card-chips">
+                        <span className="integration-mode-chip">
+                          {providerDisplayName(sa.provider)}
+                        </span>
+                        {sa.model && (
+                          <span className="integration-mode-chip">{sa.model}</span>
+                        )}
+                        <span className="integration-mode-chip">
+                          tools: {sa.enabled_tools.length === 0 ? 'all' : sa.enabled_tools.length}
+                        </span>
+                      </div>
                     </div>
-                    <span className="integration-updated">
-                      Updated {new Date(sa.updated_at).toLocaleString()}
-                    </span>
-                  </div>
 
-                  <div className="integration-card-actions">
-                    <button type="button" className="settings-add-btn" onClick={() => startEditing(sa)} disabled={saving}>
-                      Edit
-                    </button>
-                    <button type="button" className="settings-remove-btn" onClick={() => handleDelete(sa)} disabled={saving}>
-                      Remove
-                    </button>
+                    <div className="integration-card-actions subagent-card-actions">
+                      <button type="button" className="settings-add-btn" onClick={() => startEditing(sa)} disabled={saving}>
+                        Edit
+                      </button>
+                      <button type="button" className="settings-remove-btn" onClick={() => handleDelete(sa)} disabled={saving}>
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))

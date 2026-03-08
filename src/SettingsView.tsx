@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AgentUrlComboField from './AgentUrlComboField';
 import SettingsPanel from './SettingsPanel';
 import {
@@ -7,6 +7,7 @@ import {
   getApiBaseUrlHistory,
   removeApiBaseUrlFromHistory,
   getSettingsPayload,
+  saveAgentName,
   setApiBaseUrl,
   updateSettings,
 } from './api';
@@ -14,11 +15,21 @@ import { getAgentEmoji, setAgentEmoji } from './agentVisuals';
 
 interface SettingsViewProps {
   onAgentNameRefresh?: () => void | Promise<void>;
+  onBackendChanged?: () => void | Promise<void>;
   themeMode: 'dark' | 'light';
   onThemeChange: (nextTheme: 'dark' | 'light') => void;
 }
 
-function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: SettingsViewProps) {
+const AGENT_NAME_SETTING_KEY = 'AAGENT_NAME';
+const MAIN_AGENT_EMOJI_OPTIONS = [
+  '🤖', '🧠', '✨', '🚀', '⚡', '🛠️', '🔍', '💡', '🧩', '📚', '🗂️', '🧭', '🛰️', '🦾', '🎯', '🦉',
+  '🦊', '🐺', '🐼', '🦁', '🐯', '🐙', '🐢', '🐬', '🦄', '🐝', '🦜', '🐘', '🧬', '🧪', '🔬', '🧱',
+  '🧰', '🔧', '⚙️', '🧲', '📡', '🧮', '📈', '📊', '🗺️', '🗃️', '🪄', '🪐', '🌌', '🔥', '🌟', '🌈',
+  '☀️', '🌙', '🌊', '🌿', '🍀', '🏆', '🎵', '🎨', '🎮', '📎', '✅', '❇️', '🫡', '💻', '🖥️', '⌨️',
+  '🖱️', '📱', '🔒', '🧷', '📌', '📁', '🧾', '📝', '🧑‍💻', '🫶', '💬', '📬', '🚢', '🛡️', '📍', '🪙',
+];
+
+function SettingsView({ onAgentNameRefresh, onBackendChanged, themeMode, onThemeChange }: SettingsViewProps) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -30,6 +41,12 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
   const [apiBaseUrlMessage, setApiBaseUrlMessage] = useState<string | null>(null);
   const [saveRequestKey, setSaveRequestKey] = useState(0);
   const [mainAgentEmoji, setMainAgentEmoji] = useState(() => getAgentEmoji('main'));
+  const [customEmojiInput, setCustomEmojiInput] = useState('');
+  const [isEmojiDropdownOpen, setIsEmojiDropdownOpen] = useState(false);
+  const emojiDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [mainAgentName, setMainAgentName] = useState('');
+  const [isSavingAgentName, setIsSavingAgentName] = useState(false);
+  const [agentNameMessage, setAgentNameMessage] = useState<string | null>(null);
 
   const loadSettings = async () => {
     try {
@@ -37,6 +54,7 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
       setError(null);
       const payload = await getSettingsPayload();
       setSettings(payload.settings || {});
+      setMainAgentName((payload.settings || {})[AGENT_NAME_SETTING_KEY] || '');
       setDefaultSystemPrompt((payload.defaultSystemPrompt || '').trim());
       setDefaultSystemPromptWithoutBuiltInTools((payload.defaultSystemPromptWithoutBuiltInTools || '').trim());
     } catch (err) {
@@ -51,6 +69,16 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
     loadSettings();
   }, []);
 
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (emojiDropdownRef.current && !emojiDropdownRef.current.contains(event.target as Node)) {
+        setIsEmojiDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
+
   const handleSaveApiBaseUrl = async () => {
     try {
       setApiBaseUrl(apiBaseUrlInput);
@@ -60,8 +88,8 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
       setApiBaseUrlHistory(getApiBaseUrlHistory());
       setApiBaseUrlMessage(`Connected to agent at: ${normalized}`);
       await loadSettings();
-      if (onAgentNameRefresh) {
-        await onAgentNameRefresh();
+      if (onBackendChanged) {
+        await onBackendChanged();
       }
     } catch (err) {
       console.error('Failed to update API base URL:', err);
@@ -75,8 +103,8 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
     setApiBaseUrlInput(normalized);
     setApiBaseUrlMessage(`Reset to default: ${normalized}`);
     await loadSettings();
-    if (onAgentNameRefresh) {
-      await onAgentNameRefresh();
+    if (onBackendChanged) {
+      await onBackendChanged();
     }
   };
 
@@ -93,6 +121,23 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
       setSettings(saved);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveAgentName = async () => {
+    setIsSavingAgentName(true);
+    setAgentNameMessage(null);
+    try {
+      await saveAgentName(mainAgentName);
+      setAgentNameMessage('Agent name saved.');
+      if (onAgentNameRefresh) {
+        await onAgentNameRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to save agent name:', err);
+      setAgentNameMessage('Failed to save agent name.');
+    } finally {
+      setIsSavingAgentName(false);
     }
   };
 
@@ -138,18 +183,88 @@ function SettingsView({ onAgentNameRefresh, themeMode, onThemeChange }: Settings
             </button>
           </div>
           <label className="settings-field" style={{ marginTop: 12 }}>
+            <span>Main agent name</span>
+            <div className="settings-agent-name-row">
+              <input
+                type="text"
+                value={mainAgentName}
+                onChange={(event) => setMainAgentName(event.target.value)}
+                placeholder="A2"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void handleSaveAgentName();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="settings-save-btn"
+                onClick={() => void handleSaveAgentName()}
+                disabled={isSavingAgentName}
+              >
+                {isSavingAgentName ? 'Saving...' : 'Save name'}
+              </button>
+            </div>
+          </label>
+          {agentNameMessage ? <div className="settings-success">{agentNameMessage}</div> : null}
+
+          <label className="settings-field" style={{ marginTop: 12 }}>
             <span>Main agent emoji</span>
-            <input
-              type="text"
-              value={mainAgentEmoji}
-              onChange={(event) => {
-                const next = event.target.value;
-                setMainAgentEmoji(next);
-                setAgentEmoji('main', next);
-              }}
-              placeholder="🤖"
-              maxLength={4}
-            />
+            <div className="settings-emoji-picker-row">
+              <div className="settings-emoji-dropdown" ref={emojiDropdownRef}>
+                <button
+                  type="button"
+                  className="settings-emoji-dropdown-trigger"
+                  onClick={() => setIsEmojiDropdownOpen((prev) => !prev)}
+                  aria-haspopup="listbox"
+                  aria-expanded={isEmojiDropdownOpen}
+                  aria-label="Open emoji selector"
+                >
+                  <span className="settings-emoji-current">{mainAgentEmoji}</span>
+                  <span>Choose emoji</span>
+                  <span aria-hidden="true">▾</span>
+                </button>
+                {isEmojiDropdownOpen ? (
+                  <div className="settings-emoji-dropdown-panel" role="listbox" aria-label="Choose main agent emoji">
+                    {MAIN_AGENT_EMOJI_OPTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className={`settings-emoji-option ${mainAgentEmoji === emoji ? 'active' : ''}`}
+                        onClick={() => {
+                          setMainAgentEmoji(emoji);
+                          setAgentEmoji('main', emoji);
+                          setCustomEmojiInput('');
+                          setIsEmojiDropdownOpen(false);
+                        }}
+                        aria-label={`Set emoji to ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <input
+                type="text"
+                className="settings-emoji-custom-input"
+                value={customEmojiInput}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setCustomEmojiInput(next);
+                  if (!next.trim()) {
+                    return;
+                  }
+                  setMainAgentEmoji(next);
+                  setAgentEmoji('main', next);
+                  setIsEmojiDropdownOpen(false);
+                }}
+                placeholder={MAIN_AGENT_EMOJI_OPTIONS.includes(mainAgentEmoji) ? 'Type your own' : mainAgentEmoji}
+                aria-label="Custom emoji input"
+                maxLength={8}
+              />
+            </div>
           </label>
         </div>
 

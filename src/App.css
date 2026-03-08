@@ -537,6 +537,24 @@ body.mind-resizing * {
   outline-offset: 1px;
 }
 
+.sidebar-title-display {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border: 1px solid #4b4b4b;
+  border-radius: 6px;
+  background: #242424;
+  color: #f0f0f0;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.25;
+  padding: 8px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sidebar-agent-combo-row {
   display: flex;
   align-items: stretch;
@@ -3785,6 +3803,34 @@ body.mind-resizing * {
   margin-top: 12px;
 }
 
+.subagent-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.subagent-card-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.subagent-card-actions {
+  margin-top: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+@media (max-width: 740px) {
+  .subagent-card-actions {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 8px;
+  }
+}
+
 .integration-empty-state {
   border: 1px dashed #475569;
   border-radius: 8px;
@@ -5972,6 +6018,10 @@ input[type="checkbox"]:disabled {
   background: #2c2c2c;
 }
 
+.mind-tree-item.mind-tree-hidden {
+  color: #8f8f8f;
+}
+
 .mind-tree-file.active {
   background: #313131;
   color: #8ea7ff;
@@ -6459,32 +6509,64 @@ input[type="checkbox"]:disabled {
   padding: 10px;
   display: grid;
   gap: 8px;
+  min-height: 140px;
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.mind-todo-column-body.drop-target {
+  background: rgba(108, 140, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(129, 157, 255, 0.42);
 }
 
 .mind-todo-card {
   border: 1px solid #353535;
   border-radius: 8px;
   background: #232323;
-  padding: 10px;
-  display: grid;
-  gap: 7px;
+  padding: 9px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: grab;
+}
+
+.mind-todo-card.dragging {
+  opacity: 0.62;
+  cursor: grabbing;
 }
 
 .mind-todo-card-title {
   color: #f0f0f0;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 15px;
+  line-height: 1.35;
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-.mind-todo-card-meta {
-  color: #989898;
-  font-size: 11px;
+.mind-todo-card-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #5a6788;
+  border-radius: 6px;
+  background: #1a2230;
+  color: #e9efff;
+  padding: 6px 8px;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.mind-todo-card-input:focus {
+  outline: none;
+  border-color: #7fa4ff;
 }
 
 .mind-todo-card-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
 }
 
 .mind-todo-action-btn,
@@ -6493,9 +6575,10 @@ input[type="checkbox"]:disabled {
   border-radius: 6px;
   background: #2a2a2a;
   color: #ddd;
-  font-size: 11px;
-  padding: 4px 8px;
+  font-size: 12px;
+  padding: 4px 7px;
   cursor: pointer;
+  min-height: 28px;
 }
 
 .mind-todo-action-btn.primary {
@@ -6513,6 +6596,12 @@ input[type="checkbox"]:disabled {
 .mind-todo-empty {
   color: #9b9b9b;
   font-size: 12px;
+}
+
+.project-task-header-actions .mind-create-session-btn {
+  border-color: #5a6f96;
+  background: #29354a;
+  color: #d2ddf2;
 }
 
 .mind-picker-overlay {
@@ -6924,9 +7013,30 @@ input[type="checkbox"]:disabled {
 
 .project-header-search {
   position: relative;
-  width: min(520px, 100%);
+  width: min(380px, 100%);
   min-width: 280px;
-  flex: 1 1 360px;
+  flex: 0 1 320px;
+}
+
+.project-search-input-wrap {
+  position: relative;
+}
+
+.project-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: #8f9cb1;
+  pointer-events: none;
+}
+
+.project-search-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .project-search-input {
@@ -6937,7 +7047,7 @@ input[type="checkbox"]:disabled {
   color: #e4eaf4;
   font-size: 13px;
   line-height: 1.35;
-  padding: 9px 11px;
+  padding: 9px 11px 9px 34px;
 }
 
 .project-search-input:focus {
@@ -8284,7 +8394,7 @@ input[type="checkbox"]:disabled {
 .notification-card-header {
   display: flex;
   gap: 12px;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   margin-bottom: 8px;
 }
@@ -8353,12 +8463,20 @@ input[type="checkbox"]:disabled {
 .notification-meta {
   color: #6b7280;
   font-size: 12px;
-  margin-bottom: 12px;
+}
+
+.notification-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .notification-actions {
   display: flex;
   gap: 8px;
+  margin-left: auto;
 }
 
 .notification-actions .btn {
@@ -8411,6 +8529,16 @@ input[type="checkbox"]:disabled {
 
 /* Responsive adjustments for mobile */
 @media (max-width: 900px) {
+  .notification-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .notification-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .toast-notifications-container {
     left: 10px;
     right: 10px;
@@ -8842,6 +8970,7 @@ button.session-provider-chip:hover {
 [data-theme='light'] .search-input,
 [data-theme='light'] .chat-textarea,
 [data-theme='light'] .sidebar-title-input,
+[data-theme='light'] .sidebar-title-display,
 [data-theme='light'] input,
 [data-theme='light'] select,
 [data-theme='light'] textarea {
@@ -9065,6 +9194,10 @@ button.session-provider-chip:hover {
   color: #1f2b40;
 }
 
+[data-theme='light'] .project-files-section .mind-tree-item.mind-tree-hidden {
+  color: #7f8aa0;
+}
+
 [data-theme='light'] .project-files-section .mind-tree-item:hover {
   background: #eaf0f9;
 }
@@ -9098,6 +9231,30 @@ button.session-provider-chip:hover {
 [data-theme='light'] .project-files-section .mind-markdown-preview td,
 [data-theme='light'] .project-files-section .mind-markdown-preview th {
   color: #1f2b40;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .md-table th {
+  background: #eef3fb;
+  border-color: #d5dfef;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .md-table td {
+  border-color: #d5dfef;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview code {
+  color: #132238;
+  background: #eaf1fb;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview pre {
+  background: #f5f8fd;
+  border-color: #d5dfef;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview pre code {
+  color: #132238;
+  background: transparent;
 }
 
 [data-theme='light'] .project-files-section .mind-markdown-preview a {
@@ -9205,6 +9362,33 @@ button.session-provider-chip:hover {
   background: #f8fbff;
   border-color: #c9d3e2;
   color: #1f2b40;
+}
+
+[data-theme='light'] .tool-name {
+  color: #1f2b40;
+}
+
+[data-theme='light'] .tool-details {
+  color: #435672;
+}
+
+[data-theme='light'] .session-failure-reason {
+  color: #b3261e;
+}
+
+[data-theme='light'] .tool-path-link {
+  color: #0b57d0;
+}
+
+[data-theme='light'] .tool-path-link:hover {
+  color: #0846a9;
+}
+
+[data-theme='light'] .tool-input,
+[data-theme='light'] .tool-result-content {
+  background-color: #eef3fa;
+  color: #1f2b40;
+  border: 1px solid #c9d3e2;
 }
 
 [data-theme='light'] .integration-provider-card.active {
@@ -9562,6 +9746,75 @@ button.session-provider-chip:hover {
   border-color: #b8c5d9;
 }
 
+[data-theme='light'] .mind-todo-column {
+  border-color: #c9d3e2;
+  background: #f8fbff;
+}
+
+[data-theme='light'] .mind-todo-column-header {
+  border-bottom-color: #d7deea;
+}
+
+[data-theme='light'] .mind-todo-column-header h3 {
+  color: #23324a;
+}
+
+[data-theme='light'] .mind-todo-column-body.drop-target {
+  background: #e7effd;
+  box-shadow: inset 0 0 0 1px #9db7ea;
+}
+
+[data-theme='light'] .mind-todo-card {
+  border-color: #cbd6e8;
+  background: #ffffff;
+}
+
+[data-theme='light'] .mind-todo-card-title {
+  color: #1f2d43;
+}
+
+[data-theme='light'] .mind-todo-card-input {
+  border-color: #b8c8df;
+  background: #f7faff;
+  color: #20304a;
+}
+
+[data-theme='light'] .mind-todo-card-input:focus {
+  border-color: #6d93d8;
+}
+
+[data-theme='light'] .mind-todo-empty {
+  color: #566983;
+}
+
+[data-theme='light'] .mind-todo-action-btn,
+[data-theme='light'] .mind-todo-add-btn {
+  border-color: #c5d1e3;
+  background: #eef3fa;
+  color: #273247;
+}
+
+[data-theme='light'] .mind-todo-action-btn:hover,
+[data-theme='light'] .mind-todo-add-btn:hover {
+  background: #e3ebf7;
+  border-color: #aebfda;
+}
+
+[data-theme='light'] .project-task-header h2 {
+  color: #25364f;
+}
+
+[data-theme='light'] .project-task-header-actions .mind-create-session-btn {
+  border-color: #c5d1e3;
+  background: #eef3fa;
+  color: #2b3a52;
+}
+
+[data-theme='light'] .project-task-header-actions .mind-create-session-btn:hover {
+  background: #e3ebf7;
+  border-color: #aebfda;
+}
+
 [data-theme='light'] .project-viewer-empty-icon {
   border-color: #c9d3e2;
   background: linear-gradient(180deg, #eef3fb 0%, #e3eaf6 100%);
@@ -9821,6 +10074,83 @@ button.session-provider-chip:hover {
   width: 3.2rem;
   min-width: 3.2rem;
   text-align: center;
+}
+
+.settings-agent-name-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.settings-emoji-picker-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.settings-emoji-dropdown {
+  position: relative;
+}
+
+.settings-emoji-dropdown-trigger {
+  border: 1px solid var(--app-border-1);
+  background: var(--app-bg-3);
+  color: inherit;
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.settings-emoji-current {
+  font-size: 1.15rem;
+}
+
+.settings-emoji-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(360px, 80vw);
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--app-border-1);
+  border-radius: 10px;
+  background: var(--app-bg-2);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  padding: 8px;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.settings-emoji-option {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  min-height: 34px;
+  cursor: pointer;
+}
+
+.settings-emoji-option:hover {
+  background: var(--app-bg-4);
+  border-color: var(--app-border-1);
+}
+
+.settings-emoji-option.active {
+  border-color: var(--app-accent-1);
+  background: color-mix(in srgb, var(--app-accent-1) 12%, transparent);
+}
+
+.settings-emoji-custom-input {
+  width: 120px;
 }
 
 .workflows-list-panel,

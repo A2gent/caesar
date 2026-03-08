@@ -682,7 +682,7 @@ function ToolsView() {
       {success ? (
         <div className="success-banner">
           {success}
-          <button type="button" className="error-dismiss" onClick={() => setSuccess(null)}>×</button>
+          <button type="button" className="success-dismiss" onClick={() => setSuccess(null)}>×</button>
         </div>
       ) : null}
 
