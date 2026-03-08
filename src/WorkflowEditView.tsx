@@ -30,6 +30,8 @@ const WORKFLOW_EDIT_CANVAS_HEIGHT = 760;
 type ParsedGraph = {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  entryNodeId?: string;
+  policy?: Partial<WorkflowDefinition['policy']>;
   errors: string[];
   warnings: string[];
 };
@@ -143,12 +145,19 @@ function workflowToGraphYaml(workflow: WorkflowDefinition): string {
       to: edge.to,
     })),
     entryNodeId: workflow.entryNodeId,
+    policy: {
+      stopCondition: workflow.policy.stopCondition,
+      judgeNodeId: workflow.policy.judgeNodeId,
+      maxTurns: workflow.policy.maxTurns,
+      timeboxMinutes: workflow.policy.timeboxMinutes,
+    },
   });
 }
 
 function defaultGraphTemplate(): string {
   return [
     '# YAML graph definition',
+    '# Stop condition options: manual | max_turns | consensus | judge | timebox',
     'nodes:',
     '  - id: user',
     '    label: User',
@@ -174,6 +183,11 @@ function defaultGraphTemplate(): string {
     '  - from: worker_b',
     '    to: synth',
     'entryNodeId: user',
+    'policy:',
+    '  stopCondition: manual',
+    '  # judgeNodeId: synth',
+    '  maxTurns: 12',
+    '  timeboxMinutes: 20',
   ].join('\n');
 }
 
@@ -189,6 +203,17 @@ type YamlEdgeSeed = {
   to: string;
   mode: 'sequential' | 'parallel' | null;
 };
+
+function parseYamlStopCondition(raw: unknown): WorkflowStopCondition | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const normalized = raw.trim();
+  if (normalized === 'manual' || normalized === 'max_turns' || normalized === 'consensus' || normalized === 'judge' || normalized === 'timebox') {
+    return normalized;
+  }
+  return null;
+}
 
 function parseYamlGraph(
   source: string,
@@ -209,7 +234,9 @@ function parseYamlGraph(
 
   const yamlNodes: YamlNodeSeed[] = [];
   const yamlEdges: YamlEdgeSeed[] = [];
+  const warnings: string[] = [];
   const errors: string[] = [];
+  const usedNodeIds = new Set<string>();
 
   rawNodes.forEach((entry, index) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -230,6 +257,11 @@ function parseYamlGraph(
       errors.push(`nodes[${index}].id is required.`);
       return;
     }
+    if (usedNodeIds.has(id)) {
+      errors.push(`nodes[${index}].id "${id}" is duplicated.`);
+      return;
+    }
+    usedNodeIds.add(id);
     if (kindRaw !== '' && !kind) {
       errors.push(`nodes[${index}].kind must be one of user|main|subagent|local|external.`);
       return;
@@ -269,7 +301,32 @@ function parseYamlGraph(
     return { nodes: [], edges: [], errors, warnings: [] };
   }
 
-  const tokenById = new Map(yamlNodes.map((node) => {
+  const nodeIds = new Set(yamlNodes.map((node) => node.id));
+  const outgoingCounts = new Map<string, number>();
+  yamlEdges.forEach((edge) => outgoingCounts.set(edge.from, (outgoingCounts.get(edge.from) || 0) + 1));
+
+  yamlEdges.forEach((edge) => {
+    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+      errors.push(`Edge "${edge.from} -> ${edge.to}" references unknown node id.`);
+    }
+  });
+
+  if (errors.length > 0) {
+    return { nodes: [], edges: [], errors, warnings: [] };
+  }
+
+  const positioned = assignNodeLayout(
+    yamlNodes.map((node) => ({
+      key: node.id,
+      label: node.label,
+      kind: node.kind || (node.ref !== '' ? 'subagent' : 'main'),
+      ref: node.ref,
+    })),
+    yamlEdges.map((edge) => ({ from: edge.from, to: edge.to })),
+  );
+  const positionById = new Map(positioned.map((item) => [item.key, item]));
+
+  const nodes: WorkflowNode[] = yamlNodes.map((node) => {
     const inferredKind: WorkflowNodeKind = node.kind || (() => {
       const lower = node.label.trim().toLowerCase();
       if (lower === 'user' || lower === 'you') return 'user';
@@ -277,63 +334,138 @@ function parseYamlGraph(
       if (node.ref !== '') return 'subagent';
       return 'main';
     })();
+    const pos = positionById.get(node.id) || { x: 70, y: 60 };
+    const result: WorkflowNode = {
+      id: node.id,
+      label: node.label,
+      kind: inferredKind,
+      x: pos.x,
+      y: pos.y,
+    };
 
-    let token = `${node.label}@${inferredKind}`;
-    if (node.ref !== '' && !node.kind) {
-      token = `@${node.ref}`;
-    } else if (inferredKind === 'subagent' && node.ref !== '') {
-      token = `${node.label}@subagent@${node.ref}`;
-    } else if (inferredKind === 'local' && node.ref !== '') {
-      token = `${node.label}@local@${node.ref}`;
-    } else if (inferredKind === 'external' && node.ref !== '') {
-      token = `${node.label}@external@${node.ref}`;
+    if (inferredKind === 'subagent') {
+      const search = (node.ref || node.label).toLowerCase();
+      const byId = subAgents.find((agent) => agent.id.toLowerCase() === search);
+      const byName = subAgents.find((agent) => agent.name.toLowerCase() === search);
+      const byLocalId = localAgents.find((agent) => agent.id.toLowerCase() === search);
+      const byExternalId = favoriteExternalAgents.find((agent) => agent.id.toLowerCase() === search);
+      const match = byId || byName;
+      if (match) {
+        result.subAgentId = match.id;
+        result.label = match.name || node.label;
+      } else if (byLocalId) {
+        result.kind = 'local';
+        result.localAgentId = byLocalId.id;
+        result.localAgentName = byLocalId.name;
+        result.localAgentBaseUrl = byLocalId.api_url || undefined;
+        result.label = byLocalId.name || node.label;
+      } else if (byExternalId) {
+        result.kind = 'external';
+        result.externalAgentId = byExternalId.id;
+        result.externalAgentName = byExternalId.name;
+        result.label = byExternalId.name || node.label;
+      } else {
+        errors.push(`Sub-agent "${node.label}" was not matched to an existing sub-agent.`);
+      }
     }
-    return [node.id, token] as const;
+
+    if (inferredKind === 'local') {
+      const search = (node.ref || node.label).toLowerCase();
+      const match = localAgents.find((agent) => agent.id.toLowerCase() === search)
+        || localAgents.find((agent) => agent.name.toLowerCase() === search)
+        || localAgents.find((agent) => (agent.api_url || '').toLowerCase() === search);
+      if (match) {
+        result.localAgentId = match.id;
+        result.localAgentName = match.name;
+        result.localAgentBaseUrl = match.api_url || undefined;
+        result.label = match.name || node.label;
+      } else {
+        errors.push(`Local agent "${node.label}" was not matched to an existing local agent.`);
+      }
+    }
+
+    if (inferredKind === 'external') {
+      if (node.ref === '') {
+        errors.push(`External node "${node.label}" has no external agent id in ref.`);
+      } else {
+        const favorite = favoriteExternalAgents.find((agent) => agent.id === node.ref);
+        if (!favorite) {
+          errors.push(`External agent id "${node.ref}" is not in favorites. Add it in A2 Registry first.`);
+        } else {
+          result.externalAgentId = favorite.id;
+          result.externalAgentName = favorite.name;
+          result.label = favorite.name || node.label;
+        }
+      }
+    }
+
+    return result;
+  });
+
+  if (errors.length > 0) {
+    return { nodes: [], edges: [], errors, warnings: [] };
+  }
+
+  const edges: WorkflowEdge[] = yamlEdges.map((edge, index) => ({
+    id: `edge-${index + 1}`,
+    from: edge.from,
+    to: edge.to,
+    mode: edge.mode || ((outgoingCounts.get(edge.from) || 0) > 1 ? 'parallel' : 'sequential'),
   }));
-  const generatedLines: string[] = [];
-  const explicitModeByIndex: boolean[] = [];
-  const outgoingCounts = new Map<string, number>();
 
-  for (const edge of yamlEdges) {
-    const fromToken = tokenById.get(edge.from);
-    const toToken = tokenById.get(edge.to);
-    if (!fromToken || !toToken) {
-      errors.push(`Edge "${edge.from} -> ${edge.to}" references unknown node id.`);
-      continue;
+  const entryNodeIdRaw = typeof obj.entryNodeId === 'string' ? obj.entryNodeId.trim() : '';
+  const entryNodeId = nodeIds.has(entryNodeIdRaw) ? entryNodeIdRaw : (nodes[0]?.id || '');
+
+  const policyPatch: Partial<WorkflowDefinition['policy']> = {};
+  const policyRaw = obj.policy;
+  if (policyRaw && typeof policyRaw === 'object' && !Array.isArray(policyRaw)) {
+    const policyObj = policyRaw as Record<string, unknown>;
+    const stopCondition = parseYamlStopCondition(policyObj.stopCondition);
+    if (policyObj.stopCondition !== undefined && !stopCondition) {
+      errors.push('policy.stopCondition must be one of manual|max_turns|consensus|judge|timebox.');
+    } else if (stopCondition) {
+      policyPatch.stopCondition = stopCondition;
     }
-    if (edge.mode) {
-      generatedLines.push(`${fromToken} -->|${edge.mode}| ${toToken}`);
-      explicitModeByIndex.push(true);
-    } else {
-      generatedLines.push(`${fromToken} --> ${toToken}`);
-      explicitModeByIndex.push(false);
+    if (typeof policyObj.judgeNodeId === 'string') {
+      const judgeNodeId = policyObj.judgeNodeId.trim();
+      if (judgeNodeId !== '') {
+        policyPatch.judgeNodeId = judgeNodeId;
+      }
     }
-    outgoingCounts.set(edge.from, (outgoingCounts.get(edge.from) || 0) + 1);
+    if (typeof policyObj.maxTurns === 'number' && Number.isFinite(policyObj.maxTurns)) {
+      policyPatch.maxTurns = Math.max(1, Math.floor(policyObj.maxTurns));
+    }
+    if (typeof policyObj.timeboxMinutes === 'number' && Number.isFinite(policyObj.timeboxMinutes)) {
+      policyPatch.timeboxMinutes = Math.max(1, Math.floor(policyObj.timeboxMinutes));
+    }
+  }
+
+  const stopCondition = policyPatch.stopCondition;
+  if (stopCondition === 'judge') {
+    if (!policyPatch.judgeNodeId) {
+      errors.push('policy.judgeNodeId is required when policy.stopCondition is "judge".');
+    } else if (!nodeIds.has(policyPatch.judgeNodeId)) {
+      errors.push(`policy.judgeNodeId "${policyPatch.judgeNodeId}" does not match any node id.`);
+    }
+  } else if (policyPatch.judgeNodeId && !nodeIds.has(policyPatch.judgeNodeId)) {
+    errors.push(`policy.judgeNodeId "${policyPatch.judgeNodeId}" does not match any node id.`);
   }
 
   if (errors.length > 0) {
     return { nodes: [], edges: [], errors, warnings: [] };
   }
 
-  const parsed = parseGraphDsl(generatedLines.join('\n'), subAgents, localAgents, favoriteExternalAgents);
-  if (parsed.errors.length > 0) {
-    return parsed;
+  if (edges.length === 0) {
+    warnings.push('No connections found yet.');
   }
 
-  const inferredEdges = parsed.edges.map((edge, index) => {
-    const yamlEdge = yamlEdges[index];
-    if (!yamlEdge) {
-      return edge;
-    }
-    if (!explicitModeByIndex[index] && (outgoingCounts.get(yamlEdge.from) || 0) > 1) {
-      return { ...edge, mode: 'parallel' as const };
-    }
-    return edge;
-  });
-
   return {
-    ...parsed,
-    edges: inferredEdges,
+    nodes,
+    edges,
+    entryNodeId,
+    policy: policyPatch,
+    errors: [],
+    warnings,
   };
 }
 
@@ -652,8 +784,25 @@ function WorkflowEditView() {
     [graphDefinition, subAgents, localAgents, favoriteExternalAgents],
   );
 
+  const effectiveStopCondition = (parsedGraph.policy?.stopCondition || draft?.policy.stopCondition || 'manual') as WorkflowStopCondition;
+  const judgeNodeIdFromYaml = (parsedGraph.policy?.judgeNodeId || '').trim();
+  const judgeValidationErrors = useMemo(() => {
+    const next: string[] = [];
+    if (!draft) {
+      return next;
+    }
+    if (effectiveStopCondition === 'judge') {
+      if (!judgeNodeIdFromYaml) {
+        next.push('Graph YAML must define policy.judgeNodeId when stop condition is "judge".');
+      } else if (!parsedGraph.nodes.some((node) => node.id === judgeNodeIdFromYaml)) {
+        next.push(`policy.judgeNodeId "${judgeNodeIdFromYaml}" does not match any node id.`);
+      }
+    }
+    return next;
+  }, [draft, effectiveStopCondition, judgeNodeIdFromYaml, parsedGraph.nodes]);
+
   const canEdit = !!draft;
-  const canSave = canEdit && parsedGraph.errors.length === 0;
+  const canSave = canEdit && parsedGraph.errors.length === 0 && judgeValidationErrors.length === 0;
 
   const handleVisualNodeClick = (node: WorkflowNode) => {
     if (!draft || parsedGraph.errors.length > 0) {
@@ -738,7 +887,7 @@ function WorkflowEditView() {
       setError('Workflow name is required.');
       return;
     }
-    if (parsedGraph.errors.length > 0) {
+    if (parsedGraph.errors.length > 0 || judgeValidationErrors.length > 0) {
       setError('Fix graph syntax errors before saving.');
       return;
     }
@@ -748,6 +897,12 @@ function WorkflowEditView() {
     }
 
     const entryNode = parsedGraph.nodes.find((node) => node.kind === 'user') || parsedGraph.nodes[0];
+    const mergedPolicy = {
+      ...draft.policy,
+      ...parsedGraph.policy,
+      stopCondition: effectiveStopCondition,
+      judgeNodeId: judgeNodeIdFromYaml || undefined,
+    };
 
     try {
       await saveWorkflow({
@@ -755,8 +910,8 @@ function WorkflowEditView() {
         builtIn: false,
         nodes: parsedGraph.nodes,
         edges: parsedGraph.edges,
-        entryNodeId: entryNode?.id || '',
-        policy: { ...draft.policy },
+        entryNodeId: parsedGraph.entryNodeId || entryNode?.id || '',
+        policy: mergedPolicy,
       });
 
       setSuccess('Workflow saved.');
@@ -911,7 +1066,16 @@ function WorkflowEditView() {
                       </p>
                     ) : null}
                     <p className="settings-help">
-                      Define <code>nodes</code> with <code>id</code>. <code>label</code>, <code>kind</code>, and <code>ref</code> are optional.
+                      <a
+                        href="https://github.com/A2gent/brute/blob/main/README.md#workflow-definition-yaml-standard"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Workflow YAML format reference
+                      </a>
+                    </p>
+                    <p className="settings-help">
+                      Define <code>nodes</code> with <code>id</code>. <code>label</code>, <code>kind</code>, and <code>ref</code> are optional. Define stop policy in <code>policy</code>.
                     </p>
                     <textarea
                       className="mind-session-textarea"
@@ -935,6 +1099,11 @@ function WorkflowEditView() {
                     {parsedGraph.errors.length > 0 ? (
                       <div className="error-banner" style={{ marginTop: 10 }}>
                         {parsedGraph.errors.join(' ')}
+                      </div>
+                    ) : null}
+                    {judgeValidationErrors.length > 0 ? (
+                      <div className="error-banner" style={{ marginTop: 10 }}>
+                        {judgeValidationErrors.join(' ')}
                       </div>
                     ) : null}
                     {parsedGraph.warnings.length > 0 ? (
@@ -966,6 +1135,7 @@ function WorkflowEditView() {
                       canvasHeight={WORKFLOW_EDIT_CANVAS_HEIGHT}
                       onNodeClick={canEdit ? handleVisualNodeClick : undefined}
                       selectedNodeId={selectedSourceNodeId}
+                      judgeNodeId={effectiveStopCondition === 'judge' ? judgeNodeIdFromYaml : null}
                       nodeDisplayLabel={(node) => {
                         if (node.kind === 'main') {
                           return withAgentEmoji(node.label, 'main');

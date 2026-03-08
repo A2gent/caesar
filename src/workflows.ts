@@ -37,6 +37,7 @@ export interface WorkflowPolicy {
   maxTurns: number;
   stopCondition: WorkflowStopCondition;
   timeboxMinutes?: number;
+  judgeNodeId?: string;
 }
 
 export interface WorkflowDefinition {
@@ -120,7 +121,7 @@ function builtInWorkflows(): WorkflowDefinition[] {
         { id: 'e-main-critic', from: 'n-main', to: 'n-critic', mode: 'sequential' },
       ],
       entryNodeId: 'n-user',
-      policy: { ...basePolicy(), stopCondition: 'judge' },
+      policy: { ...basePolicy(), stopCondition: 'judge', judgeNodeId: 'n-critic' },
       createdAt,
       updatedAt,
     },
@@ -257,6 +258,7 @@ function normalizeWorkflow(raw: unknown): WorkflowDefinition | null {
     maxTurns: Math.max(1, Math.floor(asNumber(policyRaw.maxTurns, 12))),
     stopCondition: parseStopCondition(policyRaw.stopCondition),
     timeboxMinutes: Math.max(1, Math.floor(asNumber(policyRaw.timeboxMinutes, 20))),
+    judgeNodeId: asString(policyRaw.judgeNodeId).trim() || undefined,
   };
 
   const entryNodeIdRaw = asString(obj.entryNodeId).trim();
@@ -287,6 +289,7 @@ function workflowToStorageObject(workflow: WorkflowDefinition): Record<string, u
       maxTurns: workflow.policy.maxTurns,
       stopCondition: workflow.policy.stopCondition,
       timeboxMinutes: workflow.policy.timeboxMinutes,
+      judgeNodeId: workflow.policy.judgeNodeId,
     },
     nodes: workflow.nodes,
     edges: workflow.edges,

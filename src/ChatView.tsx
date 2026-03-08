@@ -47,6 +47,54 @@ function routedTargetLabel(session: Session | null): string {
   return model ? `${provider} / ${model}` : provider;
 }
 
+type WorkflowNodeStateView = {
+  id: string;
+  status: string;
+  childSessionId?: string;
+  outputPreview?: string;
+  error?: string;
+};
+
+type WorkflowStateView = {
+  workflowName: string;
+  status: string;
+  updatedAt: string;
+  nodes: WorkflowNodeStateView[];
+};
+
+function parseWorkflowState(session: Session | null): WorkflowStateView | null {
+  const metadata = session?.metadata;
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+  const raw = metadata.workflow_state;
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const state = raw as Record<string, unknown>;
+  const nodesRaw = state.nodes;
+  if (!nodesRaw || typeof nodesRaw !== 'object') {
+    return null;
+  }
+  const nodeEntries = Object.entries(nodesRaw as Record<string, unknown>);
+  const nodes: WorkflowNodeStateView[] = nodeEntries.map(([id, value]) => {
+    const row = (value && typeof value === 'object') ? (value as Record<string, unknown>) : {};
+    return {
+      id,
+      status: typeof row.status === 'string' ? row.status : 'pending',
+      childSessionId: typeof row.childSessionId === 'string' ? row.childSessionId : undefined,
+      outputPreview: typeof row.outputPreview === 'string' ? row.outputPreview : undefined,
+      error: typeof row.error === 'string' ? row.error : undefined,
+    };
+  }).sort((a, b) => a.id.localeCompare(b.id));
+  return {
+    workflowName: typeof state.workflowName === 'string' ? state.workflowName : (typeof metadata.workflow_name === 'string' ? metadata.workflow_name : 'Workflow'),
+    status: typeof state.status === 'string' ? state.status : 'running',
+    updatedAt: typeof state.updatedAt === 'string' ? state.updatedAt : '',
+    nodes,
+  };
+}
+
 function formatTokenCount(tokens: number | null | undefined): string {
   if (tokens === null || tokens === undefined || tokens === 0) {
     return '0';
@@ -411,6 +459,7 @@ function ChatView() {
     [session, error],
   );
   const systemPromptSnapshot = session?.system_prompt_snapshot;
+  const workflowState = useMemo(() => parseWorkflowState(session), [session]);
   const routedTarget = useMemo(() => routedTargetLabel(session), [session]);
   const providerFailures = useMemo(() => dedupeProviderFailures(session?.provider_failures || []), [session?.provider_failures]);
   const latestProviderFailure = useMemo(() => (providerFailures.length > 0 ? providerFailures[providerFailures.length - 1] : null), [providerFailures]);
@@ -704,6 +753,22 @@ function ChatView() {
       return;
     }
 
+    if (event.type === 'workflow_update') {
+      setSession((prev) => {
+        if (!prev || prev.id !== targetSessionId) {
+          return prev;
+        }
+        return {
+          ...prev,
+          metadata: {
+            ...(prev.metadata || {}),
+            workflow_state: event.workflow,
+          },
+        };
+      });
+      return;
+    }
+
     if (event.type === 'done') {
       setMessages(event.messages);
       setProviderTrace('');
@@ -926,6 +991,36 @@ function ChatView() {
               {session.task_progress ? (
                 <div className="session-task-progress-row">
                   <TaskProgressPanel taskProgress={session.task_progress} />
+                </div>
+              ) : null}
+              {workflowState ? (
+                <div className="session-workflow-panel">
+                  <div className="session-workflow-header">
+                    <span className="session-workflow-title">{workflowState.workflowName}</span>
+                    <span className={`session-workflow-status status-${workflowState.status}`}>{workflowState.status}</span>
+                  </div>
+                  <div className="session-workflow-nodes">
+                    {workflowState.nodes.map((node) => (
+                      <div key={node.id} className={`session-workflow-node status-${node.status}`}>
+                        <div className="session-workflow-node-top">
+                          <span className="session-workflow-node-id">{node.id}</span>
+                          <span className="session-workflow-node-status">{node.status}</span>
+                          {node.childSessionId ? (
+                            <button
+                              type="button"
+                              className="session-workflow-node-open"
+                              onClick={() => navigate(`/chat/${node.childSessionId}`)}
+                              title="Open child session"
+                            >
+                              Open
+                            </button>
+                          ) : null}
+                        </div>
+                        {node.error ? <div className="session-workflow-node-error">{node.error}</div> : null}
+                        {node.outputPreview ? <div className="session-workflow-node-preview">{node.outputPreview}</div> : null}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : null}
               {session.status === 'failed' && sessionFailureReason ? (

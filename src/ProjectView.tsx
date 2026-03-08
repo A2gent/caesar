@@ -220,6 +220,40 @@ const DEFAULT_TREE_PANEL_WIDTH = 360;
 const MIN_TREE_PANEL_WIDTH = 240;
 const MAX_TREE_PANEL_WIDTH = 720;
 const TREE_PANEL_WIDTH_STORAGE_KEY = 'a2gent.project.tree.width';
+
+function buildWorkflowSessionMetadata(workflow: WorkflowDefinition): Record<string, unknown> {
+  return {
+    workflow_id: workflow.id,
+    workflow_name: workflow.name,
+    workflow_definition: {
+      id: workflow.id,
+      name: workflow.name,
+      description: workflow.description,
+      entryNodeId: workflow.entryNodeId,
+      policy: workflow.policy,
+      nodes: workflow.nodes.map((node) => ({
+        id: node.id,
+        label: node.label,
+        kind: node.kind,
+        ref: node.kind === 'subagent'
+          ? (node.subAgentId || '')
+          : node.kind === 'local'
+            ? (node.localAgentId || '')
+            : node.kind === 'external'
+              ? (node.externalAgentId || '')
+              : '',
+        subAgentId: node.subAgentId,
+        localAgentId: node.localAgentId,
+        externalAgentId: node.externalAgentId,
+      })),
+      edges: workflow.edges.map((edge) => ({
+        from: edge.from,
+        to: edge.to,
+        mode: edge.mode,
+      })),
+    },
+  };
+}
 const EXPANDED_DIRS_STORAGE_KEY_PREFIX = 'a2gent.project.expandedDirs.';
 const SELECTED_FILE_STORAGE_KEY_PREFIX = 'a2gent.project.selectedFile.';
 const SELECTED_WORKFLOW_STORAGE_KEY_PREFIX = 'a2gent.project.selectedWorkflow.';
@@ -1087,6 +1121,7 @@ function ProjectView() {
         provider: target.kind === 'main' ? (selectedProvider || undefined) : undefined,
         sub_agent_id: target.kind === 'subagent' ? target.subAgentId : undefined,
         project_id: projectId || undefined,
+        metadata: buildWorkflowSessionMetadata(workflow),
       });
 
       // Clear context after using it
@@ -1132,6 +1167,7 @@ function ProjectView() {
         sub_agent_id: target.kind === 'subagent' ? target.subAgentId : undefined,
         project_id: projectId || undefined,
         queued: true,
+        metadata: buildWorkflowSessionMetadata(workflow),
       });
       
       setSessionContextMessage('');
@@ -1994,6 +2030,7 @@ function ProjectView() {
         provider: target.kind === 'main' ? (selectedProvider || undefined) : undefined,
         sub_agent_id: target.kind === 'subagent' ? target.subAgentId : undefined,
         project_id: projectId,
+        metadata: buildWorkflowSessionMetadata(workflow),
       });
       const initialMessage = [
         `Work on this task from ${selectedFilePath}:`,

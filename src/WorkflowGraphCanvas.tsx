@@ -15,6 +15,7 @@ interface WorkflowGraphCanvasProps {
   canvasHeight?: number;
   onNodeClick?: (node: WorkflowNode) => void;
   selectedNodeId?: string | null;
+  judgeNodeId?: string | null;
 }
 
 function drawArrowHead(
@@ -53,6 +54,7 @@ export default function WorkflowGraphCanvas({
   canvasHeight = WORKFLOW_CANVAS_HEIGHT,
   onNodeClick,
   selectedNodeId = null,
+  judgeNodeId = null,
 }: WorkflowGraphCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -122,12 +124,13 @@ export default function WorkflowGraphCanvas({
       {nodes.map((node) => (
         <div
           key={node.id}
-          className={`workflow-canvas-node kind-${node.kind}${selectedNodeId === node.id ? ' selected' : ''}${onNodeClick ? ' clickable' : ''}`}
+          className={`workflow-canvas-node kind-${node.kind}${selectedNodeId === node.id ? ' selected' : ''}${onNodeClick ? ' clickable' : ''}${judgeNodeId === node.id ? ' judge' : ''}`}
           style={{ left: `${node.x}px`, top: `${node.y}px` }}
           onClick={onNodeClick ? () => onNodeClick(node) : undefined}
         >
           <strong>{nodeDisplayLabel ? nodeDisplayLabel(node) : node.label}</strong>
           <small>{nodeKindLabel(node.kind)}</small>
+          {judgeNodeId === node.id ? <em className="workflow-canvas-node-badge">Judge</em> : null}
         </div>
       ))}
     </div>

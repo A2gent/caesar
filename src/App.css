@@ -1120,6 +1120,125 @@ body.mind-resizing * {
   text-overflow: ellipsis;
 }
 
+.session-workflow-panel {
+  margin-top: 2px;
+  border: 1px solid #303745;
+  background: #161b24;
+  border-radius: 8px;
+  padding: 8px;
+  max-width: min(70vw, 980px);
+}
+
+.session-workflow-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.session-workflow-title {
+  font-size: 12px;
+  color: #cdd5e6;
+  font-weight: 600;
+}
+
+.session-workflow-status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid #42506a;
+  color: #9fb3d8;
+}
+
+.session-workflow-status.status-running {
+  border-color: #487fb0;
+  color: #8ecbff;
+}
+
+.session-workflow-status.status-completed {
+  border-color: #4d926a;
+  color: #9ce7be;
+}
+
+.session-workflow-status.status-failed {
+  border-color: #b45656;
+  color: #ffb0b0;
+}
+
+.session-workflow-nodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px;
+}
+
+.session-workflow-node {
+  border: 1px solid #364155;
+  background: #202737;
+  border-radius: 7px;
+  padding: 6px;
+  min-width: 0;
+}
+
+.session-workflow-node.status-completed {
+  border-color: #416a55;
+}
+
+.session-workflow-node.status-running {
+  border-color: #41638f;
+}
+
+.session-workflow-node.status-failed {
+  border-color: #8a4b4b;
+}
+
+.session-workflow-node-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-workflow-node-id {
+  font-size: 11px;
+  color: #dbe5fb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.session-workflow-node-status {
+  font-size: 11px;
+  color: #9fb3d8;
+}
+
+.session-workflow-node-open {
+  margin-left: auto;
+  border: 1px solid #415273;
+  background: #2a3550;
+  color: #bdd0f0;
+  border-radius: 5px;
+  font-size: 11px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.session-workflow-node-preview {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9aa8c2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-workflow-node-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #ffb0b0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .session-system-prompt-row {
   display: flex;
   flex-direction: column;
@@ -10003,11 +10122,29 @@ button.session-provider-chip:hover {
   outline-offset: 2px;
 }
 
+.workflow-canvas-node.judge {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, #f2cc60 62%, transparent);
+}
+
 .workflow-canvas-node small {
   color: var(--text-2);
   text-transform: uppercase;
   font-size: 0.7em;
   letter-spacing: 0.06em;
+}
+
+.workflow-canvas-node-badge {
+  display: inline-block;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #f2cc60 25%, transparent);
+  border: 1px solid color-mix(in srgb, #f2cc60 58%, transparent);
+  color: #f2cc60;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.5;
 }
 
 .workflow-canvas-node.kind-user {

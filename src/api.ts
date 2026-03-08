@@ -245,6 +245,7 @@ export interface Session {
   updated_at: string;
   messages?: Message[];
   system_prompt_snapshot?: SystemPromptSnapshot;
+  metadata?: Record<string, unknown>;
   // A2A inbound — only present on sessions created from tunnel requests
   a2a_inbound?: boolean;
   a2a_source_agent_id?: string;
@@ -368,6 +369,7 @@ export type ChatStreamEvent =
   | { type: 'tool_executing'; step: number; tool_calls: StreamToolCall[] }
   | { type: 'tool_completed'; step: number; messages: Message[]; status: string }
   | { type: 'step_completed'; step: number }
+  | { type: 'workflow_update'; workflow: Record<string, unknown> }
   | {
       type: 'provider_trace';
       step: number;
@@ -399,6 +401,7 @@ export interface CreateSessionRequest {
   project_id?: string;
   sub_agent_id?: string;
   queued?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CreateSessionResponse {
