@@ -2030,6 +2030,51 @@ export interface ProjectGitFileDiffResponse {
   preview: string;
 }
 
+export interface ProjectGitBranch {
+  name: string;
+  current: boolean;
+  remote: boolean;
+  ahead: number;
+  behind: number;
+}
+
+export interface ProjectGitHistoryCommit {
+  hash: string;
+  short_hash: string;
+  subject: string;
+  author_name: string;
+  authored_at: string;
+  refs: string[];
+  parents: string[];
+  branch?: string;
+}
+
+export interface ProjectGitHistoryResponse {
+  root_folder: string;
+  current_branch: string;
+  branches: ProjectGitBranch[];
+  commits: ProjectGitHistoryCommit[];
+}
+
+export interface ProjectGitCommitFile {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+}
+
+export interface ProjectGitCommitFilesResponse {
+  commit: string;
+  files: ProjectGitCommitFile[];
+}
+
+export interface ProjectGitCommitDiffResponse {
+  commit: string;
+  path: string;
+  preview: string;
+}
+
 export async function getProjectGitStatus(projectID: string, repoPath = ''): Promise<ProjectGitStatusResponse> {
   const repoQuery = repoPath.trim() === '' ? '' : `&repoPath=${encodeURIComponent(repoPath)}`;
   const response = await fetch(`${getApiBaseUrl()}/projects/git/status?projectID=${encodeURIComponent(projectID)}${repoQuery}`);
@@ -2130,6 +2175,44 @@ export async function getProjectGitFileDiff(projectID: string, path: string, rep
   return response.json();
 }
 
+export async function getProjectGitHistory(projectID: string, repoPath = '', limit = 120): Promise<ProjectGitHistoryResponse> {
+  const repoQuery = repoPath.trim() === '' ? '' : `&repoPath=${encodeURIComponent(repoPath)}`;
+  const response = await fetch(
+    `${getApiBaseUrl()}/projects/git/history?projectID=${encodeURIComponent(projectID)}&limit=${encodeURIComponent(String(limit))}${repoQuery}`,
+  );
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load git history');
+  }
+  return response.json();
+}
+
+export async function getProjectGitCommitFiles(projectID: string, commitHash: string, repoPath = ''): Promise<ProjectGitCommitFilesResponse> {
+  const repoQuery = repoPath.trim() === '' ? '' : `&repoPath=${encodeURIComponent(repoPath)}`;
+  const response = await fetch(
+    `${getApiBaseUrl()}/projects/git/commit-files?projectID=${encodeURIComponent(projectID)}&commit=${encodeURIComponent(commitHash)}${repoQuery}`,
+  );
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load commit files');
+  }
+  return response.json();
+}
+
+export async function getProjectGitCommitFileDiff(
+  projectID: string,
+  commitHash: string,
+  path: string,
+  repoPath = '',
+): Promise<ProjectGitCommitDiffResponse> {
+  const repoQuery = repoPath.trim() === '' ? '' : `&repoPath=${encodeURIComponent(repoPath)}`;
+  const response = await fetch(
+    `${getApiBaseUrl()}/projects/git/commit-diff?projectID=${encodeURIComponent(projectID)}&commit=${encodeURIComponent(commitHash)}&path=${encodeURIComponent(path)}${repoQuery}`,
+  );
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load commit file diff');
+  }
+  return response.json();
+}
+
 export async function generateProjectGitCommitMessage(projectID: string, repoPath = ''): Promise<string | null> {
   const response = await fetch(`${getApiBaseUrl()}/projects/git/commit-message?projectID=${encodeURIComponent(projectID)}`, {
     method: 'POST',
@@ -2161,6 +2244,24 @@ export async function pushProjectGit(projectID: string, repoPath = ''): Promise<
   });
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to push');
+  }
+  const data = await response.json() as { output?: string };
+  return (data.output || '').trim();
+}
+
+export async function pullProjectGit(projectID: string, repoPath = '', mergeStrategy = 'auto'): Promise<string> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/projects/git/pull?projectID=${encodeURIComponent(projectID)}&strategy=${encodeURIComponent(mergeStrategy)}`,
+    {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ repo_path: repoPath }),
+    },
+  );
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to pull');
   }
   const data = await response.json() as { output?: string };
   return (data.output || '').trim();

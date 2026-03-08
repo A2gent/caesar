@@ -15,7 +15,10 @@ import {
   getProject,
   getProjectFile,
   generateProjectGitCommitMessage,
+  getProjectGitCommitFileDiff,
+  getProjectGitCommitFiles,
   getProjectGitFileDiff,
+  getProjectGitHistory,
   getProjectGitStatus,
   initializeProjectGit,
   getSession,
@@ -25,6 +28,7 @@ import {
   listSessions,
   moveProjectFile,
   parseTaskProgress,
+  pullProjectGit,
   pushProjectGit,
   renameProjectEntry,
   saveProjectFile,
@@ -40,6 +44,9 @@ import {
   type ProjectFileNameMatch,
   type MindTreeEntry,
   type ProjectGitChangedFile,
+  type ProjectGitCommitFile,
+  type ProjectGitHistoryCommit,
+  type ProjectGitBranch,
   type Project,
   type ProjectSearchResponse,
   type Session,
@@ -98,6 +105,33 @@ type DraggedTodoTask = {
   task: TodoTask;
   sourceColumnId: string;
 };
+
+const GIT_HISTORY_COLORS = ['#5b8cff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#e879f9', '#f97316'];
+
+function gitHistoryColorForRef(ref: string): string {
+  if (ref.trim() === '') {
+    return GIT_HISTORY_COLORS[0];
+  }
+  let hash = 0;
+  for (let index = 0; index < ref.length; index += 1) {
+    hash = (hash * 31 + ref.charCodeAt(index)) >>> 0;
+  }
+  return GIT_HISTORY_COLORS[hash % GIT_HISTORY_COLORS.length];
+}
+
+function formatGitHistoryTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 function isTodoFilePath(path: string): boolean {
   const base = path.split('/').filter(Boolean).pop()?.toLowerCase() || '';
@@ -666,6 +700,7 @@ function ProjectView() {
   const [isSearchingProject, setIsSearchingProject] = useState(false);
   const [projectSearchError, setProjectSearchError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProjectViewTab>('explorer');
+  const [rootFolder, setRootFolder] = useState('');
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [gitChangedFiles, setGitChangedFiles] = useState<ProjectGitChangedFile[]>([]);
   const [isLoadingGitStatus, setIsLoadingGitStatus] = useState(false);
@@ -684,12 +719,53 @@ function ProjectView() {
   });
   const [isGeneratingCommitMessage, setIsGeneratingCommitMessage] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
+  const [isPulling, setIsPulling] = useState(false);
   const [isInitializingGit, setIsInitializingGit] = useState(false);
   const [isGitInitDialogOpen, setIsGitInitDialogOpen] = useState(false);
   const [gitInitRemoteURL, setGitInitRemoteURL] = useState('');
+  const [gitHistoryBranches, setGitHistoryBranches] = useState<ProjectGitBranch[]>([]);
+  const [gitHistoryCommits, setGitHistoryCommits] = useState<ProjectGitHistoryCommit[]>([]);
+  const [isLoadingGitHistory, setIsLoadingGitHistory] = useState(false);
+  const [gitHistoryError, setGitHistoryError] = useState<string | null>(null);
+  const [selectedHistoryCommitHash, setSelectedHistoryCommitHash] = useState('');
+  const [historyCommitFiles, setHistoryCommitFiles] = useState<ProjectGitCommitFile[]>([]);
+  const [isLoadingHistoryCommitFiles, setIsLoadingHistoryCommitFiles] = useState(false);
+  const [selectedHistoryFilePath, setSelectedHistoryFilePath] = useState('');
+  const [selectedHistoryFileDiff, setSelectedHistoryFileDiff] = useState('');
+  const [isLoadingHistoryFileDiff, setIsLoadingHistoryFileDiff] = useState(false);
   const commitDiffRequestRef = useRef(0);
+  const gitHistoryRequestRef = useRef(0);
+  const historyCommitFilesRequestRef = useRef(0);
+  const historyFileDiffRequestRef = useRef(0);
   const [gitDiscardPath, setGitDiscardPath] = useState<string | null>(null);
   const [isStagingAll, setIsStagingAll] = useState(false);
+  const foldersWithGitChanges = useMemo(() => {
+    if (!isGitRepo || gitChangedFiles.length === 0) {
+      return new Set<string>();
+    }
+    const folders = new Set<string>();
+    for (const file of gitChangedFiles) {
+      const normalizedPath = toMindRelativePath(rootFolder, file.path.trim()) || normalizeMindPath(file.path.trim());
+      if (normalizedPath === '') {
+        continue;
+      }
+      const segments = normalizedPath.split('/').filter((segment) => segment !== '');
+      if (segments.length === 0) {
+        continue;
+      }
+      if (segments.length === 1) {
+        // Also mark top-level folder paths (e.g. submodules) as changed.
+        folders.add(segments[0]);
+        continue;
+      }
+      let current = '';
+      for (let index = 0; index < segments.length - 1; index += 1) {
+        current = current ? `${current}/${segments[index]}` : segments[index];
+        folders.add(current);
+      }
+    }
+    return folders;
+  }, [gitChangedFiles, isGitRepo, rootFolder]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -722,7 +798,6 @@ function ProjectView() {
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(DEFAULT_WORKFLOW_ID);
 
   // Files state
-  const [rootFolder, setRootFolder] = useState('');
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [browsePath, setBrowsePath] = useState('');
   const [browseEntries, setBrowseEntries] = useState<MindTreeEntry[]>([]);
@@ -834,6 +909,12 @@ function ProjectView() {
     if (!projectId || !rootFolder) {
       setIsGitRepo(false);
       setGitChangedFiles([]);
+      setGitHistoryBranches([]);
+      setGitHistoryCommits([]);
+      setSelectedHistoryCommitHash('');
+      setHistoryCommitFiles([]);
+      setSelectedHistoryFilePath('');
+      setSelectedHistoryFileDiff('');
       return;
     }
 
@@ -852,6 +933,55 @@ function ProjectView() {
       setIsLoadingGitStatus(false);
     }
   }, [projectId, rootFolder]);
+
+  const loadGitHistory = useCallback(async (repoPathOverride?: string) => {
+    if (!projectId || !rootFolder || !isGitRepo) {
+      setGitHistoryBranches([]);
+      setGitHistoryCommits([]);
+      setSelectedHistoryCommitHash('');
+      setHistoryCommitFiles([]);
+      setSelectedHistoryFilePath('');
+      setSelectedHistoryFileDiff('');
+      setGitHistoryError(null);
+      return;
+    }
+
+    const requestID = gitHistoryRequestRef.current + 1;
+    gitHistoryRequestRef.current = requestID;
+    const targetRepoPath = repoPathOverride ?? commitRepoPath;
+    setIsLoadingGitHistory(true);
+    setGitHistoryError(null);
+    try {
+      const response = await getProjectGitHistory(projectId, targetRepoPath, 160);
+      if (requestID !== gitHistoryRequestRef.current) return;
+      const commits = response.commits || [];
+      setGitHistoryBranches(response.branches || []);
+      setGitHistoryCommits(commits);
+      setSelectedHistoryCommitHash((current) => {
+        if (current && commits.some((commit) => commit.hash === current)) {
+          return current;
+        }
+        return commits[0]?.hash || '';
+      });
+      if (commits.length === 0) {
+        setHistoryCommitFiles([]);
+        setSelectedHistoryFilePath('');
+        setSelectedHistoryFileDiff('');
+      }
+    } catch (historyError) {
+      if (requestID !== gitHistoryRequestRef.current) return;
+      setGitHistoryBranches([]);
+      setGitHistoryCommits([]);
+      setSelectedHistoryCommitHash('');
+      setHistoryCommitFiles([]);
+      setSelectedHistoryFilePath('');
+      setSelectedHistoryFileDiff('');
+      setGitHistoryError(historyError instanceof Error ? historyError.message : 'Failed to load git history');
+    } finally {
+      if (requestID !== gitHistoryRequestRef.current) return;
+      setIsLoadingGitHistory(false);
+    }
+  }, [projectId, rootFolder, isGitRepo, commitRepoPath]);
 
   useEffect(() => {
     void loadGitStatus();
@@ -1597,6 +1727,7 @@ function ProjectView() {
       setSelectedCommitFilePath(firstPath);
       setSelectedCommitFileDiff('');
       setActiveTab('git');
+      void loadGitHistory(repoPath);
       if (firstPath) {
         void loadCommitFileDiff(firstPath, repoPath);
       }
@@ -1628,6 +1759,7 @@ function ProjectView() {
       const remoteURL = gitInitRemoteURL.trim();
       await initializeProjectGit(projectId, remoteURL);
       await loadGitStatus();
+      await loadGitHistory();
       closeGitInitDialog();
       if (remoteURL !== '') {
         setSuccess('Git repository initialized and linked to remote origin.');
@@ -1681,8 +1813,70 @@ function ProjectView() {
     }
   }, [projectId, commitRepoPath]);
 
+  const loadHistoryCommitFiles = useCallback(async (commitHash: string, repoPathOverride?: string) => {
+    if (!projectId || commitHash.trim() === '') {
+      setHistoryCommitFiles([]);
+      setSelectedHistoryFilePath('');
+      setSelectedHistoryFileDiff('');
+      return;
+    }
+
+    const requestID = historyCommitFilesRequestRef.current + 1;
+    historyCommitFilesRequestRef.current = requestID;
+    const targetRepoPath = repoPathOverride ?? commitRepoPath;
+    setIsLoadingHistoryCommitFiles(true);
+    try {
+      const response = await getProjectGitCommitFiles(projectId, commitHash, targetRepoPath);
+      if (requestID !== historyCommitFilesRequestRef.current) return;
+      const files = response.files || [];
+      setHistoryCommitFiles(files);
+      setSelectedHistoryFilePath((currentPath) => {
+        if (currentPath && files.some((file) => file.path === currentPath)) {
+          return currentPath;
+        }
+        return files[0]?.path || '';
+      });
+      if (files.length === 0) {
+        setSelectedHistoryFileDiff('');
+      }
+    } catch (historyFilesError) {
+      if (requestID !== historyCommitFilesRequestRef.current) return;
+      setHistoryCommitFiles([]);
+      setSelectedHistoryFilePath('');
+      setSelectedHistoryFileDiff('');
+      setGitHistoryError(historyFilesError instanceof Error ? historyFilesError.message : 'Failed to load commit files');
+    } finally {
+      if (requestID !== historyCommitFilesRequestRef.current) return;
+      setIsLoadingHistoryCommitFiles(false);
+    }
+  }, [projectId, commitRepoPath]);
+
+  const loadHistoryFileDiff = useCallback(async (commitHash: string, path: string, repoPathOverride?: string) => {
+    if (!projectId || commitHash.trim() === '' || path.trim() === '') {
+      setSelectedHistoryFileDiff('');
+      return;
+    }
+
+    const requestID = historyFileDiffRequestRef.current + 1;
+    historyFileDiffRequestRef.current = requestID;
+    const targetRepoPath = repoPathOverride ?? commitRepoPath;
+    setIsLoadingHistoryFileDiff(true);
+    try {
+      const response = await getProjectGitCommitFileDiff(projectId, commitHash, path, targetRepoPath);
+      if (requestID !== historyFileDiffRequestRef.current) return;
+      setSelectedHistoryFileDiff(response.preview || '');
+    } catch (historyDiffError) {
+      if (requestID !== historyFileDiffRequestRef.current) return;
+      setSelectedHistoryFileDiff('');
+      setGitHistoryError(historyDiffError instanceof Error ? historyDiffError.message : 'Failed to load commit diff');
+    } finally {
+      if (requestID !== historyFileDiffRequestRef.current) return;
+      setIsLoadingHistoryFileDiff(false);
+    }
+  }, [projectId, commitRepoPath]);
+
   const handleToggleGitFileStage = async (file: ProjectGitChangedFile) => {
-    if (!projectId || isCommitting || gitFileActionPath === file.path) return;
+    if (!projectId || isCommitting || isPushing || isPulling || gitFileActionPath === file.path) return;
     setError(null);
     setGitFileActionPath(file.path);
     try {
@@ -1701,7 +1895,7 @@ function ProjectView() {
   };
 
   const handleStageAllFiles = useCallback(async () => {
-    if (!projectId || isCommitting || isPushing) return;
+    if (!projectId || isCommitting || isPushing || isPulling) return;
     const unstagedFiles = commitDialogFiles.filter((f) => !f.staged);
     if (unstagedFiles.length === 0) return;
 
@@ -1716,10 +1910,10 @@ function ProjectView() {
     } finally {
       setIsStagingAll(false);
     }
-  }, [projectId, isCommitting, isPushing, commitDialogFiles, commitRepoPath, refreshCommitDialogFiles, loadGitStatus]);
+  }, [projectId, isCommitting, isPushing, isPulling, commitDialogFiles, commitRepoPath, refreshCommitDialogFiles, loadGitStatus]);
 
   const handleDiscardGitFileChanges = async (file: ProjectGitChangedFile) => {
-    if (!projectId || isCommitting || isPushing || gitDiscardPath === file.path) return;
+    if (!projectId || isCommitting || isPushing || isPulling || gitDiscardPath === file.path) return;
     const confirmed = window.confirm(`Discard all changes in "${file.path}"? This cannot be undone.`);
     if (!confirmed) return;
 
@@ -1742,7 +1936,7 @@ function ProjectView() {
   };
 
   const handleGenerateCommitMessage = async (repoPathOverride?: string, hasFilesOverride?: boolean) => {
-    if (!projectId || isCommitting || isPushing || isGeneratingCommitMessage) return;
+    if (!projectId || isCommitting || isPushing || isPulling || isGeneratingCommitMessage) return;
     const hasFiles = hasFilesOverride ?? (commitDialogFiles.length > 0);
     if (!hasFiles) return;
     const targetRepoPath = repoPathOverride ?? commitRepoPath;
@@ -1770,7 +1964,7 @@ function ProjectView() {
   };
 
   const handleCommitChanges = async () => {
-    if (!projectId) return;
+    if (!projectId || isPulling) return;
 
     const message = commitMessage.trim();
     if (message === '') {
@@ -1787,6 +1981,7 @@ function ProjectView() {
       setCommitMessage('');
       await loadGitStatus();
       await refreshCommitDialogFiles();
+      await loadGitHistory();
     } catch (commitError) {
       setError(commitError instanceof Error ? commitError.message : 'Failed to commit changes');
     } finally {
@@ -1795,7 +1990,7 @@ function ProjectView() {
   };
 
   const handleCommitAndPushChanges = async () => {
-    if (!projectId || isCommitting || isPushing) return;
+    if (!projectId || isCommitting || isPushing || isPulling) return;
 
     const message = commitMessage.trim();
     if (message === '') {
@@ -1814,6 +2009,7 @@ function ProjectView() {
       setCommitMessage('');
       await loadGitStatus();
       await refreshCommitDialogFiles();
+      await loadGitHistory();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : 'Failed to commit and push';
       const normalized = messageText.toLowerCase();
@@ -1823,6 +2019,7 @@ function ProjectView() {
           setSuccess(pushOutput ? `No new commit. Push completed: ${pushOutput}` : 'No new commit. Push completed.');
           await loadGitStatus();
           await refreshCommitDialogFiles();
+          await loadGitHistory();
         } catch (pushErr) {
           setError(pushErr instanceof Error ? pushErr.message : 'Failed to push');
         }
@@ -1830,10 +2027,34 @@ function ProjectView() {
         setError(messageText);
         await loadGitStatus();
         await refreshCommitDialogFiles();
+        await loadGitHistory();
       }
     } finally {
       setIsCommitting(false);
       setIsPushing(false);
+    }
+  };
+
+  const handlePullChanges = async () => {
+    if (!projectId || isCommitting || isPushing || isPulling) return;
+
+    setError(null);
+    setSuccess(null);
+    setIsPulling(true);
+    try {
+      const pullOutput = await pullProjectGit(projectId, commitRepoPath, 'auto');
+      if (pullOutput) {
+        setSuccess(`Pulled latest changes with auto-merge: ${pullOutput}`);
+      } else {
+        setSuccess('Pulled latest changes with auto-merge strategy.');
+      }
+      await loadGitStatus();
+      await refreshCommitDialogFiles();
+      await loadGitHistory();
+    } catch (pullError) {
+      setError(pullError instanceof Error ? pullError.message : 'Failed to pull changes');
+    } finally {
+      setIsPulling(false);
     }
   };
 
@@ -1905,6 +2126,28 @@ function ProjectView() {
       return null;
     }
   }, [selectedCommitFileDiff, selectedCommitFilePath]);
+  const selectedHistoryCommit = useMemo(
+    () => gitHistoryCommits.find((commit) => commit.hash === selectedHistoryCommitHash) || null,
+    [gitHistoryCommits, selectedHistoryCommitHash],
+  );
+  const parsedHistoryDiffFile = useMemo<FileDiffMetadata | null>(() => {
+    if (!selectedHistoryFileDiff) return null;
+    try {
+      const parsed = parsePatchFiles(selectedHistoryFileDiff);
+      const files = parsed.flatMap((patch) => patch.files || []) as FileDiffMetadata[];
+      if (files.length === 0) return null;
+      if (files.length === 1) return files[0];
+      const normalizedPath = selectedHistoryFilePath.replace(/^\.\/+/, '');
+      const byExactPath = files.find((file: FileDiffMetadata) => file.name === normalizedPath || file.prevName === normalizedPath);
+      if (byExactPath) return byExactPath;
+      const bySuffixPath = files.find((file: FileDiffMetadata) =>
+        file.name.endsWith(`/${normalizedPath}`) || (file.prevName || '').endsWith(`/${normalizedPath}`),
+      );
+      return bySuffixPath || files[0];
+    } catch {
+      return null;
+    }
+  }, [selectedHistoryFileDiff, selectedHistoryFilePath]);
 
   const persistTodoContent = useCallback(async (nextContent: string) => {
     if (!projectId || !selectedFilePath) return;
@@ -2187,7 +2430,28 @@ function ProjectView() {
       setCommitRepoLabel(project?.name || 'Project');
     }
     void refreshCommitDialogFiles();
-  }, [activeTab, projectId, rootFolder, isGitRepo, project?.name, commitRepoPath, refreshCommitDialogFiles]);
+    void loadGitHistory();
+  }, [activeTab, projectId, rootFolder, isGitRepo, project?.name, commitRepoPath, refreshCommitDialogFiles, loadGitHistory]);
+
+  useEffect(() => {
+    if (activeTab !== 'git') return;
+    if (!isGitRepo || selectedHistoryCommitHash.trim() === '') {
+      setHistoryCommitFiles([]);
+      setSelectedHistoryFilePath('');
+      setSelectedHistoryFileDiff('');
+      return;
+    }
+    void loadHistoryCommitFiles(selectedHistoryCommitHash);
+  }, [activeTab, isGitRepo, selectedHistoryCommitHash, loadHistoryCommitFiles]);
+
+  useEffect(() => {
+    if (activeTab !== 'git') return;
+    if (selectedHistoryCommitHash.trim() === '' || selectedHistoryFilePath.trim() === '') {
+      setSelectedHistoryFileDiff('');
+      return;
+    }
+    void loadHistoryFileDiff(selectedHistoryCommitHash, selectedHistoryFilePath);
+  }, [activeTab, selectedHistoryCommitHash, selectedHistoryFilePath, loadHistoryFileDiff]);
   
   const selectedFilePathNormalized = normalizeMindPath(selectedFilePath);
   const selectedFileAbsolutePath = rootFolder && selectedFilePath
@@ -2371,10 +2635,11 @@ function ProjectView() {
             const isDropTarget = dropTargetPath === entry.path;
             const isDraggingFolder = draggedFilePath === entry.path;
             const isDescendantOfDragged = draggedFilePath && entry.path.startsWith(draggedFilePath + '/');
+            const hasFolderGitChanges = foldersWithGitChanges.has(normalizeMindPath(entry.path));
             return (
               <div key={entry.path}>
                 <div
-                  className={`mind-tree-row ${isDropTarget ? 'mind-tree-drop-target' : ''} ${isDraggingFolder ? 'mind-tree-dragging' : ''}`}
+                  className={`mind-tree-row ${isDropTarget ? 'mind-tree-drop-target' : ''} ${isDraggingFolder ? 'mind-tree-dragging' : ''} ${hasFolderGitChanges ? 'mind-tree-row-has-git-changes' : ''}`}
                   draggable={!isBeingRenamed}
                   onDragStart={(e) => {
                     if (isBeingRenamed) return;
@@ -2411,7 +2676,7 @@ function ProjectView() {
                   }}
                 >
                   {isBeingRenamed ? (
-                    <div className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''}`} style={{ paddingLeft: `${12 + depth * 18}px` }}>
+                    <div className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${hasFolderGitChanges ? 'mind-tree-directory-has-git-changes' : ''}`} style={{ paddingLeft: `${12 + depth * 18}px` }}>
                       <span className="mind-tree-icon" aria-hidden="true">{isExpanded ? '📂' : '📁'}</span>
                       <input
                         ref={renameInputRef}
@@ -2433,7 +2698,7 @@ function ProjectView() {
                   ) : (
                     <button
                       type="button"
-                      className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''}`}
+                      className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${hasFolderGitChanges ? 'mind-tree-directory-has-git-changes' : ''}`}
                       style={{ paddingLeft: `${12 + depth * 18}px` }}
                       onClick={() => void toggleDirectory(entry.path)}
                       onDoubleClick={(e) => {
@@ -2446,23 +2711,25 @@ function ProjectView() {
                       {isLoading ? <span className="mind-tree-meta">Loading...</span> : null}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="mind-tree-commit-btn"
-                    title={`Open Git changes for ${entry.name}`}
-                    aria-label={`Open Git changes for folder ${entry.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void openGitViewForRepo(entry.path, entry.name);
-                    }}
-                  >
-                    <svg viewBox="0 0 16 16" aria-hidden="true" className="mind-tree-commit-icon">
-                      <path
-                        fill="currentColor"
-                        d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38c0-.19-.01-.82-.01-1.49C4 14.09 3.48 13.22 3.32 12.77c-.09-.23-.48-.94-.82-1.13c-.28-.15-.68-.52-.01-.53c.63-.01 1.08.58 1.23.82c.72 1.21 1.87.87 2.33.66c.07-.52.28-.87.5-1.07c-1.78-.2-3.64-.89-3.64-3.95c0-.87.31-1.59.82-2.15c-.08-.2-.36-1.02.08-2.12c0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 4.82c.68 0 1.37.09 2.01.27c1.53-1.04 2.2-.82 2.2-.82c.44 1.1.16 1.92.08 2.12c.51.56.82 1.27.82 2.15c0 3.07-1.87 3.75-3.65 3.95c.29.25.54.73.54 1.48c0 1.07-.01 1.93-.01 2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
-                      />
-                    </svg>
-                  </button>
+                  {hasFolderGitChanges ? (
+                    <button
+                      type="button"
+                      className="mind-tree-commit-btn"
+                      title={`Open Git changes for ${entry.name}`}
+                      aria-label={`Open Git changes for folder ${entry.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void openGitViewForRepo(entry.path, entry.name);
+                      }}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true" className="mind-tree-commit-icon">
+                        <path
+                          fill="currentColor"
+                          d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38c0-.19-.01-.82-.01-1.49C4 14.09 3.48 13.22 3.32 12.77c-.09-.23-.48-.94-.82-1.13c-.28-.15-.68-.52-.01-.53c.63-.01 1.08.58 1.23.82c.72 1.21 1.87.87 2.33.66c.07-.52.28-.87.5-1.07c-1.78-.2-3.64-.89-3.64-3.95c0-.87.31-1.59.82-2.15c-.08-.2-.36-1.02.08-2.12c0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 4.82c.68 0 1.37.09 2.01.27c1.53-1.04 2.2-.82 2.2-.82c.44 1.1.16 1.92.08 2.12c.51.56.82 1.27.82 2.15c0 3.07-1.87 3.75-3.65 3.95c.29.25.54.73.54 1.48c0 1.07-.01 1.93-.01 2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                        />
+                      </svg>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="mind-tree-session-btn"
@@ -3320,14 +3587,14 @@ function ProjectView() {
                   onChange={(event) => setCommitMessage(event.target.value)}
                   placeholder="Commit message"
                   rows={4}
-                  disabled={isCommitting || isPushing}
+                  disabled={isCommitting || isPushing || isPulling}
                 />
                 <div className="project-commit-controls">
                   <button
                     type="button"
                     className="settings-add-btn"
                     onClick={() => void handleGenerateCommitMessage()}
-                    disabled={isCommitting || isPushing || isGeneratingCommitMessage || commitDialogFiles.length === 0}
+                    disabled={isCommitting || isPushing || isPulling || isGeneratingCommitMessage || commitDialogFiles.length === 0}
                   >
                     {isGeneratingCommitMessage ? 'Generating...' : 'Suggest message'}
                   </button>
@@ -3335,15 +3602,18 @@ function ProjectView() {
                     type="button"
                     className="settings-add-btn"
                     onClick={() => void handleStageAllFiles()}
-                    disabled={isCommitting || isPushing || isStagingAll || commitDialogFiles.filter((f) => !f.staged).length === 0}
+                    disabled={isCommitting || isPushing || isPulling || isStagingAll || commitDialogFiles.filter((f) => !f.staged).length === 0}
                   >
                     {isStagingAll ? 'Adding...' : 'Add All'}
                   </button>
                   <button
                     type="button"
                     className="settings-add-btn"
-                    onClick={() => void loadGitStatus()}
-                    disabled={isLoadingGitStatus || isCommitting || isPushing}
+                    onClick={() => {
+                      void loadGitStatus();
+                      void loadGitHistory();
+                    }}
+                    disabled={isLoadingGitStatus || isCommitting || isPushing || isPulling}
                   >
                     Refresh
                   </button>
@@ -3380,7 +3650,7 @@ function ProjectView() {
                               event.stopPropagation();
                               void handleToggleGitFileStage(file);
                             }}
-                            disabled={isCommitting || isPushing || gitFileActionPath === file.path}
+                            disabled={isCommitting || isPushing || isPulling || gitFileActionPath === file.path}
                           >
                             {gitFileActionPath === file.path
                               ? 'Updating...'
@@ -3395,7 +3665,7 @@ function ProjectView() {
                               event.stopPropagation();
                               void handleDiscardGitFileChanges(file);
                             }}
-                            disabled={isCommitting || isPushing || gitDiscardPath === file.path}
+                            disabled={isCommitting || isPushing || isPulling || gitDiscardPath === file.path}
                             title="Discard changes in this file"
                           >
                             {gitDiscardPath === file.path ? 'Discarding...' : 'Discard'}
@@ -3429,8 +3699,16 @@ function ProjectView() {
                   <button
                     type="button"
                     className="settings-add-btn"
+                    onClick={() => void handlePullChanges()}
+                    disabled={isCommitting || isPushing || isPulling}
+                  >
+                    {isPulling ? 'Pulling changes...' : 'Pull Changes'}
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-add-btn"
                     onClick={() => void handleCommitChanges()}
-                    disabled={isCommitting || isPushing || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
+                    disabled={isCommitting || isPushing || isPulling || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
                   >
                     {isCommitting && !isPushing ? 'Committing...' : 'Commit'}
                   </button>
@@ -3438,10 +3716,155 @@ function ProjectView() {
                     type="button"
                     className="settings-save-btn"
                     onClick={() => void handleCommitAndPushChanges()}
-                    disabled={isCommitting || isPushing || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
+                    disabled={isCommitting || isPushing || isPulling || commitMessage.trim() === '' || stagedCommitFilesCount === 0}
                   >
                     {isCommitting && isPushing ? 'Committing & pushing...' : 'Commit & Push'}
                   </button>
+                </div>
+                <div className="project-history-panel">
+                  <div className="project-history-left">
+                    <div className="project-history-header">
+                      <h3>Git History</h3>
+                      <button
+                        type="button"
+                        className="settings-add-btn"
+                        onClick={() => void loadGitHistory()}
+                        disabled={isLoadingGitHistory || isCommitting || isPushing || isPulling}
+                      >
+                        {isLoadingGitHistory ? 'Loading...' : 'Refresh History'}
+                      </button>
+                    </div>
+                    {gitHistoryBranches.length > 0 ? (
+                      <div className="project-history-branches">
+                        {gitHistoryBranches.map((branch) => {
+                          const branchColor = gitHistoryColorForRef(branch.name);
+                          const branchClassName = `project-history-branch-chip${branch.current ? ' current' : ''}${branch.remote ? ' remote' : ''}`;
+                          return (
+                            <span
+                              key={`${branch.remote ? 'remote' : 'local'}:${branch.name}`}
+                              className={branchClassName}
+                              style={{ '--branch-color': branchColor } as CSSProperties}
+                              title={`${branch.name}${branch.ahead > 0 ? ` · ahead ${branch.ahead}` : ''}${branch.behind > 0 ? ` · behind ${branch.behind}` : ''}`}
+                            >
+                              {branch.name}
+                              {branch.ahead > 0 ? ` ↑${branch.ahead}` : ''}
+                              {branch.behind > 0 ? ` ↓${branch.behind}` : ''}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {gitHistoryError ? (
+                      <div className="project-history-error">{gitHistoryError}</div>
+                    ) : null}
+                    <div className="project-history-commit-list">
+                      {isLoadingGitHistory ? (
+                        <div className="project-history-empty">Loading commit history...</div>
+                      ) : gitHistoryCommits.length === 0 ? (
+                        <div className="project-history-empty">No commits found.</div>
+                      ) : (
+                        gitHistoryCommits.map((commit) => {
+                          const refForColor = commit.branch || commit.refs?.[0] || commit.hash;
+                          const laneColor = gitHistoryColorForRef(refForColor);
+                          return (
+                            <button
+                              key={commit.hash}
+                              type="button"
+                              className={`project-history-commit-row ${selectedHistoryCommitHash === commit.hash ? 'selected' : ''}`}
+                              onClick={() => setSelectedHistoryCommitHash(commit.hash)}
+                            >
+                              <span className="project-history-lane" style={{ '--lane-color': laneColor } as CSSProperties}>
+                                <span className="project-history-node" />
+                              </span>
+                              <span className="project-history-commit-main">
+                                <span className="project-history-subject">{commit.subject || '(no subject)'}</span>
+                                <span className="project-history-meta">
+                                  <code>{commit.short_hash || commit.hash.slice(0, 7)}</code>
+                                  <span>{commit.author_name || 'Unknown author'}</span>
+                                  <span>{formatGitHistoryTime(commit.authored_at)}</span>
+                                </span>
+                                {commit.refs && commit.refs.length > 0 ? (
+                                  <span className="project-history-refs">
+                                    {commit.refs.map((refName) => (
+                                      <span
+                                        key={`${commit.hash}:${refName}`}
+                                        className="project-history-ref-chip"
+                                        style={{ '--branch-color': gitHistoryColorForRef(refName) } as CSSProperties}
+                                      >
+                                        {refName}
+                                      </span>
+                                    ))}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                  <div className="project-history-right">
+                    <div className="project-history-right-header">
+                      {selectedHistoryCommit ? (
+                        <>
+                          <strong>{selectedHistoryCommit.subject || '(no subject)'}</strong>
+                          <span>
+                            <code>{selectedHistoryCommit.short_hash || selectedHistoryCommit.hash.slice(0, 7)}</code>
+                            {' · '}
+                            {selectedHistoryCommit.author_name || 'Unknown author'}
+                            {' · '}
+                            {formatGitHistoryTime(selectedHistoryCommit.authored_at)}
+                          </span>
+                        </>
+                      ) : (
+                        <span>Select a commit to inspect its files and diff.</span>
+                      )}
+                    </div>
+                    <div className="project-history-right-body">
+                      <div className="project-history-files">
+                        {isLoadingHistoryCommitFiles ? (
+                          <div className="project-history-empty">Loading changed files...</div>
+                        ) : historyCommitFiles.length === 0 ? (
+                          <div className="project-history-empty">No changed files for selected commit.</div>
+                        ) : (
+                          historyCommitFiles.map((file) => (
+                            <button
+                              key={`${selectedHistoryCommitHash}:${file.path}`}
+                              type="button"
+                              className={`project-history-file-row ${selectedHistoryFilePath === file.path ? 'selected' : ''}`}
+                              onClick={() => setSelectedHistoryFilePath(file.path)}
+                            >
+                              <code>{file.status || 'M'}</code>
+                              <span className="project-history-file-path">{file.path}</span>
+                              <span className="project-history-file-stats">
+                                {file.binary ? 'binary' : `+${file.additions} -${file.deletions}`}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                      <div className="project-history-diff">
+                        <div className="project-commit-diff-header">
+                          {selectedHistoryFilePath || 'Select a file'}
+                        </div>
+                        {isLoadingHistoryFileDiff ? (
+                          <div className="project-commit-diff-empty">Loading commit diff...</div>
+                        ) : (
+                          <div className="project-commit-diff-body">
+                            {parsedHistoryDiffFile ? (
+                              <FileDiff
+                                fileDiff={parsedHistoryDiffFile}
+                                options={commitDiffOptions}
+                                className="project-commit-diff-renderer"
+                              />
+                            ) : (
+                              <div className="project-commit-diff-empty">No diff preview.</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

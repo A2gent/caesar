@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { transcribeSpeech, type MessageImage } from './api';
 import {
   normalizeLanguageForBackend,
@@ -20,6 +20,24 @@ interface ChatInputProps {
   value?: string;
   onValueChange?: (value: string) => void;
   showQueueButton?: boolean;
+  slashCommands?: SlashCommand[];
+  onSlashCommand?: (command: SlashCommandSelection) => boolean | Promise<boolean>;
+}
+
+export interface SlashCommand {
+  id: string;
+  command: string;
+  title: string;
+  description?: string;
+  aliases?: string[];
+  disabled?: boolean;
+}
+
+export interface SlashCommandSelection {
+  id: string;
+  command: string;
+  raw: string;
+  args: string[];
 }
 
 interface PendingImage extends MessageImage {
@@ -40,6 +58,21 @@ const isVoiceShortcut = (event: { altKey: boolean; shiftKey: boolean; metaKey: b
 
   return event.altKey && !event.shiftKey && !event.ctrlKey;
 };
+
+function parseSlashInput(raw: string): { command: string; args: string[] } | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('/')) {
+    return null;
+  }
+  const tokens = trimmed.slice(1).split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return null;
+  }
+  return {
+    command: tokens[0].toLowerCase(),
+    args: tokens.slice(1),
+  };
+}
 
 function mergeFloat32(chunks: Float32Array[]): Float32Array {
   let total = 0;
@@ -144,6 +177,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   value: externalValue,
   onValueChange,
   showQueueButton = false,
+  slashCommands = [],
+  onSlashCommand,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -175,6 +210,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [selectedVoiceLanguage] = useState(() => readVoiceInputLanguageSetting());
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [activeSlashIndex, setActiveSlashIndex] = useState(0);
 
   const setValue = useCallback((newValue: string | ((prev: string) => string)) => {
     const nextValue = typeof newValue === 'function' ? newValue(value) : newValue;
@@ -184,6 +220,31 @@ const ChatInput: React.FC<ChatInputProps> = ({
       setInternalValue(nextValue);
     }
   }, [isControlled, onValueChange, value]);
+
+  const slashInput = useMemo(() => parseSlashInput(value), [value]);
+  const slashQuery = slashInput?.command || '';
+  const slashSuggestions = useMemo(() => {
+    if (!value.trimStart().startsWith('/')) {
+      return [] as SlashCommand[];
+    }
+    const query = slashQuery.toLowerCase();
+    return slashCommands
+      .filter((item) => !item.disabled)
+      .filter((item) => {
+        if (!query) {
+          return true;
+        }
+        if (item.command.toLowerCase().includes(query) || item.title.toLowerCase().includes(query)) {
+          return true;
+        }
+        return (item.aliases || []).some((alias) => alias.toLowerCase().includes(query));
+      })
+      .slice(0, 12);
+  }, [slashCommands, slashQuery, value]);
+
+  useEffect(() => {
+    setActiveSlashIndex(0);
+  }, [slashQuery, value]);
 
   const toPendingImage = useCallback((file: File): Promise<PendingImage> => {
     return new Promise((resolve, reject) => {
@@ -512,18 +573,78 @@ const ChatInput: React.FC<ChatInputProps> = ({
     setIsDragOver(false);
   };
 
+  const applySlashSuggestion = useCallback((entry: SlashCommand) => {
+    setValue(`/${entry.command} `);
+    textareaRef.current?.focus();
+  }, [setValue]);
+
+  const executeSlashIfNeeded = useCallback(async (): Promise<boolean> => {
+    if (!onSlashCommand) {
+      return false;
+    }
+    const parsed = parseSlashInput(value);
+    if (!parsed) {
+      return false;
+    }
+
+    const selected = slashCommands.find((item) => {
+      if (item.disabled) {
+        return false;
+      }
+      if (item.command.toLowerCase() === parsed.command) {
+        return true;
+      }
+      return (item.aliases || []).some((alias) => alias.toLowerCase() === parsed.command);
+    });
+    if (!selected) {
+      return false;
+    }
+
+    if (pendingImages.length > 0) {
+      alert('Slash commands currently do not support image attachments.');
+      return true;
+    }
+
+    const handled = await onSlashCommand({
+      id: selected.id,
+      command: selected.command,
+      raw: value.trim(),
+      args: parsed.args,
+    });
+
+    if (handled) {
+      setValue('');
+    }
+
+    return handled;
+  }, [onSlashCommand, pendingImages.length, setValue, slashCommands, value]);
+
   const handleSend = useCallback(() => {
     if (disabled) return;
-    const messageToSend = value.trim();
-    if ((messageToSend || pendingImages.length > 0) && onSend) {
-      onSend(messageToSend, pendingImages);
-      setValue('');
-      setPendingImages([]);
-    }
-  }, [disabled, onSend, pendingImages, setValue, value]);
+    void executeSlashIfNeeded()
+      .then((handled) => {
+        if (handled) {
+          return;
+        }
+        const messageToSend = value.trim();
+        if ((messageToSend || pendingImages.length > 0) && onSend) {
+          onSend(messageToSend, pendingImages);
+          setValue('');
+          setPendingImages([]);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to execute slash command:', error);
+      });
+  }, [disabled, executeSlashIfNeeded, onSend, pendingImages, setValue, value]);
 
   const handleQueue = useCallback(() => {
     if (disabled) return;
+    const parsed = parseSlashInput(value);
+    if (parsed) {
+      alert('Slash commands are immediate actions and cannot be queued.');
+      return;
+    }
     const messageToSend = value.trim();
     if ((messageToSend || pendingImages.length > 0) && onQueue) {
       onQueue(messageToSend, pendingImages);
@@ -667,11 +788,34 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     if (event.key === 'Enter' && !event.shiftKey) {
+      if (slashSuggestions.length > 0 && value.trim() === '/') {
+        event.preventDefault();
+        applySlashSuggestion(slashSuggestions[activeSlashIndex] || slashSuggestions[0]);
+        return;
+      }
       event.preventDefault();
       if (showStopButton) {
         return;
       }
       handleSend();
+      return;
+    }
+
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && slashSuggestions.length > 0) {
+      event.preventDefault();
+      setActiveSlashIndex((prev) => {
+        const max = slashSuggestions.length - 1;
+        if (event.key === 'ArrowDown') {
+          return prev >= max ? 0 : prev + 1;
+        }
+        return prev <= 0 ? max : prev - 1;
+      });
+      return;
+    }
+
+    if (event.key === 'Tab' && slashSuggestions.length > 0) {
+      event.preventDefault();
+      applySlashSuggestion(slashSuggestions[activeSlashIndex] || slashSuggestions[0]);
     }
   };
 
@@ -736,6 +880,34 @@ const ChatInput: React.FC<ChatInputProps> = ({
         rows={1}
         disabled={disabled}
       />
+      {slashSuggestions.length > 0 ? (
+        <div className="chat-slash-menu" role="listbox" aria-label="Slash commands">
+          {slashSuggestions.map((entry, index) => {
+            const isActive = index === activeSlashIndex;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                className={`chat-slash-item${isActive ? ' active' : ''}`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  applySlashSuggestion(entry);
+                }}
+                onMouseEnter={() => setActiveSlashIndex(index)}
+                role="option"
+                aria-selected={isActive}
+                title={entry.description || entry.title}
+              >
+                <span className="chat-slash-command">/{entry.command}</span>
+                <span className="chat-slash-label">
+                  {entry.title}
+                  {entry.description ? ` - ${entry.description}` : ''}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="chat-input-actions">
         {actionControls}
         <button

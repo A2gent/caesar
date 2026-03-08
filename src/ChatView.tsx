@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import ChatInput from './ChatInput';
+import ChatInput, { type SlashCommandSelection, type SlashCommand } from './ChatInput';
 import MessageList from './MessageList';
 import QuestionPrompt from './QuestionPrompt';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from './EmptyState';
@@ -425,6 +425,14 @@ function linkedSessionDefaultPrompt(linkType: 'review' | 'continuation', sourceS
     `Continue the implementation from parent session "${sourceTitle}" (${sourceSession.id}).`,
     'Start with a short summary of current state and then proceed with the highest-priority remaining work.',
   ].join(' ');
+}
+
+function slugifySlashSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 function ChatView() {
@@ -883,27 +891,30 @@ function ChatView() {
     setComposerValue(answer);
   };
 
-  const handleCreateLinkedSession = async () => {
+  const handleCreateLinkedSession = async (options?: { linkType?: 'review' | 'continuation'; promptOverride?: string }) => {
     if (!session) return;
     setIsCreatingLinkedSession(true);
     try {
+      const nextType = options?.linkType ?? linkedSessionType;
       const selected = linkedSessionAgent.trim();
       const isSubAgent = selected.startsWith('subagent:');
       const subAgentID = isSubAgent ? selected.slice('subagent:'.length) : undefined;
-      const prompt = composerValue.trim();
+      const rawPrompt = options?.promptOverride ?? composerValue;
+      const prompt = rawPrompt.trim();
+      const fallbackPrompt = linkedSessionDefaultPrompt(nextType, session);
 
       const newSession = await createSession({
         agent_id: 'build',
         parent_id: session.id,
-        link_type: linkedSessionType,
+        link_type: nextType,
         project_id: session.project_id,
         sub_agent_id: subAgentID,
-        task: prompt || linkedSessionDefaultPrompt(linkedSessionType, session),
+        task: prompt || fallbackPrompt,
       });
 
       navigate(`/chat/${newSession.id}`, {
         state: {
-          initialMessage: prompt || linkedSessionDefaultPrompt(linkedSessionType, session),
+          initialMessage: prompt || fallbackPrompt,
         },
       });
       setComposerValue('');
@@ -930,6 +941,229 @@ function ChatView() {
       setComposerValue(linkedSessionDefaultPrompt(nextType, session));
     }
     setLinkedSessionType(nextType);
+  };
+
+  const linkedAgentOptions = useMemo(
+    () => [
+      { value: 'build', name: 'Default agent' },
+      ...subAgents.map((subAgent) => ({
+        value: `subagent:${subAgent.id}`,
+        name: subAgent.name,
+      })),
+    ],
+    [subAgents],
+  );
+
+  useEffect(() => {
+    if (!linkedAgentOptions.some((option) => option.value === linkedSessionAgent)) {
+      setLinkedSessionAgent('build');
+    }
+  }, [linkedAgentOptions, linkedSessionAgent]);
+
+  const selectedLinkedAgentName = useMemo(() => {
+    const match = linkedAgentOptions.find((option) => option.value === linkedSessionAgent);
+    return match?.name || 'Default agent';
+  }, [linkedAgentOptions, linkedSessionAgent]);
+
+  const composerPlaceholder = useMemo(() => {
+    if (pendingQuestion) {
+      return 'Type your answer or select an option above...';
+    }
+    if (!session) {
+      return undefined;
+    }
+    if (workflowState?.workflowName) {
+      return `Continue in ${workflowState.workflowName}...`;
+    }
+    const modeLabel = linkedSessionType === 'review' ? 'review' : 'continuation';
+    return `Start a new chat (${modeLabel} via ${selectedLinkedAgentName})...`;
+  }, [linkedSessionType, pendingQuestion, selectedLinkedAgentName, session, workflowState?.workflowName]);
+
+  const sessionSlashCommands = useMemo<SlashCommand[]>(() => {
+    if (!session || pendingQuestion) {
+      return [];
+    }
+
+    const disabled = isCreatingLinkedSession || isActiveRequest;
+
+    return [
+      {
+        id: 'linked.help',
+        command: 'help',
+        title: 'Show slash command help',
+        description: 'List available slash commands.',
+        aliases: ['h', '?'],
+        disabled,
+      },
+      {
+        id: 'linked.type.review',
+        command: 'review',
+        title: 'Set mode: review',
+        description: 'Set linked mode to review.',
+        aliases: ['r'],
+        disabled,
+      },
+      {
+        id: 'linked.type.continuation',
+        command: 'continue',
+        title: 'Set mode: continuation',
+        description: 'Set linked mode to continuation.',
+        aliases: ['cont'],
+        disabled,
+      },
+      {
+        id: 'linked.fill',
+        command: 'fill',
+        title: 'Fill default prompt',
+        description: 'Insert default prompt for current mode.',
+        aliases: ['f'],
+        disabled,
+      },
+      {
+        id: 'linked.create.current',
+        command: 'linked',
+        title: 'Create linked session',
+        description: 'Create linked session (current mode/agent).',
+        aliases: ['link', 'new'],
+        disabled,
+      },
+      {
+        id: 'linked.create.review',
+        command: 'linked-review',
+        title: 'Create review linked session',
+        description: 'Create linked session in review mode.',
+        aliases: ['lr'],
+        disabled,
+      },
+      {
+        id: 'linked.create.continuation',
+        command: 'linked-continue',
+        title: 'Create continuation linked session',
+        description: 'Create linked session in continuation mode.',
+        aliases: ['lc'],
+        disabled,
+      },
+      {
+        id: 'linked.agent.select',
+        command: 'agent',
+        title: 'Set linked-session agent',
+        description: 'Usage: /agent <default|name|id>',
+        aliases: ['a'],
+        disabled,
+      },
+    ];
+  }, [isActiveRequest, isCreatingLinkedSession, pendingQuestion, session]);
+
+  const handleSlashCommand = async (selection: SlashCommandSelection): Promise<boolean> => {
+    if (!session || pendingQuestion) {
+      return false;
+    }
+
+    if (selection.id === 'linked.agent.select') {
+      const rawArg = selection.args.join(' ').trim();
+      if (!rawArg) {
+        const options = linkedAgentOptions
+          .map((option) => `- ${option.name} (${option.value === 'build' ? 'default' : option.value})`)
+          .join('\n');
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            content: `Usage: /agent <default|name|id>\nAvailable agents:\n${options}`,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        return true;
+      }
+
+      const normalizedArg = rawArg.toLowerCase();
+      let match = linkedAgentOptions.find((option) => option.value.toLowerCase() === normalizedArg);
+      if (!match && (normalizedArg === 'default' || normalizedArg === 'build')) {
+        match = linkedAgentOptions.find((option) => option.value === 'build');
+      }
+      if (!match) {
+        match = linkedAgentOptions.find((option) => option.name.toLowerCase() === normalizedArg);
+      }
+      if (!match) {
+        match = linkedAgentOptions.find((option) => slugifySlashSegment(option.name) === slugifySlashSegment(rawArg));
+      }
+      if (!match) {
+        match = linkedAgentOptions.find((option) => option.name.toLowerCase().includes(normalizedArg));
+      }
+
+      if (!match) {
+        setError(`Unknown agent "${rawArg}". Use /agent with no arguments to list available agents.`);
+        return true;
+      }
+
+      setLinkedSessionAgent(match.value);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'system',
+          content: `Linked-session agent set to ${match?.name || match?.value}.`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      setError(null);
+      return true;
+    }
+
+    switch (selection.id) {
+      case 'linked.help': {
+        const lines = sessionSlashCommands.map((cmd) => {
+          const aliasText = Array.isArray(cmd.aliases) && cmd.aliases.length > 0
+            ? ` (aliases: /${cmd.aliases.join(', /')})`
+            : '';
+          return `/${cmd.command} - ${cmd.title}${aliasText}`;
+        });
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            content: `Available commands:\n${lines.join('\n')}`,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+        return true;
+      }
+      case 'linked.type.review':
+        handleSelectLinkedType('review');
+        if (selection.args.length > 0) {
+          setComposerValue(selection.args.join(' ').trim());
+        }
+        return true;
+      case 'linked.type.continuation':
+        handleSelectLinkedType('continuation');
+        if (selection.args.length > 0) {
+          setComposerValue(selection.args.join(' ').trim());
+        }
+        return true;
+      case 'linked.fill':
+        setComposerValue(linkedPromptForSelectedType);
+        return true;
+      case 'linked.create.current':
+        await handleCreateLinkedSession({
+          promptOverride: selection.args.join(' ').trim() || undefined,
+        });
+        return true;
+      case 'linked.create.review':
+        setLinkedSessionType('review');
+        await handleCreateLinkedSession({
+          linkType: 'review',
+          promptOverride: selection.args.join(' ').trim() || undefined,
+        });
+        return true;
+      case 'linked.create.continuation':
+        setLinkedSessionType('continuation');
+        await handleCreateLinkedSession({
+          linkType: 'continuation',
+          promptOverride: selection.args.join(' ').trim() || undefined,
+        });
+        return true;
+      default:
+        return false;
+    }
   };
 
   return (
@@ -1088,7 +1322,9 @@ function ChatView() {
         canStop={Boolean(session)}
         value={composerValue}
         onValueChange={setComposerValue}
-        placeholder={pendingQuestion ? "Type your answer or select an option above..." : undefined}
+        slashCommands={sessionSlashCommands}
+        onSlashCommand={handleSlashCommand}
+        placeholder={composerPlaceholder}
         actionControls={
           !session && providers.length > 0 ? (
             <label className="chat-provider-select">
@@ -1105,65 +1341,6 @@ function ChatView() {
                 ))}
               </select>
             </label>
-          ) : session && !pendingQuestion ? (
-            <div className="chat-linked-controls">
-              <div className="chat-linked-type-buttons">
-                <button
-                  type="button"
-                  className={`chat-linked-type-btn${linkedSessionType === 'review' ? ' active' : ''}`}
-                  onClick={() => handleSelectLinkedType('review')}
-                  disabled={isCreatingLinkedSession || isActiveRequest}
-                  title="Review file changes in a linked session"
-                >
-                  Review file changes
-                </button>
-                <button
-                  type="button"
-                  className={`chat-linked-type-btn${linkedSessionType === 'continuation' ? ' active' : ''}`}
-                  onClick={() => handleSelectLinkedType('continuation')}
-                  disabled={isCreatingLinkedSession || isActiveRequest}
-                  title="Continue with another agent in a linked session"
-                >
-                  Continue with another agent
-                </button>
-              </div>
-              <label className="chat-provider-select">
-                <select
-                  value={linkedSessionAgent}
-                  onChange={(e) => setLinkedSessionAgent(e.target.value)}
-                  title="Linked session agent"
-                  aria-label="Linked session agent"
-                  disabled={isCreatingLinkedSession || isActiveRequest}
-                >
-                  <option value="build">Default agent</option>
-                  {subAgents.map((subAgent) => (
-                    <option key={subAgent.id} value={`subagent:${subAgent.id}`}>
-                      {subAgent.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className="chat-linked-create-btn"
-                onClick={() => void handleCreateLinkedSession()}
-                disabled={isCreatingLinkedSession || isActiveRequest}
-                title="Create linked session from the current input"
-              >
-                {isCreatingLinkedSession ? 'Creating...' : 'Create linked'}
-              </button>
-              {composerValue.trim() === '' ? (
-                <button
-                  type="button"
-                  className="chat-linked-template-btn"
-                  onClick={() => setComposerValue(linkedPromptForSelectedType)}
-                  disabled={isCreatingLinkedSession || isActiveRequest}
-                  title="Fill default linked-session prompt"
-                >
-                  Fill prompt
-                </button>
-              ) : null}
-            </div>
           ) : queuedMessages.length > 0 ? (
             <span className="chat-provider-select" title={queuedMessages.join('\n')}>
               Queued: {queuedMessages.length}

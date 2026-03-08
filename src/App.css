@@ -281,6 +281,64 @@ body.mind-resizing * {
   border-color: #646cff;
 }
 
+.chat-slash-menu {
+  margin-top: 8px;
+  border: 1px solid #3b4351;
+  border-radius: 10px;
+  background: #262b35;
+  overflow: hidden;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.chat-slash-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #d5d5d5;
+  padding: 7px 10px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.chat-slash-item:last-child {
+  border-bottom: none;
+}
+
+.chat-slash-item:hover,
+.chat-slash-item.active {
+  background: #333a48;
+}
+
+.chat-slash-command {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  color: #9ce7be;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.chat-slash-label {
+  color: #e7eaf1;
+  font-size: 12px;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-slash-hint {
+  margin-right: auto;
+  color: #98a3b8;
+  font-size: 12px;
+}
+
 /* Chat input actions */
 .chat-input-actions {
   display: flex;
@@ -6014,6 +6072,10 @@ input[type="checkbox"]:disabled {
   padding-right: 4px;
 }
 
+.mind-tree-directory-has-git-changes {
+  color: #7be08f;
+}
+
 .mind-tree-item:hover {
   background: #2c2c2c;
 }
@@ -6118,6 +6180,11 @@ input[type="checkbox"]:disabled {
 .mind-tree-row:focus-within .mind-tree-session-btn,
 .mind-tree-row:hover .mind-tree-commit-btn,
 .mind-tree-row:focus-within .mind-tree-commit-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mind-tree-row.mind-tree-row-has-git-changes .mind-tree-commit-btn {
   opacity: 1;
   pointer-events: auto;
 }
@@ -7594,6 +7661,267 @@ input[type="checkbox"]:disabled {
   justify-content: flex-end;
 }
 
+.project-history-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 38%) minmax(0, 1fr);
+  gap: 10px;
+  min-height: 320px;
+  max-height: min(52vh, 620px);
+}
+
+.project-history-left,
+.project-history-right {
+  border: 1px solid #2c3443;
+  border-radius: 10px;
+  background: #0f141d;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.project-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid #2c3443;
+}
+
+.project-history-header h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #d9e2f2;
+}
+
+.project-history-branches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #2c3443;
+}
+
+.project-history-branch-chip {
+  --branch-color: #5b8cff;
+  border: 1px solid color-mix(in srgb, var(--branch-color) 55%, #2c3443);
+  background: color-mix(in srgb, var(--branch-color) 20%, #111826);
+  color: #d7e2f5;
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.project-history-branch-chip.current {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--branch-color) 80%, #ffffff);
+}
+
+.project-history-branch-chip.remote {
+  opacity: 0.86;
+}
+
+.project-history-error {
+  margin: 8px 10px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #6b3a3a;
+  background: #2b1616;
+  color: #efb6b6;
+  font-size: 12px;
+}
+
+.project-history-commit-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.project-history-empty {
+  color: #8b95a7;
+  font-size: 12px;
+  padding: 12px;
+}
+
+.project-history-commit-row {
+  border: 1px solid #2f3a4b;
+  background: #141c2a;
+  border-radius: 8px;
+  color: #dce6f7;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+}
+
+.project-history-commit-row:hover {
+  border-color: #4f6ea5;
+}
+
+.project-history-commit-row.selected {
+  border-color: #5b8cff;
+  background: #1a2640;
+}
+
+.project-history-lane {
+  --lane-color: #5b8cff;
+  position: relative;
+  width: 22px;
+}
+
+.project-history-lane::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: -8px;
+  bottom: -8px;
+  width: 2px;
+  background: color-mix(in srgb, var(--lane-color) 60%, #223148);
+}
+
+.project-history-node {
+  position: absolute;
+  left: 5px;
+  top: 10px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--lane-color);
+  box-shadow: 0 0 0 2px #0f141d;
+}
+
+.project-history-commit-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-history-subject {
+  font-size: 12px;
+  color: #e8eefb;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.project-history-meta {
+  font-size: 11px;
+  color: #9fb0ca;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.project-history-meta code {
+  color: #bfd0ea;
+}
+
+.project-history-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.project-history-ref-chip {
+  --branch-color: #5b8cff;
+  border: 1px solid color-mix(in srgb, var(--branch-color) 55%, #2f3a4b);
+  background: color-mix(in srgb, var(--branch-color) 22%, #121a29);
+  color: #d7e2f5;
+  border-radius: 999px;
+  font-size: 10px;
+  padding: 1px 7px;
+}
+
+.project-history-right-header {
+  padding: 10px;
+  border-bottom: 1px solid #2c3443;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #aebed7;
+}
+
+.project-history-right-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(190px, 34%) minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+}
+
+.project-history-files {
+  border: 1px solid #2c3443;
+  border-radius: 8px;
+  background: #0d1117;
+  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+}
+
+.project-history-file-row {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #121925;
+  color: #d5dfef;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 7px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-history-file-row:hover {
+  border-color: #4f6ea5;
+}
+
+.project-history-file-row.selected {
+  border-color: #5b8cff;
+  background: #1a2640;
+}
+
+.project-history-file-row code {
+  font-size: 11px;
+  color: #9fc27e;
+}
+
+.project-history-file-path {
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-history-file-stats {
+  font-size: 10px;
+  color: #9bb0cf;
+}
+
+.project-history-diff {
+  border: 1px solid #2c3443;
+  border-radius: 8px;
+  background: #0d1117;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* Sessions Section (Collapsible) */
 .project-sessions-section {
   border-bottom: 1px solid #3a3a3a;
@@ -7938,6 +8266,20 @@ input[type="checkbox"]:disabled {
     grid-template-columns: 1fr;
     min-height: 0;
     max-height: min(48vh, 520px);
+  }
+
+  .project-history-panel {
+    grid-template-columns: 1fr;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .project-history-left {
+    max-height: 320px;
+  }
+
+  .project-history-right-body {
+    grid-template-columns: 1fr;
   }
   
   .project-sessions-body {
@@ -8991,6 +9333,30 @@ button.session-provider-chip:hover {
   background-color: var(--app-bg-4);
 }
 
+[data-theme='light'] .chat-slash-menu {
+  border-color: var(--app-border-1);
+  background: var(--app-bg-2);
+}
+
+[data-theme='light'] .chat-slash-item {
+  color: var(--app-text-1);
+  border-bottom-color: var(--app-border-1);
+}
+
+[data-theme='light'] .chat-slash-item:hover,
+[data-theme='light'] .chat-slash-item.active {
+  background: var(--app-bg-3);
+}
+
+[data-theme='light'] .chat-slash-command {
+  color: #0b5aa0;
+}
+
+[data-theme='light'] .chat-slash-label,
+[data-theme='light'] .chat-slash-hint {
+  color: var(--app-text-1);
+}
+
 [data-theme='light'] .session-item:hover,
 [data-theme='light'] .sidebar-section-header:hover,
 [data-theme='light'] .sidebar-section-header.active,
@@ -9200,6 +9566,10 @@ button.session-provider-chip:hover {
 
 [data-theme='light'] .project-files-section .mind-tree-item:hover {
   background: #eaf0f9;
+}
+
+[data-theme='light'] .project-files-section .mind-tree-directory-has-git-changes {
+  color: #157a2e;
 }
 
 [data-theme='light'] .project-files-section .mind-tree-file.active {
@@ -9715,6 +10085,96 @@ button.session-provider-chip:hover {
   background: #eef3fa;
 }
 
+[data-theme='light'] .project-history-left,
+[data-theme='light'] .project-history-right {
+  border-color: #c9d3e2;
+  background: #f8fbff;
+}
+
+[data-theme='light'] .project-history-header,
+[data-theme='light'] .project-history-right-header,
+[data-theme='light'] .project-history-branches {
+  border-bottom-color: #d7deea;
+}
+
+[data-theme='light'] .project-history-header h3 {
+  color: #223a5f;
+}
+
+[data-theme='light'] .project-history-error {
+  border-color: #d79a9a;
+  background: #fdeeee;
+  color: #7a2e2e;
+}
+
+[data-theme='light'] .project-history-empty {
+  color: #55657d;
+}
+
+[data-theme='light'] .project-history-commit-row {
+  border-color: #c9d3e2;
+  background: #ffffff;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .project-history-commit-row:hover {
+  border-color: #5b8cff;
+}
+
+[data-theme='light'] .project-history-commit-row.selected {
+  border-color: #5b8cff;
+  background: #e8f0ff;
+}
+
+[data-theme='light'] .project-history-lane::before {
+  background: #bfd0f5;
+}
+
+[data-theme='light'] .project-history-node {
+  box-shadow: 0 0 0 2px #f8fbff;
+}
+
+[data-theme='light'] .project-history-subject {
+  color: #1b2f52;
+}
+
+[data-theme='light'] .project-history-meta,
+[data-theme='light'] .project-history-right-header {
+  color: #4f6382;
+}
+
+[data-theme='light'] .project-history-meta code {
+  color: #24467f;
+}
+
+[data-theme='light'] .project-history-files,
+[data-theme='light'] .project-history-diff {
+  border-color: #c9d3e2;
+  background: #f8fbff;
+}
+
+[data-theme='light'] .project-history-file-row {
+  background: #ffffff;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .project-history-file-row:hover {
+  border-color: #5b8cff;
+}
+
+[data-theme='light'] .project-history-file-row.selected {
+  border-color: #5b8cff;
+  background: #e8f0ff;
+}
+
+[data-theme='light'] .project-history-file-row code {
+  color: #1f6a33;
+}
+
+[data-theme='light'] .project-history-file-stats {
+  color: #55657d;
+}
+
 [data-theme='light'] .project-sessions-header {
   background: #f8fbff;
   border-bottom-color: #d7deea;
@@ -10029,6 +10489,22 @@ button.session-provider-chip:hover {
 [data-theme='light'] .message-tool {
   background-color: #eaf5ea;
   color: #1f4b2a;
+}
+
+[data-theme='light'] .message-system {
+  background-color: #e7eefb;
+  color: #1f2f4d;
+}
+
+[data-theme='light'] .message-system .message-content,
+[data-theme='light'] .message-system .message-markdown,
+[data-theme='light'] .message-system .message-role {
+  color: #1f2f4d;
+}
+
+[data-theme='light'] .message-system .message-time,
+[data-theme='light'] .message-system .message-copy {
+  color: #4b5f84;
 }
 
 [data-theme='light'] .tool-summary-name {
