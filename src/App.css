@@ -7454,42 +7454,29 @@ input[type="checkbox"]:disabled {
 }
 
 .project-commit-status {
-  min-width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid rgba(149, 242, 178, 0.45);
+  background: rgba(29, 87, 53, 0.28);
   color: #95f2b2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .project-commit-path {
   flex: 1;
   color: #d7deea;
   font-size: 13px;
-  word-break: break-word;
-}
-
-.project-commit-state-badge {
-  font-size: 11px;
-  border-radius: 999px;
-  padding: 2px 8px;
-  border: 1px solid #445167;
-  color: #b8c4d9;
-  background: rgba(68, 81, 103, 0.2);
-}
-
-.project-commit-state-badge.staged {
-  border-color: #3f8f56;
-  color: #bef4cb;
-  background: rgba(52, 122, 74, 0.25);
-}
-
-.project-commit-state-badge.not-staged {
-  border-color: #5f6675;
-  color: #c4cad8;
-  background: rgba(78, 87, 104, 0.2);
-}
-
-.project-commit-state-badge.untracked {
-  border-color: #9b7f3a;
-  color: #f3dc9f;
-  background: rgba(120, 97, 42, 0.25);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .project-commit-toggle-btn {
@@ -10254,10 +10241,6 @@ button.session-provider-chip:hover {
   color: #1f2b40;
 }
 
-[data-theme='light'] .project-commit-status {
-  color: #1f6a33;
-}
-
 [data-theme='light'] .project-commit-path {
   color: #1f2b40;
 }
@@ -10284,33 +10267,14 @@ button.session-provider-chip:hover {
 }
 
 [data-theme='light'] .project-commit-file.selected .project-commit-path,
-[data-theme='light'] .project-commit-file.selected .project-commit-status,
-[data-theme='light'] .project-commit-file.selected .project-commit-state-badge {
+[data-theme='light'] .project-commit-file.selected .project-commit-status {
   color: #163468;
 }
 
-[data-theme='light'] .project-commit-state-badge {
-  border-color: #b9c6db;
-  color: #3f516c;
-  background: rgba(185, 198, 219, 0.24);
-}
-
-[data-theme='light'] .project-commit-state-badge.staged {
-  border-color: #7ab58a;
-  color: #1f5f36;
-  background: rgba(122, 181, 138, 0.2);
-}
-
-[data-theme='light'] .project-commit-state-badge.not-staged {
-  border-color: #a7b5ca;
-  color: #475a75;
-  background: rgba(167, 181, 202, 0.24);
-}
-
-[data-theme='light'] .project-commit-state-badge.untracked {
-  border-color: #b08a37;
-  color: #6f5318;
-  background: rgba(176, 138, 55, 0.2);
+[data-theme='light'] .project-commit-status {
+  border-color: rgba(30, 111, 58, 0.4);
+  background: rgba(34, 197, 94, 0.14);
+  color: #1f6a33;
 }
 
 [data-theme='light'] .project-commit-file:hover {

@@ -143,6 +143,38 @@ function gitHistoryAuthorInitials(name: string): string {
   return `${words[0][0] || ''}${words[1][0] || ''}`.toUpperCase();
 }
 
+const GIT_STATUS_LABELS: Record<string, string> = {
+  ' ': 'Unchanged',
+  M: 'Modified',
+  A: 'Added',
+  D: 'Deleted',
+  R: 'Renamed',
+  C: 'Copied',
+  U: 'Unmerged',
+  '?': 'Untracked',
+  '!': 'Ignored',
+};
+
+function describeGitStatusCode(code: string): string {
+  return GIT_STATUS_LABELS[code] || `Unknown (${code})`;
+}
+
+function buildGitFileStatusTooltip(file: ProjectGitChangedFile): string {
+  const summaryCode = file.status || '??';
+  const indexCode = file.index_status || ' ';
+  const worktreeCode = file.worktree_status || ' ';
+  const stagedText = file.staged ? 'Staged' : 'Not staged';
+  const untrackedText = file.untracked ? 'Untracked' : 'Tracked';
+
+  return [
+    `Git status: ${summaryCode}`,
+    `Index: ${describeGitStatusCode(indexCode)}`,
+    `Worktree: ${describeGitStatusCode(worktreeCode)}`,
+    `Stage: ${stagedText}`,
+    `File: ${untrackedText}`,
+  ].join('\n');
+}
+
 function isTodoFilePath(path: string): boolean {
   const base = path.split('/').filter(Boolean).pop()?.toLowerCase() || '';
   return TODO_FILE_NAMES.has(base);
@@ -1119,7 +1151,8 @@ function ProjectView() {
   }, [projectId, rootFolder]);
 
   const loadGitHistory = useCallback(async (repoPathOverride?: string) => {
-    if (!projectId || !rootFolder || !isGitRepo) {
+    const targetRepoPath = repoPathOverride ?? commitRepoPath;
+    if (!projectId || !rootFolder || (!isGitRepo && targetRepoPath.trim() === '')) {
       setGitHistoryBranches([]);
       setGitHistoryCommits([]);
       setSelectedHistoryCommitHash('');
@@ -1132,7 +1165,6 @@ function ProjectView() {
 
     const requestID = gitHistoryRequestRef.current + 1;
     gitHistoryRequestRef.current = requestID;
-    const targetRepoPath = repoPathOverride ?? commitRepoPath;
     setIsLoadingGitHistory(true);
     setGitHistoryError(null);
     try {
@@ -2719,7 +2751,7 @@ function ProjectView() {
 
   useEffect(() => {
     if (activeTab !== 'changes') return;
-    if (!projectId || !rootFolder || !isGitRepo) return;
+    if (!projectId || !rootFolder || (!isGitRepo && commitRepoPath.trim() === '')) return;
     if (commitRepoPath.trim() === '') {
       setCommitRepoLabel(project?.name || 'Project');
     }
@@ -2728,20 +2760,20 @@ function ProjectView() {
 
   useEffect(() => {
     if (activeTab !== 'history') return;
-    if (!projectId || !rootFolder || !isGitRepo) return;
+    if (!projectId || !rootFolder || (!isGitRepo && commitRepoPath.trim() === '')) return;
     void loadGitHistory();
-  }, [activeTab, projectId, rootFolder, isGitRepo, loadGitHistory]);
+  }, [activeTab, projectId, rootFolder, isGitRepo, commitRepoPath, loadGitHistory]);
 
   useEffect(() => {
     if (activeTab !== 'history') return;
-    if (!isGitRepo || selectedHistoryCommitHash.trim() === '') {
+    if ((!isGitRepo && commitRepoPath.trim() === '') || selectedHistoryCommitHash.trim() === '') {
       setHistoryCommitFiles([]);
       setSelectedHistoryFilePath('');
       setSelectedHistoryFileDiff('');
       return;
     }
     void loadHistoryCommitFiles(selectedHistoryCommitHash);
-  }, [activeTab, isGitRepo, selectedHistoryCommitHash, loadHistoryCommitFiles]);
+  }, [activeTab, isGitRepo, commitRepoPath, selectedHistoryCommitHash, loadHistoryCommitFiles]);
 
   useEffect(() => {
     if (activeTab !== 'history') return;
@@ -3879,7 +3911,7 @@ function ProjectView() {
                   Configure folder
                 </button>
               </div>
-            ) : !isGitRepo ? (
+            ) : (!isGitRepo && commitRepoPath.trim() === '') ? (
               <EmptyState className="sessions-empty">
                 <EmptyStateTitle>This folder is not a Git repository.</EmptyStateTitle>
                 <button type="button" className="settings-save-btn" onClick={openGitInitDialog} disabled={isLoadingGitStatus || isInitializingGit}>
@@ -3924,6 +3956,7 @@ function ProjectView() {
                     type="button"
                     className="settings-add-btn"
                     onClick={() => {
+                      void refreshCommitDialogFiles();
                       void loadGitStatus();
                     }}
                     disabled={isLoadingGitStatus || isCommitting || isPushing || isPulling}
@@ -3950,12 +3983,8 @@ function ProjectView() {
                             }
                           }}
                         >
-                          <code className="project-commit-status">{file.status || '??'}</code>
+                          <code className="project-commit-status" title={buildGitFileStatusTooltip(file)}>{file.status || '??'}</code>
                           <span className="project-commit-path">{file.path}</span>
-                          <span className={`project-commit-state-badge ${file.staged ? 'staged' : 'not-staged'}`}>
-                            {file.staged ? 'Staged' : 'Not staged'}
-                          </span>
-                          {file.untracked ? <span className="project-commit-state-badge untracked">Untracked</span> : null}
                           <button
                             type="button"
                             className="project-commit-toggle-btn"
@@ -4048,7 +4077,7 @@ function ProjectView() {
                   Configure folder
                 </button>
               </div>
-            ) : !isGitRepo ? (
+            ) : (!isGitRepo && commitRepoPath.trim() === '') ? (
               <EmptyState className="sessions-empty">
                 <EmptyStateTitle>This folder is not a Git repository.</EmptyStateTitle>
                 <button type="button" className="settings-save-btn" onClick={openGitInitDialog} disabled={isLoadingGitStatus || isInitializingGit}>
