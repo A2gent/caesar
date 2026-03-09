@@ -70,7 +70,7 @@ import {
 } from './workflows';
 
 type MarkdownMode = 'kanban' | 'preview' | 'source';
-type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'git';
+type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'changes' | 'history';
 
 const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);
 const TODO_TASK_LINE_PATTERN = /^(\s*)-\s+\[( |x|X)\]\s+(.*?)(?:\s+<!--\s*task-file:\s*([^\s][^>]*)\s*-->)?\s*$/;
@@ -131,6 +131,16 @@ function formatGitHistoryTime(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function gitHistoryAuthorInitials(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed === '') return '?';
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+  return `${words[0][0] || ''}${words[1][0] || ''}`.toUpperCase();
 }
 
 function isTodoFilePath(path: string): boolean {
@@ -962,6 +972,7 @@ function ProjectView() {
   // Sessions state
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
+  const [isDeletingAllSessions, setIsDeletingAllSessions] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isQueuingSession, setIsQueuingSession] = useState(false);
   const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
@@ -1468,6 +1479,34 @@ function ProjectView() {
     } catch (err) {
       console.error('Failed to delete session:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete session');
+    }
+  };
+
+  const handleDeleteAllSessions = async () => {
+    if (sessions.length === 0) return;
+    if (!confirm(`Delete all ${sessions.length} session(s) in this project? This cannot be undone.`)) return;
+
+    setIsDeletingAllSessions(true);
+    setError(null);
+
+    try {
+      // Only delete roots; backend cascades children.
+      const sessionsByID = new Map(sessions.map((session) => [session.id, session]));
+      const rootSessions = sessions.filter((session) => {
+        const parentID = (session.parent_id || '').trim();
+        return parentID === '' || !sessionsByID.has(parentID);
+      });
+
+      for (const rootSession of rootSessions) {
+        await deleteSession(rootSession.id);
+      }
+      await loadSessions();
+    } catch (err) {
+      console.error('Failed to delete all project sessions:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete all project sessions');
+      await loadSessions();
+    } finally {
+      setIsDeletingAllSessions(false);
     }
   };
 
@@ -1981,7 +2020,7 @@ function ProjectView() {
       const firstPath = (status.files || [])[0]?.path || '';
       setSelectedCommitFilePath(firstPath);
       setSelectedCommitFileDiff('');
-      setActiveTab('git');
+      setActiveTab('changes');
       void loadGitHistory(repoPath);
       if (firstPath) {
         void loadCommitFileDiff(firstPath, repoPath);
@@ -2617,7 +2656,7 @@ function ProjectView() {
   };
 
   useEffect(() => {
-    if (activeTab !== 'git') return;
+    if (activeTab !== 'changes') return;
     if (!selectedCommitFilePath) {
       setSelectedCommitFileDiff('');
       return;
@@ -2679,17 +2718,22 @@ function ProjectView() {
   }, [activeTab, activeTodoFilePath, selectedFilePath, openFile]);
 
   useEffect(() => {
-    if (activeTab !== 'git') return;
+    if (activeTab !== 'changes') return;
     if (!projectId || !rootFolder || !isGitRepo) return;
     if (commitRepoPath.trim() === '') {
       setCommitRepoLabel(project?.name || 'Project');
     }
     void refreshCommitDialogFiles();
-    void loadGitHistory();
-  }, [activeTab, projectId, rootFolder, isGitRepo, project?.name, commitRepoPath, refreshCommitDialogFiles, loadGitHistory]);
+  }, [activeTab, projectId, rootFolder, isGitRepo, project?.name, commitRepoPath, refreshCommitDialogFiles]);
 
   useEffect(() => {
-    if (activeTab !== 'git') return;
+    if (activeTab !== 'history') return;
+    if (!projectId || !rootFolder || !isGitRepo) return;
+    void loadGitHistory();
+  }, [activeTab, projectId, rootFolder, isGitRepo, loadGitHistory]);
+
+  useEffect(() => {
+    if (activeTab !== 'history') return;
     if (!isGitRepo || selectedHistoryCommitHash.trim() === '') {
       setHistoryCommitFiles([]);
       setSelectedHistoryFilePath('');
@@ -2700,7 +2744,7 @@ function ProjectView() {
   }, [activeTab, isGitRepo, selectedHistoryCommitHash, loadHistoryCommitFiles]);
 
   useEffect(() => {
-    if (activeTab !== 'git') return;
+    if (activeTab !== 'history') return;
     if (selectedHistoryCommitHash.trim() === '' || selectedHistoryFilePath.trim() === '') {
       setSelectedHistoryFileDiff('');
       return;
@@ -3444,8 +3488,11 @@ function ProjectView() {
           <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`project-view-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
             Sessions ({sessions.length})
           </button>
-          <button type="button" role="tab" aria-selected={activeTab === 'git'} className={`project-view-tab ${activeTab === 'git' ? 'active' : ''}`} onClick={() => setActiveTab('git')}>
-            Git ({gitChangedFiles.length})
+          <button type="button" role="tab" aria-selected={activeTab === 'changes'} className={`project-view-tab ${activeTab === 'changes' ? 'active' : ''}`} onClick={() => setActiveTab('changes')}>
+            Changes ({gitChangedFiles.length})
+          </button>
+          <button type="button" role="tab" aria-selected={activeTab === 'history'} className={`project-view-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+            History
           </button>
         </div>
 
@@ -3807,12 +3854,23 @@ function ProjectView() {
 
         {activeTab === 'sessions' ? (
           <div className="project-tab-panel project-sessions-tab">
-            <div className="project-sessions-header-static">Sessions ({sessions.length})</div>
+            <div className="project-sessions-header-static">
+              <span>Sessions ({sessions.length})</span>
+              <button
+                type="button"
+                className="project-bulk-delete-btn"
+                onClick={() => void handleDeleteAllSessions()}
+                disabled={sessions.length === 0 || isDeletingAllSessions}
+                title="Delete all sessions in this project"
+              >
+                {isDeletingAllSessions ? 'Deleting...' : 'Delete All'}
+              </button>
+            </div>
             <div className="project-sessions-body">{sessionsListBlock}</div>
           </div>
         ) : null}
 
-        {activeTab === 'git' ? (
+        {activeTab === 'changes' ? (
           <div className="project-tab-panel project-git-tab">
             {!rootFolder ? (
               <div className="project-files-empty">
@@ -3867,7 +3925,6 @@ function ProjectView() {
                     className="settings-add-btn"
                     onClick={() => {
                       void loadGitStatus();
-                      void loadGitHistory();
                     }}
                     disabled={isLoadingGitStatus || isCommitting || isPushing || isPulling}
                   >
@@ -3977,10 +4034,33 @@ function ProjectView() {
                     {isCommitting && isPushing ? 'Committing & pushing...' : 'Commit & Push'}
                   </button>
                 </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {activeTab === 'history' ? (
+          <div className="project-tab-panel project-git-tab">
+            {!rootFolder ? (
+              <div className="project-files-empty">
+                <p>No folder configured for this project.</p>
+                <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+                  Configure folder
+                </button>
+              </div>
+            ) : !isGitRepo ? (
+              <EmptyState className="sessions-empty">
+                <EmptyStateTitle>This folder is not a Git repository.</EmptyStateTitle>
+                <button type="button" className="settings-save-btn" onClick={openGitInitDialog} disabled={isLoadingGitStatus || isInitializingGit}>
+                  {isInitializingGit ? 'Initializing Git...' : 'Initialize Git'}
+                </button>
+              </EmptyState>
+            ) : (
+              <div className="project-git-panel">
                 <div className="project-history-panel">
                   <div className="project-history-left">
                     <div className="project-history-header">
-                      <h3>Git History</h3>
+                      <h3>History</h3>
                       <button
                         type="button"
                         className="settings-add-btn"
@@ -4022,6 +4102,9 @@ function ProjectView() {
                         gitHistoryCommits.map((commit) => {
                           const refForColor = commit.branch || commit.refs?.[0] || commit.hash;
                           const laneColor = gitHistoryColorForRef(refForColor);
+                          const authorName = commit.author_name || 'Unknown author';
+                          const authoredAt = formatGitHistoryTime(commit.authored_at);
+                          const shortHash = commit.short_hash || commit.hash.slice(0, 7);
                           return (
                             <button
                               key={commit.hash}
@@ -4033,11 +4116,9 @@ function ProjectView() {
                                 <span className="project-history-node" />
                               </span>
                               <span className="project-history-commit-main">
-                                <span className="project-history-subject">{commit.subject || '(no subject)'}</span>
-                                <span className="project-history-meta">
-                                  <code>{commit.short_hash || commit.hash.slice(0, 7)}</code>
-                                  <span>{commit.author_name || 'Unknown author'}</span>
-                                  <span>{formatGitHistoryTime(commit.authored_at)}</span>
+                                <span className="project-history-commit-line">
+                                  <code className="project-history-commit-hash">{shortHash}</code>
+                                  <span className="project-history-subject">{commit.subject || '(no subject)'}</span>
                                 </span>
                                 {commit.refs && commit.refs.length > 0 ? (
                                   <span className="project-history-refs">
@@ -4052,6 +4133,13 @@ function ProjectView() {
                                     ))}
                                   </span>
                                 ) : null}
+                              </span>
+                              <span
+                                className="project-history-author-avatar"
+                                title={`${authorName} · ${authoredAt}`}
+                                aria-label={`${authorName} at ${authoredAt}`}
+                              >
+                                {gitHistoryAuthorInitials(authorName)}
                               </span>
                             </button>
                           );

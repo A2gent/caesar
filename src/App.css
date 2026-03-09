@@ -7349,7 +7349,7 @@ input[type="checkbox"]:disabled {
 }
 
 .project-commit-files {
-  max-height: 300px;
+  max-height: none;
   overflow: auto;
   border: 1px solid #2c3443;
   border-radius: 8px;
@@ -7408,8 +7408,8 @@ input[type="checkbox"]:disabled {
   display: grid;
   grid-template-columns: minmax(360px, 1fr) minmax(520px, 1.6fr);
   gap: 10px;
+  flex: 1;
   min-height: 0;
-  max-height: min(52vh, 620px);
   overflow: hidden;
 }
 
@@ -7724,6 +7724,10 @@ input[type="checkbox"]:disabled {
 }
 
 .project-sessions-header-static {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 10px;
   border-bottom: 1px solid #353d4b;
   font-size: 14px;
@@ -7759,8 +7763,8 @@ input[type="checkbox"]:disabled {
   display: grid;
   grid-template-columns: minmax(280px, 38%) minmax(0, 1fr);
   gap: 10px;
-  min-height: 320px;
-  max-height: min(52vh, 620px);
+  flex: 1;
+  min-height: 0;
 }
 
 .project-history-left,
@@ -7849,10 +7853,10 @@ input[type="checkbox"]:disabled {
   text-align: left;
   cursor: pointer;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 8px;
   width: 100%;
-  padding: 8px;
+  padding: 6px 8px;
 }
 
 .project-history-commit-row:hover {
@@ -7895,7 +7899,20 @@ input[type="checkbox"]:disabled {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+}
+
+.project-history-commit-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-history-commit-hash {
+  color: #bfd0ea;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .project-history-subject {
@@ -7906,16 +7923,21 @@ input[type="checkbox"]:disabled {
   text-overflow: ellipsis;
 }
 
-.project-history-meta {
-  font-size: 11px;
-  color: #9fb0ca;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.project-history-meta code {
-  color: #bfd0ea;
+.project-history-author-avatar {
+  align-self: start;
+  margin-top: 1px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #273755;
+  border: 1px solid #425a84;
+  color: #dce6f7;
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
 }
 
 .project-history-refs {
@@ -8362,7 +8384,6 @@ input[type="checkbox"]:disabled {
   .project-commit-content {
     grid-template-columns: 1fr;
     min-height: 0;
-    max-height: min(48vh, 520px);
   }
 
   .project-history-panel {
@@ -8372,7 +8393,7 @@ input[type="checkbox"]:disabled {
   }
 
   .project-history-left {
-    max-height: 320px;
+    min-height: 0;
   }
 
   .project-history-right-body {
@@ -10349,13 +10370,18 @@ button.session-provider-chip:hover {
   color: #1b2f52;
 }
 
-[data-theme='light'] .project-history-meta,
-[data-theme='light'] .project-history-right-header {
-  color: #4f6382;
+[data-theme='light'] .project-history-commit-hash {
+  color: #24467f;
 }
 
-[data-theme='light'] .project-history-meta code {
+[data-theme='light'] .project-history-author-avatar {
+  background: #e9f0ff;
+  border-color: #b8c9e9;
   color: #24467f;
+}
+
+[data-theme='light'] .project-history-right-header {
+  color: #4f6382;
 }
 
 [data-theme='light'] .project-history-files,
