@@ -439,6 +439,191 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+type TokenRule = {
+  regex: RegExp;
+  className: string;
+  priority: number;
+};
+
+type TokenMatch = {
+  start: number;
+  end: number;
+  className: string;
+  priority: number;
+};
+
+const JS_KEYWORDS = [
+  'as', 'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger',
+  'default', 'delete', 'do', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for',
+  'from', 'function', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'let',
+  'new', 'null', 'of', 'package', 'private', 'protected', 'public', 'return', 'static',
+  'super', 'switch', 'this', 'throw', 'true', 'try', 'type', 'typeof', 'undefined', 'var',
+  'void', 'while', 'with', 'yield',
+];
+
+const GO_KEYWORDS = [
+  'break', 'case', 'chan', 'const', 'continue', 'default', 'defer', 'else', 'fallthrough',
+  'for', 'func', 'go', 'goto', 'if', 'import', 'interface', 'map', 'package', 'range',
+  'return', 'select', 'struct', 'switch', 'type', 'var',
+];
+
+const PY_KEYWORDS = [
+  'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif',
+  'else', 'except', 'False', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is',
+  'lambda', 'None', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'True', 'try', 'while',
+  'with', 'yield',
+];
+
+const SQL_KEYWORDS = [
+  'select', 'from', 'where', 'join', 'left', 'right', 'inner', 'outer', 'on', 'group', 'by',
+  'order', 'insert', 'into', 'values', 'update', 'set', 'delete', 'create', 'table', 'alter',
+  'drop', 'index', 'as', 'distinct', 'limit', 'offset', 'having', 'union', 'all', 'and', 'or',
+  'not', 'null', 'is', 'like', 'between',
+];
+
+function keywordRegex(words: string[], caseInsensitive = false): RegExp {
+  const flags = caseInsensitive ? 'gi' : 'g';
+  return new RegExp(`\\b(${words.join('|')})\\b`, flags);
+}
+
+function getTokenRules(language: string): TokenRule[] {
+  const normalized = language.trim().toLowerCase();
+
+  if (normalized === 'json') {
+    return [
+      { regex: /\"(?:[^\"\\]|\\.)*\"\s*(?=:)/g, className: 'tok-key', priority: 4 },
+      { regex: /\"(?:[^\"\\]|\\.)*\"/g, className: 'tok-string', priority: 3 },
+      { regex: /\b(?:true|false|null)\b/g, className: 'tok-keyword', priority: 2 },
+      { regex: /\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi, className: 'tok-number', priority: 1 },
+    ];
+  }
+
+  if (normalized === 'bash' || normalized === 'sh' || normalized === 'zsh' || normalized === 'shell') {
+    return [
+      { regex: /#.*$/gm, className: 'tok-comment', priority: 4 },
+      { regex: /\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 3 },
+      { regex: /\b(?:if|then|else|fi|for|in|do|done|case|esac|while|until|function)\b/g, className: 'tok-keyword', priority: 2 },
+      { regex: /\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/g, className: 'tok-variable', priority: 2 },
+      { regex: /\b\d+\b/g, className: 'tok-number', priority: 1 },
+    ];
+  }
+
+  if (normalized === 'go' || normalized === 'golang') {
+    return [
+      { regex: /\/\*[\s\S]*?\*\/|\/\/.*$/gm, className: 'tok-comment', priority: 5 },
+      { regex: /\"(?:[^\"\\]|\\.)*\"|`[\s\S]*?`|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 4 },
+      { regex: keywordRegex(GO_KEYWORDS), className: 'tok-keyword', priority: 3 },
+      { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 2 },
+      { regex: /\b[A-Z][A-Za-z0-9_]*\b/g, className: 'tok-type', priority: 1 },
+    ];
+  }
+
+  if (normalized === 'py' || normalized === 'python') {
+    return [
+      { regex: /#.*$/gm, className: 'tok-comment', priority: 5 },
+      { regex: /\"\"\"[\s\S]*?\"\"\"|'''[\s\S]*?'''|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 4 },
+      { regex: keywordRegex(PY_KEYWORDS), className: 'tok-keyword', priority: 3 },
+      { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 2 },
+      { regex: /\bself\b/g, className: 'tok-variable', priority: 1 },
+    ];
+  }
+
+  if (normalized === 'sql') {
+    return [
+      { regex: /--.*$/gm, className: 'tok-comment', priority: 4 },
+      { regex: /\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 3 },
+      { regex: keywordRegex(SQL_KEYWORDS, true), className: 'tok-keyword', priority: 2 },
+      { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 1 },
+    ];
+  }
+
+  return [
+    { regex: /\/\*[\s\S]*?\*\/|\/\/.*$|#.*$/gm, className: 'tok-comment', priority: 5 },
+    { regex: /\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, className: 'tok-string', priority: 4 },
+    { regex: keywordRegex(JS_KEYWORDS), className: 'tok-keyword', priority: 3 },
+    { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 2 },
+    { regex: /\b[A-Z][A-Za-z0-9_]*\b/g, className: 'tok-type', priority: 1 },
+  ];
+}
+
+function findMatches(code: string, rules: TokenRule[]): TokenMatch[] {
+  const matches: TokenMatch[] = [];
+
+  for (const rule of rules) {
+    rule.regex.lastIndex = 0;
+    let match = rule.regex.exec(code);
+    while (match) {
+      const value = match[0];
+      if (value.length > 0) {
+        matches.push({
+          start: match.index,
+          end: match.index + value.length,
+          className: rule.className,
+          priority: rule.priority,
+        });
+      }
+      match = rule.regex.exec(code);
+    }
+  }
+
+  matches.sort((a, b) => {
+    if (a.start !== b.start) {
+      return a.start - b.start;
+    }
+    if (a.priority !== b.priority) {
+      return b.priority - a.priority;
+    }
+    return (b.end - b.start) - (a.end - a.start);
+  });
+
+  return matches;
+}
+
+function highlightCode(code: string, language: string): string {
+  const matches = findMatches(code, getTokenRules(language));
+  const byStart = new Map<number, TokenMatch[]>();
+  for (const match of matches) {
+    const list = byStart.get(match.start);
+    if (list) {
+      list.push(match);
+    } else {
+      byStart.set(match.start, [match]);
+    }
+  }
+
+  let index = 0;
+  let html = '';
+
+  while (index < code.length) {
+    const candidates = byStart.get(index) || [];
+    let selected: TokenMatch | null = null;
+    for (const candidate of candidates) {
+      if (!selected) {
+        selected = candidate;
+        continue;
+      }
+      if (candidate.priority > selected.priority) {
+        selected = candidate;
+        continue;
+      }
+      if (candidate.priority === selected.priority && candidate.end - candidate.start > selected.end - selected.start) {
+        selected = candidate;
+      }
+    }
+
+    if (selected && selected.end > index) {
+      html += `<span class="${selected.className}">${escapeHtml(code.slice(index, selected.end))}</span>`;
+      index = selected.end;
+      continue;
+    }
+
+    html += escapeHtml(code[index]);
+    index += 1;
+  }
+
+  return html;
+}
+
 function renderInlineMarkdown(value: string): string {
   let text = escapeHtml(value);
   text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -480,6 +665,8 @@ function renderMarkdownToHtml(markdown: string): string {
   let inCodeFence = false;
   let inTable = false;
   let tableColumns = 0;
+  let codeLanguage = '';
+  let codeFenceLines: string[] = [];
   const headingCounts = new Map<string, number>();
 
   const closeList = () => {
@@ -497,23 +684,36 @@ function renderMarkdownToHtml(markdown: string): string {
     }
   };
 
+  const closeCodeFence = () => {
+    if (!inCodeFence) {
+      return;
+    }
+    const langClass = codeLanguage ? ` language-${escapeHtml(codeLanguage)}` : '';
+    const highlighted = highlightCode(codeFenceLines.join('\n'), codeLanguage);
+    html.push(`<pre class="md-code-block"><code class="${langClass.trim()}">${highlighted}</code></pre>`);
+    inCodeFence = false;
+    codeLanguage = '';
+    codeFenceLines = [];
+  };
+
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (line.startsWith('```')) {
+    const fenceMatch = /^```\s*([a-zA-Z0-9_+-]+)?\s*$/.exec(line);
+    if (fenceMatch) {
       closeList();
       closeTable();
       if (!inCodeFence) {
-        html.push('<pre><code>');
         inCodeFence = true;
+        codeLanguage = (fenceMatch[1] || '').toLowerCase();
+        codeFenceLines = [];
       } else {
-        html.push('</code></pre>');
-        inCodeFence = false;
+        closeCodeFence();
       }
       continue;
     }
 
     if (inCodeFence) {
-      html.push(`${escapeHtml(line)}\n`);
+      codeFenceLines.push(line);
       continue;
     }
 
@@ -585,9 +785,7 @@ function renderMarkdownToHtml(markdown: string): string {
     html.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
   }
 
-  if (inCodeFence) {
-    html.push('</code></pre>');
-  }
+  closeCodeFence();
   if (inList) {
     html.push('</ul>');
   }

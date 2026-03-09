@@ -8,6 +8,7 @@ import { TaskProgressPanel } from './TaskProgressPanel';
 import {
   getSession,
   cancelSessionRun,
+  listSessions,
   listProviders,
   getProject,
   sendMessageStream,
@@ -457,6 +458,7 @@ function ChatView() {
   const [composerValue, setComposerValue] = useState<string>('');
   const [isCreatingLinkedSession, setIsCreatingLinkedSession] = useState(false);
   const [providerTrace, setProviderTrace] = useState<string>('');
+  const [sessionIndex, setSessionIndex] = useState<Session[]>([]);
 
   const SESSION_POLL_INTERVAL_MS = 2000; // Poll every 2 seconds for active sessions
   
@@ -552,6 +554,37 @@ function ChatView() {
     };
     void loadSubAgents();
   }, []);
+
+  useEffect(() => {
+    if (!session) {
+      setSessionIndex([]);
+      return;
+    }
+
+    let cancelled = false;
+    const refreshSessionIndex = async () => {
+      try {
+        const rows = await listSessions();
+        if (!cancelled) {
+          setSessionIndex(rows);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load session index:', err);
+        }
+      }
+    };
+
+    void refreshSessionIndex();
+    const timer = window.setInterval(() => {
+      void refreshSessionIndex();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [session?.id]);
 
   // Poll active sessions for real-time updates
   // This handles:
@@ -874,11 +907,9 @@ function ChatView() {
       setSession(fresh);
       setMessages(fresh.messages || []);
       
-      // If session is running again, start polling or streaming
-      if (fresh.status === 'running') {
-        setActiveRequestSessionId(fresh.id);
-        // The existing polling mechanism will handle updates
-      }
+      // Keep polling enabled for resumed runs from /answer.
+      // There is no active stream in this flow.
+      setActiveRequestSessionId((prev) => (prev === fresh.id ? null : prev));
     } catch (err) {
       console.error('Failed to answer question:', err);
       setError(err instanceof Error ? err.message : 'Failed to answer question');
@@ -964,6 +995,22 @@ function ChatView() {
     const match = linkedAgentOptions.find((option) => option.value === linkedSessionAgent);
     return match?.name || 'Default agent';
   }, [linkedAgentOptions, linkedSessionAgent]);
+
+  const parentSessionSummary = useMemo(() => {
+    if (!session?.parent_id) {
+      return null;
+    }
+    return sessionIndex.find((item) => item.id === session.parent_id) || null;
+  }, [session?.parent_id, sessionIndex]);
+
+  const childSessions = useMemo(() => {
+    if (!session) {
+      return [];
+    }
+    return sessionIndex
+      .filter((item) => item.parent_id === session.id)
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  }, [session, sessionIndex]);
 
   const composerPlaceholder = useMemo(() => {
     if (pendingQuestion) {
@@ -1227,10 +1274,39 @@ function ChatView() {
                   <TaskProgressPanel taskProgress={session.task_progress} />
                 </div>
               ) : null}
+              {(session.parent_id || childSessions.length > 0) ? (
+                <div className="session-relations-panel">
+                  {session.parent_id ? (
+                    <button
+                      type="button"
+                      className="session-relation-link parent"
+                      onClick={() => navigate(`/chat/${session.parent_id}`)}
+                      title={`Open parent session ${session.parent_id}`}
+                    >
+                      ← Parent: {parentSessionSummary?.title || `Session ${session.parent_id.slice(0, 8)}`}
+                    </button>
+                  ) : null}
+                  {childSessions.length > 0 ? (
+                    <div className="session-children-list">
+                      {childSessions.map((child) => (
+                        <button
+                          key={child.id}
+                          type="button"
+                          className="session-relation-link child"
+                          onClick={() => navigate(`/chat/${child.id}`)}
+                          title={`Open child session ${child.id}`}
+                        >
+                          ↳ {child.title || `Session ${child.id.slice(0, 8)}`} ({child.status})
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {workflowState ? (
                 <div className="session-workflow-panel">
                   <div className="session-workflow-header">
-                    <span className="session-workflow-title">{workflowState.workflowName}</span>
+                    <span className="session-workflow-title">🔀 {workflowState.workflowName}</span>
                     <span className={`session-workflow-status status-${workflowState.status}`}>{workflowState.status}</span>
                   </div>
                   <div className="session-workflow-nodes">
@@ -1297,6 +1373,7 @@ function ChatView() {
             sessionId={session?.id || null}
             projectId={session?.project_id || null}
             systemPromptSnapshot={systemPromptSnapshot}
+            session={session}
           />
         ) : (
           <EmptyState>

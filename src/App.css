@@ -1196,6 +1196,36 @@ body.mind-resizing * {
   text-overflow: ellipsis;
 }
 
+.session-relations-panel {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session-children-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.session-relation-link {
+  border: 1px solid #394353;
+  background: #151b24;
+  color: #c2d4ee;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.session-relation-link:hover {
+  border-color: #5ea6e3;
+  color: #d9ecff;
+  background: #1a2635;
+}
+
 .session-workflow-panel {
   margin-top: 2px;
   border: 1px solid #303745;
@@ -1498,6 +1528,42 @@ body.mind-resizing * {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.message-row-user {
+  justify-content: flex-end;
+}
+
+.message-row-assistant {
+  justify-content: flex-start;
+}
+
+.message-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.message-avatar-user {
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.message-avatar-agent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #20262f;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 22px;
+  line-height: 1;
 }
 
 .message {
@@ -1967,6 +2033,16 @@ body.mind-resizing * {
   gap: 2px;
 }
 
+.tool-execution-stack-offset {
+  margin-left: 50px;
+}
+
+@media (max-width: 720px) {
+  .tool-execution-stack-offset {
+    margin-left: 18px;
+  }
+}
+
 .tool-card-summary {
   display: flex;
   align-items: center;
@@ -2196,9 +2272,15 @@ body.mind-resizing * {
 }
 
 .message-loading-spinner {
-  position: static;
-  left: auto;
-  top: auto;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background-color: transparent;
+  border: 3px solid rgba(76, 175, 80, 0.3);
+  border-top-color: #4caf50;
+  animation: session-status-spin 0.8s linear infinite;
   flex-shrink: 0;
 }
 
@@ -6480,7 +6562,8 @@ input[type="checkbox"]:disabled {
   font-size: 12px;
 }
 
-.mind-markdown-preview pre {
+.mind-markdown-preview pre,
+.mind-markdown-preview .md-code-block {
   background: #1a1a1a;
   border: 1px solid #3b3b3b;
   border-radius: 8px;
@@ -6488,13 +6571,47 @@ input[type="checkbox"]:disabled {
   padding: 10px;
 }
 
-.mind-markdown-preview pre code {
+.mind-markdown-preview pre code,
+.mind-markdown-preview .md-code-block code {
+  display: block;
   background: transparent;
   padding: 0;
+  white-space: pre;
+  line-height: 1.4;
+  color: #d9deea;
 }
 
 .mind-markdown-preview a {
   color: #90a8ff;
+}
+
+.mind-markdown-preview .tok-comment {
+  color: #7f8a9c;
+  font-style: italic;
+}
+
+.mind-markdown-preview .tok-string {
+  color: #a5e075;
+}
+
+.mind-markdown-preview .tok-keyword {
+  color: #7ab7ff;
+}
+
+.mind-markdown-preview .tok-number {
+  color: #f3a86a;
+}
+
+.mind-markdown-preview .tok-type {
+  color: #d9a8ff;
+}
+
+.mind-markdown-preview .tok-key {
+  color: #57c1d6;
+}
+
+.mind-markdown-preview .tok-variable {
+  color: #f0d36d;
 }
 
 .mind-markdown-preview .md-table {
@@ -8120,46 +8237,51 @@ input[type="checkbox"]:disabled {
 
 .system-prompt-panel {
   margin-top: 12px;
-  background: #171717;
-  border: 1px solid #2d2d2d;
-  border-radius: 6px;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .system-prompt-summary {
   font-size: 12px;
   color: #b8b8b8;
-  margin-bottom: 10px;
+  margin: 0;
 }
 
 .system-prompt-blocks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 0;
 }
 
 .system-prompt-block {
-  border: 1px solid #303030;
-  border-radius: 6px;
-  padding: 8px;
-  background: #1d1d1d;
+  border-top: 1px solid #2d2d2d;
+  padding: 8px 0 10px;
+}
+
+.system-prompt-block:first-child {
+  border-top: 0;
+  padding-top: 0;
 }
 
 .system-prompt-block-header {
+  margin: 0;
   font-size: 12px;
   font-weight: 600;
   color: #e2e2e2;
 }
 
 .system-prompt-block-meta {
-  margin-top: 4px;
+  margin: 4px 0 0;
   font-size: 11px;
   color: #9f9f9f;
 }
 
 .system-prompt-block-error {
-  margin-top: 4px;
+  margin: 4px 0 0;
   font-size: 11px;
   color: #ff9f9a;
 }
@@ -8167,8 +8289,7 @@ input[type="checkbox"]:disabled {
 .system-prompt-block-content {
   margin-top: 6px;
   padding: 8px;
-  background: #13151a;
-  border: 1px solid #2d313b;
+  background: #141820;
   border-radius: 4px;
   color: #d4d8e1;
   font-size: 11px;
@@ -8199,8 +8320,7 @@ input[type="checkbox"]:disabled {
   padding: 10px;
   max-height: 300px;
   overflow: auto;
-  background: #101318;
-  border: 1px solid #2d313b;
+  background: #121721;
   border-radius: 4px;
   color: #ccd2db;
   font-size: 11px;
@@ -9594,14 +9714,44 @@ button.session-provider-chip:hover {
   background: #eaf1fb;
 }
 
-[data-theme='light'] .project-files-section .mind-markdown-preview pre {
+[data-theme='light'] .project-files-section .mind-markdown-preview pre,
+[data-theme='light'] .project-files-section .mind-markdown-preview .md-code-block {
   background: #f5f8fd;
   border-color: #d5dfef;
 }
 
-[data-theme='light'] .project-files-section .mind-markdown-preview pre code {
+[data-theme='light'] .project-files-section .mind-markdown-preview pre code,
+[data-theme='light'] .project-files-section .mind-markdown-preview .md-code-block code {
   color: #132238;
   background: transparent;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .tok-comment {
+  color: #61708a;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .tok-string {
+  color: #0f7a43;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .tok-keyword {
+  color: #0b57d0;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .tok-number {
+  color: #b65e17;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .tok-type {
+  color: #6f42c1;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .tok-key {
+  color: #0b7285;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .tok-variable {
+  color: #8a5300;
 }
 
 [data-theme='light'] .project-files-section .mind-markdown-preview a {
@@ -9720,7 +9870,91 @@ button.session-provider-chip:hover {
 }
 
 [data-theme='light'] .session-failure-reason {
-  color: #b3261e;
+  color: #8c1d18;
+}
+
+[data-theme='light'] .session-provider-failure-row {
+  color: #7a2f0f;
+}
+
+[data-theme='light'] .session-relation-link {
+  background: #eef4ff;
+  border-color: #c1d1ea;
+  color: #264372;
+}
+
+[data-theme='light'] .session-relation-link:hover {
+  background: #e5efff;
+  border-color: #9fb8de;
+  color: #173765;
+}
+
+[data-theme='light'] .session-workflow-panel {
+  background: #f4f8ff;
+  border-color: #c9d6ea;
+}
+
+[data-theme='light'] .session-workflow-title {
+  color: #1f2f4d;
+}
+
+[data-theme='light'] .session-workflow-status {
+  border-color: #b5c5df;
+  color: #4d617f;
+}
+
+[data-theme='light'] .session-workflow-status.status-running {
+  border-color: #7aa4d6;
+  color: #1f5388;
+}
+
+[data-theme='light'] .session-workflow-status.status-completed {
+  border-color: #78b798;
+  color: #1f6a46;
+}
+
+[data-theme='light'] .session-workflow-status.status-failed {
+  border-color: #d08a8a;
+  color: #8c1d18;
+}
+
+[data-theme='light'] .session-workflow-node {
+  background: #ffffff;
+  border-color: #d1dced;
+}
+
+[data-theme='light'] .session-workflow-node.status-completed {
+  border-color: #9fcfb6;
+}
+
+[data-theme='light'] .session-workflow-node.status-running {
+  border-color: #9fc0e2;
+}
+
+[data-theme='light'] .session-workflow-node.status-failed {
+  border-color: #ddaaaa;
+}
+
+[data-theme='light'] .session-workflow-node-id {
+  color: #1f2f4d;
+}
+
+[data-theme='light'] .session-workflow-node-status {
+  color: #4f6380;
+}
+
+[data-theme='light'] .session-workflow-node-open {
+  background: #eaf1fd;
+  border-color: #b8c8e3;
+  color: #284a78;
+}
+
+[data-theme='light'] .session-workflow-node-preview {
+  color: #556a88;
+}
+
+[data-theme='light'] .session-workflow-node-error {
+  color: #8f1f1b;
 }
 
 [data-theme='light'] .tool-path-link {
@@ -10468,6 +10702,16 @@ button.session-provider-chip:hover {
   color: #1f4b2a;
 }
 
+[data-theme='light'] .message-loading {
+  background-color: #eef3fa;
+  color: #4d5f79;
+}
+
+[data-theme='light'] .message-loading-spinner {
+  border-color: rgba(21, 128, 61, 0.28);
+  border-top-color: #15803d;
+}
+
 [data-theme='light'] .message-system {
   background-color: #e7eefb;
   color: #1f2f4d;
@@ -10482,6 +10726,77 @@ button.session-provider-chip:hover {
 [data-theme='light'] .message-system .message-time,
 [data-theme='light'] .message-system .message-copy {
   color: #4b5f84;
+}
+
+[data-theme='light'] .message-system-prompt {
+  background: #f3f7ff;
+  border-color: #c9d6ea;
+}
+
+[data-theme='light'] .message-system-prompt .message-role {
+  color: #35507a;
+}
+
+[data-theme='light'] .system-prompt-toggle {
+  background: #eaf1fd;
+  border-color: #b9c9e3;
+  color: #1f2f4d;
+}
+
+[data-theme='light'] .system-prompt-toggle:hover {
+  background: #dfeafb;
+  border-color: #9fb4d8;
+}
+
+[data-theme='light'] .system-prompt-toggle.expanded {
+  border-color: #6f8fc6;
+  color: #1b3563;
+}
+
+[data-theme='light'] .system-prompt-panel {
+  background: transparent;
+}
+
+[data-theme='light'] .system-prompt-summary {
+  color: #425a7f;
+}
+
+[data-theme='light'] .system-prompt-block {
+  border-top-color: #d6e0ef;
+}
+
+[data-theme='light'] .system-prompt-block-header {
+  color: #1f2f4d;
+}
+
+[data-theme='light'] .system-prompt-block-meta {
+  color: #526684;
+}
+
+[data-theme='light'] .system-prompt-block-error {
+  color: #8f1f1b;
+}
+
+[data-theme='light'] .system-prompt-block-content {
+  background: #f3f7ff;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .system-prompt-full {
+  border-top-color: #d6e0ef;
+}
+
+[data-theme='light'] .system-prompt-full summary {
+  color: #334f78;
+}
+
+[data-theme='light'] .system-prompt-full summary:hover {
+  color: #1f2f4d;
+}
+
+[data-theme='light'] .system-prompt-full-content {
+  background: #f3f7ff;
+  color: #1f2b40;
 }
 
 [data-theme='light'] .tool-summary-name {

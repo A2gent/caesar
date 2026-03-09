@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
+import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type Session, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
 import { IntegrationProviderIcon, integrationProviderForToolName, integrationProviderLabel } from './integrationMeta';
 import { renderMarkdownToHtml } from './markdown';
 import { buildOpenInMyMindUrl, extractToolFilePath, isSupportedFileTool } from './myMindNavigation';
@@ -9,6 +9,9 @@ import { toolIconForName } from './toolIcons';
 import { ToolIcon } from './ToolIcon';
 import { emitWebAppNotification } from './webappNotifications';
 import SystemPromptMessage from './SystemPromptMessage';
+import { getStoredA2ARegistryOwnerEmail } from './a2aIdentity';
+import { getAgentEmoji } from './agentVisuals';
+import { buildGravatarUrl } from './gravatar';
 
 const copyToClipboard = async (text: string, onSuccess: () => void): Promise<void> => {
   try {
@@ -51,6 +54,7 @@ interface MessageListProps {
   sessionId: string | null;
   projectId?: string | null;
   systemPromptSnapshot?: SystemPromptSnapshot | null;
+  session?: Session | null;
 }
 
 interface EditToolInput {
@@ -69,7 +73,43 @@ interface DiffRow {
 
 const DIFF_CONTEXT_LINES = 3;
 
-const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot, session }) => {
+  const userAvatarUrl = buildGravatarUrl(getStoredA2ARegistryOwnerEmail(), 40);
+  const assistantEmoji = useMemo(() => {
+    const metadata = (session?.metadata ?? null) as Record<string, unknown> | null;
+    const subAgentID = typeof metadata?.sub_agent_id === 'string' ? metadata.sub_agent_id.trim() : '';
+    if (subAgentID !== '') {
+      return getAgentEmoji('subagent', subAgentID);
+    }
+    if (session?.a2a_source_agent_id && session.a2a_source_agent_id.trim() !== '') {
+      return getAgentEmoji('local', session.a2a_source_agent_id);
+    }
+    if (session?.a2a_target_agent_id && session.a2a_target_agent_id.trim() !== '') {
+      return getAgentEmoji('local', session.a2a_target_agent_id);
+    }
+    return getAgentEmoji('main');
+  }, [session?.a2a_source_agent_id, session?.a2a_target_agent_id, session?.metadata]);
+
+  const withSpeakerVisual = (message: Message, key: string, content: React.ReactNode): React.ReactNode => {
+    if (message.role === 'user' && userAvatarUrl !== '') {
+      return (
+        <div key={key} className="message-row message-row-user">
+          {content}
+          <img className="message-avatar message-avatar-user" src={userAvatarUrl} alt="User avatar" loading="lazy" />
+        </div>
+      );
+    }
+    if (message.role === 'assistant' && assistantEmoji.trim() !== '') {
+      return (
+        <div key={key} className="message-row message-row-assistant">
+          <div className="message-avatar message-avatar-agent" aria-hidden="true">{assistantEmoji}</div>
+          {content}
+        </div>
+      );
+    }
+    return <React.Fragment key={key}>{content}</React.Fragment>;
+  };
+
   const parseEditToolInput = (input: Record<string, unknown>): EditToolInput | null => {
     const path = input.path;
     const oldString = input.old_string;
@@ -513,7 +553,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const truncatedResponse = responseText.length > 500 ? responseText.slice(0, 500) + '...' : responseText;
 
     return (
-      <div key={key} className="tool-execution-stack">
+      <div key={key} className="tool-execution-stack tool-execution-stack-offset">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result?.is_error ? ' tool-execution-card-error' : ''}`}>
           <summary className="tool-card-summary">
             <span className="tool-summary-name">
@@ -581,7 +621,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const totalTokens = (toolCall.input_tokens ?? 0) + (toolCall.output_tokens ?? 0);
     const toolAudioClipUrl = toolResultAudioClipUrl(result);
     return (
-      <div key={key} className="tool-execution-stack">
+      <div key={key} className="tool-execution-stack tool-execution-stack-offset">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result?.is_error ? ' tool-execution-card-error' : ''}`}>
           <summary className="tool-card-summary">
             <span className="tool-summary-name">
@@ -674,7 +714,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const keepPreviewVisible = imageUrl !== '' && isPinnedImageToolResult(result);
     const toolAudioClipUrl = toolResultAudioClipUrl(result);
     return (
-      <div key={key} className="tool-execution-stack">
+      <div key={key} className="tool-execution-stack tool-execution-stack-offset">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result.is_error ? ' tool-execution-card-error' : ''}`}>
           <summary className="tool-card-summary">
             <span className="tool-summary-name">
@@ -727,9 +767,10 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         if (message.content?.trim()) {
           const hasTokens = (message.input_tokens ?? 0) > 0 || (message.output_tokens ?? 0) > 0;
           const totalTokens = (message.input_tokens ?? 0) + (message.output_tokens ?? 0);
-          nodes.push(
+          nodes.push(withSpeakerVisual(
+            message,
+            `assistant-${index}`,
             <div
-              key={`assistant-${index}`}
               className={`message message-assistant${isCompactionMessage(message) ? ' message-compaction' : ''}`}
             >
               <div className="message-content">
@@ -746,7 +787,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
             </div>,
-          );
+          ));
         }
 
         // Then render tool execution cards
@@ -814,9 +855,10 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       const clipUrl = messageAudioClipUrl(message);
       const hasImages = messageImages(message).length > 0;
 
-      nodes.push(
+      nodes.push(withSpeakerVisual(
+        message,
+        `message-${index}`,
         <div
-          key={index}
           className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}${isProviderFailure ? ' message-provider-failure' : ''}`}
         >
           {(message.content || clipUrl || hasImages) && (
@@ -838,19 +880,19 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
               </span>
             ) : null}
             <CopyButton text={message.content || ''} />
-            <span 
-              className="message-time" 
+            <span
+              className="message-time"
               title={new Date(message.timestamp).toLocaleString()}
             >
               🕐
             </span>
           </div>
         </div>,
-      );
+      ));
     }
 
     return nodes;
-  }, [messages]);
+  }, [messages, userAvatarUrl, assistantEmoji]);
 
   // Set up scroll event listener on the scrollable container to track user scroll position
   useEffect(() => {
@@ -899,7 +941,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
 
       {isLoading && (
         <div className="message message-loading">
-          <span className="session-status-dot-large status-running message-loading-spinner" aria-hidden="true" />
+          <span className="message-loading-spinner" aria-hidden="true" />
           <span>Agent is thinking...</span>
         </div>
       )}

@@ -32,25 +32,25 @@ const SystemPromptMessage: React.FC<SystemPromptMessageProps> = ({ systemPromptS
       {isExpanded ? (
         <div className="message-content">
           <div className="system-prompt-panel">
-            <div className="system-prompt-summary">
+            <p className="system-prompt-summary">
               {hasSystemPromptBlocks
                 ? `${systemPromptSnapshot.blocks.length} instruction block(s) captured for this session.`
                 : 'No custom instruction blocks were captured for this session.'}
-            </div>
+            </p>
             {systemPromptSnapshot.blocks.length > 0 ? (
-              <div className="system-prompt-blocks">
+              <ol className="system-prompt-blocks">
                 {systemPromptSnapshot.blocks.map((block, index) => (
-                  <div className="system-prompt-block" key={`prompt-block-${index}`}>
-                    <div className="system-prompt-block-header">
+                  <li className="system-prompt-block" key={`prompt-block-${index}`}>
+                    <p className="system-prompt-block-header">
                       #{index + 1} {block.type || 'text'} {block.enabled ? '' : '(disabled)'}
-                    </div>
-                    {block.value ? <div className="system-prompt-block-meta">Configured value: {block.value}</div> : null}
-                    {block.source_path ? <div className="system-prompt-block-meta">Source file: {block.source_path}</div> : null}
-                    {block.error ? <div className="system-prompt-block-error">Error: {block.error}</div> : null}
+                    </p>
+                    {block.value ? <p className="system-prompt-block-meta">Configured value: {block.value}</p> : null}
+                    {block.source_path ? <p className="system-prompt-block-meta">Source file: {block.source_path}</p> : null}
+                    {block.error ? <p className="system-prompt-block-error">Error: {block.error}</p> : null}
                     {block.resolved_content ? <pre className="system-prompt-block-content">{block.resolved_content}</pre> : null}
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ol>
             ) : null}
             <details className="system-prompt-full">
               <summary>Full composed system prompt</summary>
