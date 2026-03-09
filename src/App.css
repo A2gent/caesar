@@ -2195,34 +2195,11 @@ body.mind-resizing * {
   color: #888;
 }
 
-.loading-indicator {
-  display: flex;
-  gap: 4px;
-}
-
-.loading-dot {
-  width: 8px;
-  height: 8px;
-  background-color: #646cff;
-  border-radius: 50%;
-  animation: loading-bounce 1.4s infinite ease-in-out both;
-}
-
-.loading-dot:nth-child(1) {
-  animation-delay: -0.32s;
-}
-
-.loading-dot:nth-child(2) {
-  animation-delay: -0.16s;
-}
-
-@keyframes loading-bounce {
-  0%, 80%, 100% {
-    transform: scale(0);
-  }
-  40% {
-    transform: scale(1);
-  }
+.message-loading-spinner {
+  position: static;
+  left: auto;
+  top: auto;
+  flex-shrink: 0;
 }
 
 /* Disabled state for chat input */

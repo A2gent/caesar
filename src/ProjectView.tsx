@@ -739,33 +739,8 @@ function ProjectView() {
   const historyFileDiffRequestRef = useRef(0);
   const [gitDiscardPath, setGitDiscardPath] = useState<string | null>(null);
   const [isStagingAll, setIsStagingAll] = useState(false);
-  const foldersWithGitChanges = useMemo(() => {
-    if (!isGitRepo || gitChangedFiles.length === 0) {
-      return new Set<string>();
-    }
-    const folders = new Set<string>();
-    for (const file of gitChangedFiles) {
-      const normalizedPath = toMindRelativePath(rootFolder, file.path.trim()) || normalizeMindPath(file.path.trim());
-      if (normalizedPath === '') {
-        continue;
-      }
-      const segments = normalizedPath.split('/').filter((segment) => segment !== '');
-      if (segments.length === 0) {
-        continue;
-      }
-      if (segments.length === 1) {
-        // Also mark top-level folder paths (e.g. submodules) as changed.
-        folders.add(segments[0]);
-        continue;
-      }
-      let current = '';
-      for (let index = 0; index < segments.length - 1; index += 1) {
-        current = current ? `${current}/${segments[index]}` : segments[index];
-        folders.add(current);
-      }
-    }
-    return folders;
-  }, [gitChangedFiles, isGitRepo, rootFolder]);
+  const [folderGitStatusByPath, setFolderGitStatusByPath] = useState<Record<string, { hasGit: boolean; hasChanges: boolean }>>({});
+  const folderGitScanGenerationRef = useRef(0);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -986,6 +961,88 @@ function ProjectView() {
   useEffect(() => {
     void loadGitStatus();
   }, [loadGitStatus]);
+
+  const visibleDirectoryPaths = useMemo(() => {
+    const visible: string[] = [];
+    const visit = (path: string) => {
+      const entries = treeEntries[path] || [];
+      for (const entry of entries) {
+        if (entry.type !== 'directory') {
+          continue;
+        }
+        visible.push(entry.path);
+        if (expandedDirs.has(entry.path)) {
+          visit(entry.path);
+        }
+      }
+    };
+    visit('');
+    return visible;
+  }, [treeEntries, expandedDirs]);
+
+  useEffect(() => {
+    folderGitScanGenerationRef.current += 1;
+    setFolderGitStatusByPath({});
+  }, [projectId, rootFolder]);
+
+  useEffect(() => {
+    if (!projectId || !rootFolder || visibleDirectoryPaths.length === 0) {
+      return;
+    }
+
+    const missingPaths = visibleDirectoryPaths.filter((path) => folderGitStatusByPath[path] === undefined);
+    if (missingPaths.length === 0) {
+      return;
+    }
+
+    const generation = folderGitScanGenerationRef.current;
+    let cancelled = false;
+
+    const scanVisibleFolders = async () => {
+      for (const folderPath of missingPaths) {
+        try {
+          const status = await getProjectGitStatus(projectId, folderPath);
+          if (cancelled || generation !== folderGitScanGenerationRef.current) {
+            return;
+          }
+          setFolderGitStatusByPath((prev) => {
+            if (prev[folderPath] !== undefined) {
+              return prev;
+            }
+            return {
+              ...prev,
+              [folderPath]: {
+                hasGit: status.has_git,
+                hasChanges: (status.files || []).length > 0,
+              },
+            };
+          });
+        } catch {
+          if (cancelled || generation !== folderGitScanGenerationRef.current) {
+            return;
+          }
+          setFolderGitStatusByPath((prev) => {
+            if (prev[folderPath] !== undefined) {
+              return prev;
+            }
+            return {
+              ...prev,
+              [folderPath]: {
+                hasGit: false,
+                hasChanges: false,
+              },
+            };
+          });
+        }
+      }
+    };
+
+    void scanVisibleFolders();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, rootFolder, visibleDirectoryPaths, folderGitStatusByPath]);
 
   // Load providers
   useEffect(() => {
@@ -2635,7 +2692,8 @@ function ProjectView() {
             const isDropTarget = dropTargetPath === entry.path;
             const isDraggingFolder = draggedFilePath === entry.path;
             const isDescendantOfDragged = draggedFilePath && entry.path.startsWith(draggedFilePath + '/');
-            const hasFolderGitChanges = foldersWithGitChanges.has(normalizeMindPath(entry.path));
+            const folderGitStatus = folderGitStatusByPath[entry.path];
+            const hasFolderGitChanges = Boolean(folderGitStatus?.hasGit && folderGitStatus.hasChanges);
             return (
               <div key={entry.path}>
                 <div

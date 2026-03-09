@@ -899,11 +899,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
 
       {isLoading && (
         <div className="message message-loading">
-          <div className="loading-indicator">
-            <span className="loading-dot"></span>
-            <span className="loading-dot"></span>
-            <span className="loading-dot"></span>
-          </div>
+          <span className="session-status-dot-large status-running message-loading-spinner" aria-hidden="true" />
           <span>Agent is thinking...</span>
         </div>
       )}
