@@ -4,6 +4,7 @@ import {
   getApiBaseUrl,
   getParentApiBaseUrl,
   getStoredAgentEndpoints,
+  getSession,
   listProjects,
   createProject,
   type Project,
@@ -122,6 +123,7 @@ function Sidebar({
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [activeProjectIdFromSession, setActiveProjectIdFromSession] = useState<string | null>(null);
 
   const reloadAgentOptions = useCallback(() => {
     setActiveBaseUrl(getApiBaseUrl());
@@ -159,6 +161,43 @@ function Sidebar({
   useEffect(() => {
     loadProjects();
   }, [loadProjects, refreshKey]);
+
+  useEffect(() => {
+    const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
+    if (projectMatch?.[1]) {
+      setActiveProjectIdFromSession(null);
+      return;
+    }
+
+    const chatMatch = location.pathname.match(/^\/chat\/([^/]+)/);
+    if (!chatMatch?.[1]) {
+      setActiveProjectIdFromSession(null);
+      return;
+    }
+
+    const sessionId = decodeURIComponent(chatMatch[1]);
+    let cancelled = false;
+
+    const loadSessionProject = async () => {
+      try {
+        const session = await getSession(sessionId);
+        if (!cancelled) {
+          setActiveProjectIdFromSession(session.project_id || null);
+        }
+      } catch (err) {
+        console.error('Failed to resolve active project from session:', err);
+        if (!cancelled) {
+          setActiveProjectIdFromSession(null);
+        }
+      }
+    };
+
+    void loadSessionProject();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname]);
 
   const handleAgentChange = async (nextUrl: string) => {
     if (nextUrl === '' || nextUrl === activeBaseUrl || isSwitchingAgent) {
@@ -218,6 +257,14 @@ function Sidebar({
   const hasAlternateAgents = alternateAgents.length > 0;
   const canReturnToParentAgent = parentBaseUrl !== '' && parentBaseUrl !== activeBaseUrl;
   const visibleNavSections = getVisibleNavSections(canReturnToParentAgent);
+  const activeProjectIdFromRoute = (() => {
+    const match = location.pathname.match(/^\/projects\/([^/]+)/);
+    if (!match?.[1]) {
+      return null;
+    }
+    return decodeURIComponent(match[1]);
+  })();
+  const activeProjectId = activeProjectIdFromRoute || activeProjectIdFromSession;
 
   const handleReturnToParent = async () => {
     if (!onReturnToParentAgent || !canReturnToParentAgent || isSwitchingAgent) {
@@ -297,7 +344,7 @@ function Sidebar({
               <li key={project.id} className="nav-item">
                 <Link
                   to={`/projects/${project.id}`}
-                  className={`nav-link ${location.pathname.startsWith(`/projects/${project.id}`) ? 'active' : ''}`}
+                  className={`nav-link ${activeProjectId === project.id ? 'active' : ''}`}
                   onClick={onNavigate}
                 >
                   {getProjectIcon(project)} {project.name}
