@@ -10,6 +10,8 @@ import {
   type Project,
 } from './api';
 import { withAgentEmoji } from './agentVisuals';
+import { AgentAvatar } from './AgentAvatar';
+import { emitToggleVoiceInputEvent } from './voiceInputEvents';
 
 interface NavItem {
   id: string;
@@ -283,6 +285,17 @@ function Sidebar({
 
   return (
     <div className="sidebar">
+      {/* Agent Avatar — always visible, reacts to mic/TTS */}
+      <button
+        type="button"
+        className="sidebar-avatar-wrap sidebar-avatar-trigger"
+        onClick={emitToggleVoiceInputEvent}
+        title="Toggle voice input"
+        aria-label="Toggle voice input"
+      >
+        <AgentAvatar size={96} />
+      </button>
+
       <div className="sidebar-title-wrap">
         <div className="sidebar-agent-combo" ref={comboRef}>
           <div className="sidebar-agent-combo-row">

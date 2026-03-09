@@ -6,6 +6,8 @@ import {
   readVoiceInputLanguageSetting,
   writeVoiceInputDeviceSetting,
 } from './voiceInputSettings';
+import { useAvatarAudio } from './avatarAudio';
+import { TOGGLE_VOICE_INPUT_EVENT } from './voiceInputEvents';
 
 interface ChatInputProps {
   onSend?: (message: string, images?: MessageImage[]) => void;
@@ -20,6 +22,7 @@ interface ChatInputProps {
   value?: string;
   onValueChange?: (value: string) => void;
   showQueueButton?: boolean;
+  showVoiceButton?: boolean;
   slashCommands?: SlashCommand[];
   onSlashCommand?: (command: SlashCommandSelection) => boolean | Promise<boolean>;
 }
@@ -177,11 +180,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
   value: externalValue,
   onValueChange,
   showQueueButton = false,
+  showVoiceButton = true,
   slashCommands = [],
   onSlashCommand,
 }) => {
+  const { setListening, clearListening } = useAvatarAudio();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const waveformCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const shortcutPressedRef = useRef(false);
 
@@ -191,13 +195,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const silentGainRef = useRef<GainNode | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
 
   const pcmChunksRef = useRef<Float32Array[]>([]);
   const sampleRateRef = useRef<number>(16000);
-  const waveformStatsRef = useRef({ frames: 0, warnedNoSignal: false });
-  const smoothedBarHeightsRef = useRef<Float32Array | null>(null);
-  const lastWaveformDrawTimeRef = useRef<number>(0);
 
   const [internalValue, setInternalValue] = useState('');
   
@@ -205,7 +205,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const value = isControlled ? externalValue : internalValue;
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [recordingLevel, setRecordingLevel] = useState(0);
   const [selectedInputId, setSelectedInputId] = useState(() => readVoiceInputDeviceSetting());
   const [selectedVoiceLanguage] = useState(() => readVoiceInputLanguageSetting());
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -295,122 +294,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     });
   }, [setValue]);
 
-  const clearWaveform = useCallback(() => {
-    const canvas = waveformCanvasRef.current;
-    if (!canvas) {
-      return;
-    }
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return;
-    }
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#232323';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    setRecordingLevel(0);
-  }, []);
-
-  const drawWaveform = useCallback(() => {
-    const analyser = analyserRef.current;
-    const canvas = waveformCanvasRef.current;
-    if (!analyser || !canvas) {
-      return;
-    }
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return;
-    }
-
-    const waveformData = new Uint8Array(analyser.fftSize);
-    const frequencyData = new Uint8Array(analyser.frequencyBinCount);
-    const render = (timestamp: number) => {
-      const currentAnalyser = analyserRef.current;
-      if (!currentAnalyser) {
-        return;
-      }
-      const lastTs = lastWaveformDrawTimeRef.current;
-      if (lastTs > 0 && timestamp - lastTs < 32) {
-        animationFrameRef.current = window.requestAnimationFrame(render);
-        return;
-      }
-      lastWaveformDrawTimeRef.current = timestamp;
-      currentAnalyser.getByteTimeDomainData(waveformData);
-      currentAnalyser.getByteFrequencyData(frequencyData);
-
-      ctx.fillStyle = '#232323';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw a live bar waveform that fills the entire canvas width.
-      const barWidth = 2;
-      const minGap = 2;
-      const bars = Math.max(12, Math.floor((canvas.width + minGap) / (barWidth + minGap)));
-      const exactGap = bars > 1 ? (canvas.width - bars * barWidth) / (bars - 1) : 0;
-      const barGap = Math.max(0, exactGap);
-      const usableHeight = canvas.height - 4;
-
-      let rms = 0;
-      for (let i = 0; i < waveformData.length; i += 1) {
-        const centered = (waveformData[i] - 128) / 128;
-        rms += centered * centered;
-      }
-      rms = Math.sqrt(rms / waveformData.length);
-      setRecordingLevel(Math.min(1, rms * 8));
-      waveformStatsRef.current.frames += 1;
-      if (waveformStatsRef.current.frames % 45 === 0) {
-        console.debug('Voice waveform stats', {
-          rms: Number(rms.toFixed(4)),
-          frames: waveformStatsRef.current.frames,
-        });
-      }
-      if (waveformStatsRef.current.frames > 90 && rms < 0.003 && !waveformStatsRef.current.warnedNoSignal) {
-        waveformStatsRef.current.warnedNoSignal = true;
-        console.warn('Voice waveform has near-zero signal. Check microphone selection/permissions/input level.');
-      }
-
-      const step = Math.max(1, Math.floor(waveformData.length / bars));
-      const freqStep = Math.max(1, Math.floor(frequencyData.length / bars));
-      if (!smoothedBarHeightsRef.current || smoothedBarHeightsRef.current.length !== bars) {
-        smoothedBarHeightsRef.current = new Float32Array(bars);
-      }
-      const smoothed = smoothedBarHeightsRef.current;
-      let x = 0;
-      for (let i = 0; i < bars; i += 1) {
-        const idx = i * step;
-        const centered = Math.abs(((waveformData[idx] || 128) - 128) / 128);
-        const freqAmp = (frequencyData[Math.min(i * freqStep, frequencyData.length - 1)] || 0) / 255;
-        const amp = Math.min(1, centered * 2.2 + freqAmp * 0.8 + rms * 2.5);
-        const targetHeight = Math.max(4, amp * usableHeight);
-        const prev = smoothed[i] || 0;
-        const alpha = targetHeight > prev ? 0.42 : 0.24;
-        const height = prev + (targetHeight - prev) * alpha;
-        smoothed[i] = height;
-        const y = (canvas.height - height) / 2;
-        const t = bars > 1 ? i / (bars - 1) : 0;
-        const hue = 0 + t * 270; // red -> violet
-        const lightness = 50 + Math.min(22, amp * 24);
-        ctx.fillStyle = `hsl(${hue.toFixed(1)} 90% ${lightness.toFixed(1)}%)`;
-        ctx.fillRect(x, y, barWidth, height);
-        x += barWidth + barGap;
-      }
-
-      animationFrameRef.current = window.requestAnimationFrame(render);
-    };
-
-    if (animationFrameRef.current !== null) {
-      window.cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    animationFrameRef.current = window.requestAnimationFrame(render);
-  }, []);
-
   const teardownRecordingGraph = useCallback(async () => {
-    if (animationFrameRef.current !== null) {
-      window.cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    lastWaveformDrawTimeRef.current = 0;
-    smoothedBarHeightsRef.current = null;
-
     processorRef.current?.disconnect();
     sourceRef.current?.disconnect();
     analyserRef.current?.disconnect();
@@ -435,8 +319,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
       audioContextRef.current = null;
     }
 
-    clearWaveform();
-  }, [clearWaveform]);
+    clearListening();
+  }, [clearListening]);
 
   const refreshAudioInputs = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -510,18 +394,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       void teardownRecordingGraph();
     };
   }, [teardownRecordingGraph]);
-
-  useEffect(() => {
-    clearWaveform();
-  }, [clearWaveform]);
-
-  useEffect(() => {
-    if (!isRecording) {
-      return;
-    }
-    // Start rendering only after recording UI (canvas) is mounted.
-    drawWaveform();
-  }, [drawWaveform, isRecording]);
 
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(event.target.value);
@@ -699,8 +571,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
       processor.connect(silentGain);
       silentGain.connect(context.destination);
 
-      waveformStatsRef.current = { frames: 0, warnedNoSignal: false };
       setIsRecording(true);
+      setListening(analyser);
       await refreshAudioInputs();
     } catch (error: any) {
       console.error('Failed to start recording:', error);
@@ -710,7 +582,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       await teardownRecordingGraph();
       setIsRecording(false);
     }
-  }, [disabled, drawWaveform, isRecording, isTranscribing, refreshAudioInputs, selectedInputId, teardownRecordingGraph]);
+  }, [disabled, isRecording, isTranscribing, refreshAudioInputs, selectedInputId, setListening, teardownRecordingGraph]);
 
   const stopRecording = useCallback(async () => {
     if (!isRecording || isTranscribing) {
@@ -777,6 +649,20 @@ const ChatInput: React.FC<ChatInputProps> = ({
       window.removeEventListener('keyup', onKeyUp, true);
     };
   }, [toggleRecording]);
+
+  useEffect(() => {
+    const handleToggleVoiceEvent = () => {
+      if (disabled || isTranscribing) {
+        return;
+      }
+      toggleRecording();
+    };
+
+    window.addEventListener(TOGGLE_VOICE_INPUT_EVENT, handleToggleVoiceEvent);
+    return () => {
+      window.removeEventListener(TOGGLE_VOICE_INPUT_EVENT, handleToggleVoiceEvent);
+    };
+  }, [disabled, isTranscribing, toggleRecording]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (isVoiceShortcut(event)) {
@@ -856,10 +742,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <>
               <span className="recording-dot"></span>
               <span>Recording...</span>
-              <div className="voice-meter-wrap">
-                <canvas ref={waveformCanvasRef} className="voice-waveform" width={1260} height={132} aria-hidden="true" />
-                <span className="voice-level-text">{Math.round(recordingLevel * 100)}%</span>
-              </div>
             </>
           ) : (
             <>
@@ -924,36 +806,38 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <path d="M21 15l-5-5L5 21" />
           </svg>
         </button>
-        <button
-          type="button"
-          className={`voice-button ${isRecording ? 'recording' : ''}`}
-          onClick={toggleRecording}
-          disabled={disabled || isTranscribing}
-          title={voiceButtonTitle}
-          aria-label={voiceButtonTitle}
-        >
-          {isRecording ? (
-            <svg viewBox="0 0 24 24" fill="currentColor" className="voice-icon" aria-hidden="true">
-              <rect x="6" y="6" width="12" height="12" rx="2" />
-            </svg>
-          ) : (
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="voice-icon"
-              aria-hidden="true"
-            >
-              <rect x="9" y="2" width="6" height="11" rx="3" />
-              <path d="M5 10a7 7 0 0 0 14 0" />
-              <line x1="12" y1="17" x2="12" y2="22" />
-              <line x1="8" y1="22" x2="16" y2="22" />
-            </svg>
-          )}
-        </button>
+        {showVoiceButton ? (
+          <button
+            type="button"
+            className={`voice-button ${isRecording ? 'recording' : ''}`}
+            onClick={toggleRecording}
+            disabled={disabled || isTranscribing}
+            title={voiceButtonTitle}
+            aria-label={voiceButtonTitle}
+          >
+            {isRecording ? (
+              <svg viewBox="0 0 24 24" fill="currentColor" className="voice-icon" aria-hidden="true">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            ) : (
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="voice-icon"
+                aria-hidden="true"
+              >
+                <rect x="9" y="2" width="6" height="11" rx="3" />
+                <path d="M5 10a7 7 0 0 0 14 0" />
+                <line x1="12" y1="17" x2="12" y2="22" />
+                <line x1="8" y1="22" x2="16" y2="22" />
+              </svg>
+            )}
+          </button>
+        ) : null}
         {showStopButton ? (
           <button
             type="button"

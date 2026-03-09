@@ -1394,6 +1394,7 @@ function ChatView() {
       <ChatInput
         onSend={handleSendMessage}
         disabled={inputDisabled}
+        showVoiceButton={false}
         onStop={() => void handleCancelSession()}
         showStopButton={Boolean(session && isActiveRequest)}
         canStop={Boolean(session)}

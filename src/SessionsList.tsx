@@ -470,6 +470,7 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
               onSend={handleStartSession}
               onQueue={handleQueueSession}
               disabled={isCreatingSession || isQueuingSession}
+              showVoiceButton={false}
               autoFocus
               showQueueButton={true}
               actionControls={

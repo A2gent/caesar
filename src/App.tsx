@@ -42,6 +42,8 @@ import { THINKING_PROJECT_ID } from './thinking';
 import { SYSTEM_PROJECT_KB_ID, SYSTEM_PROJECT_AGENT_ID } from './Sidebar';
 import { readWebAppNotification } from './toolResultEvents';
 import { webAppNotificationEventName, type WebAppNotificationEventDetail } from './webappNotifications';
+import { AvatarAudioProvider } from './AvatarAudioProvider';
+import { useAvatarAudio } from './avatarAudio';
 import './App.css';
 
 const MOBILE_BREAKPOINT = 900;
@@ -110,6 +112,7 @@ function activeChatSessionIdFromPath(pathname: string): string | null {
 function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { setSpeaking, clearSpeaking } = useAvatarAudio();
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(readStoredOpenState);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -290,11 +293,17 @@ function AppLayout() {
     try {
       stopOtherNotificationAudio(id);
       const audio = await ensureNotificationAudio(id, clipID);
+      setSpeaking();
+      audio.onended = () => {
+        audio.currentTime = 0;
+        clearSpeaking();
+      };
       await audio.play();
     } catch (error) {
       console.error('Failed to play notification audio:', error);
+      clearSpeaking();
     }
-  }, [ensureNotificationAudio, stopOtherNotificationAudio]);
+  }, [ensureNotificationAudio, stopOtherNotificationAudio, setSpeaking, clearSpeaking]);
 
   const disposeNotificationAudio = useCallback((id: string) => {
     const entry = notificationAudioMapRef.current.get(id);
@@ -306,7 +315,8 @@ function AppLayout() {
     entry.audio.onended = null;
     URL.revokeObjectURL(entry.objectUrl);
     notificationAudioMapRef.current.delete(id);
-  }, []);
+    clearSpeaking();
+  }, [clearSpeaking]);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, isDesktopSidebarOpen ? '1' : '0');
@@ -824,7 +834,9 @@ function AppLayout() {
 function App() {
   return (
     <Router>
-      <AppLayout />
+      <AvatarAudioProvider>
+        <AppLayout />
+      </AvatarAudioProvider>
     </Router>
   );
 }

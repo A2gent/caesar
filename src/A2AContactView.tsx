@@ -206,6 +206,7 @@ function A2AContactView() {
       <ChatInput
         onSend={handleSendMessage}
         disabled={isPreparing || isLoading || !session}
+        showVoiceButton={false}
         placeholder="Send a prompt to the remote agent…"
       />
     </>

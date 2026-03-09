@@ -4290,6 +4290,7 @@ function ProjectView() {
               onSend={handleStartSession}
               onQueue={handleQueueSession}
               disabled={isCreatingSession || isQueuingSession}
+              showVoiceButton={false}
               autoFocus={!rootFolder}
               showQueueButton={true}
               placeholder={sessionTargetLabel

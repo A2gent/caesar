@@ -1881,6 +1881,7 @@ function MyMindView() {
                 <ChatInput
                   onSend={(message) => void handleSendInlineMessage(message)}
                   disabled={isInlineSessionLoading}
+                  showVoiceButton={false}
                   onStop={() => void handleCancelInlineSession()}
                   showStopButton={isInlineSessionLoading || inlineSession.status === 'running'}
                   canStop={true}
@@ -1914,6 +1915,7 @@ function MyMindView() {
                 <ChatInput
                   onSend={(message) => void handleCreateMindSession(message)}
                   disabled={isCreatingSession || isInlineSessionLoading}
+                  showVoiceButton={false}
                   autoFocus
                   placeholder={sessionTargetLabel
                     ? `Describe the task for ${sessionTargetLabel.toLowerCase()}...`
