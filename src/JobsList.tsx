@@ -70,7 +70,7 @@ function JobsList() {
   return (
     <div className="page-shell">
       <div className="page-header">
-        <h1>Recurring Jobs</h1>
+        <h1>🔄 Recurring Jobs</h1>
         <button type="button" onClick={() => navigate('/agent/jobs/new')} className="settings-save-btn">
           + New Job
         </button>

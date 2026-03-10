@@ -1,12 +1,47 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { createJob, updateJob, getJob, listProviders, type CreateJobRequest, type LLMProviderType, type ProviderConfig } from './api';
+import { createJob, updateJob, getJob, type CreateJobRequest } from './api';
 import SoulFilePickerDialog from './SoulFilePickerDialog';
+import { DEFAULT_WORKFLOW_ID, listWorkflows, type WorkflowDefinition } from './workflows';
 
 type TaskPromptSource = 'text' | 'file';
 
 function buildFileTaskPrompt(path: string): string {
   return `Load and follow instructions from this file path: ${path}`;
+}
+
+function buildWorkflowSessionMetadata(workflow: WorkflowDefinition): Record<string, unknown> {
+  return {
+    workflow_id: workflow.id,
+    workflow_name: workflow.name,
+    workflow_definition: {
+      id: workflow.id,
+      name: workflow.name,
+      description: workflow.description,
+      entryNodeId: workflow.entryNodeId,
+      policy: workflow.policy,
+      nodes: workflow.nodes.map((node) => ({
+        id: node.id,
+        label: node.label,
+        kind: node.kind,
+        ref: node.kind === 'subagent'
+          ? (node.subAgentId || '')
+          : node.kind === 'local'
+            ? (node.localAgentId || '')
+            : node.kind === 'external'
+              ? (node.externalAgentId || '')
+              : '',
+        subAgentId: node.subAgentId,
+        localAgentId: node.localAgentId,
+        externalAgentId: node.externalAgentId,
+      })),
+      edges: workflow.edges.map((edge) => ({
+        from: edge.from,
+        to: edge.to,
+        mode: edge.mode,
+      })),
+    },
+  };
 }
 
 function JobEdit() {
@@ -18,8 +53,8 @@ function JobEdit() {
   const [taskPrompt, setTaskPrompt] = useState('');
   const [taskPromptSource, setTaskPromptSource] = useState<TaskPromptSource>('text');
   const [taskPromptFile, setTaskPromptFile] = useState('');
-  const [llmProvider, setLLMProvider] = useState<LLMProviderType>('openai');
-  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [workflowOptions, setWorkflowOptions] = useState<WorkflowDefinition[]>([]);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(DEFAULT_WORKFLOW_ID);
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +64,7 @@ function JobEdit() {
   const isEditMode = !!jobId;
 
   useEffect(() => {
-    void loadProviders();
+    void loadWorkflowOptions();
   }, []);
 
   useEffect(() => {
@@ -51,17 +86,16 @@ function JobEdit() {
     setTaskPrompt(buildFileTaskPrompt(prefillPath));
   }, [isEditMode, searchParams]);
 
-  const loadProviders = async () => {
+  const loadWorkflowOptions = async () => {
     try {
-      const data = await listProviders();
-      const selectable = data.filter((provider) => provider.type !== 'fallback_chain');
-      setProviders(selectable);
-      const active = selectable.find((provider) => provider.is_active);
-      if (active) {
-        setLLMProvider(active.type);
+      const available = await listWorkflows();
+      setWorkflowOptions(available);
+      if (!available.some((workflow) => workflow.id === selectedWorkflowId)) {
+        setSelectedWorkflowId(DEFAULT_WORKFLOW_ID);
       }
     } catch (err) {
-      console.error('Failed to load providers:', err);
+      console.error('Failed to load workflows:', err);
+      setWorkflowOptions([]);
     }
   };
 
@@ -74,9 +108,7 @@ function JobEdit() {
       setTaskPrompt(job.task_prompt);
       setTaskPromptSource(job.task_prompt_source === 'file' ? 'file' : 'text');
       setTaskPromptFile(job.task_prompt_file || '');
-      if (job.llm_provider) {
-        setLLMProvider(job.llm_provider);
-      }
+      setSelectedWorkflowId((job.workflow_id || '').trim() || DEFAULT_WORKFLOW_ID);
       setEnabled(job.enabled);
     } catch (err) {
       console.error('Failed to load job:', err);
@@ -88,7 +120,7 @@ function JobEdit() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!name.trim()) {
       setError('Name is required');
       return;
@@ -97,6 +129,7 @@ function JobEdit() {
       setError('Schedule is required');
       return;
     }
+
     const normalizedSource: TaskPromptSource = taskPromptSource === 'file' ? 'file' : 'text';
     const normalizedTaskPrompt = taskPrompt.trim();
     const normalizedTaskPromptFile = taskPromptFile.trim();
@@ -114,6 +147,8 @@ function JobEdit() {
     setError(null);
 
     try {
+      const selectedWorkflow = workflowOptions.find((workflow) => workflow.id === selectedWorkflowId) || null;
+      const workflowMetadata = selectedWorkflow ? buildWorkflowSessionMetadata(selectedWorkflow) : null;
       if (isEditMode && jobId) {
         await updateJob(jobId, {
           name: name.trim(),
@@ -121,7 +156,9 @@ function JobEdit() {
           task_prompt: normalizedSource === 'file' ? buildFileTaskPrompt(normalizedTaskPromptFile) : normalizedTaskPrompt,
           task_prompt_source: normalizedSource,
           task_prompt_file: normalizedSource === 'file' ? normalizedTaskPromptFile : '',
-          llm_provider: llmProvider,
+          workflow_id: workflowMetadata ? String(workflowMetadata.workflow_id || '') : '',
+          workflow_name: workflowMetadata ? String(workflowMetadata.workflow_name || '') : '',
+          workflow_definition: workflowMetadata?.workflow_definition as Record<string, unknown> | undefined,
           enabled,
         });
       } else {
@@ -131,7 +168,9 @@ function JobEdit() {
           task_prompt: normalizedSource === 'file' ? buildFileTaskPrompt(normalizedTaskPromptFile) : normalizedTaskPrompt,
           task_prompt_source: normalizedSource,
           task_prompt_file: normalizedSource === 'file' ? normalizedTaskPromptFile : '',
-          llm_provider: llmProvider,
+          workflow_id: workflowMetadata ? String(workflowMetadata.workflow_id || '') : '',
+          workflow_name: workflowMetadata ? String(workflowMetadata.workflow_name || '') : '',
+          workflow_definition: workflowMetadata?.workflow_definition as Record<string, unknown> | undefined,
           enabled,
         };
         await createJob(request);
@@ -152,7 +191,7 @@ function JobEdit() {
   return (
     <div className="job-edit-container">
       <div className="job-edit-header">
-        <h2>{isEditMode ? 'Edit Job' : 'Create New Job'}</h2>
+        <h2>{isEditMode ? 'Edit Recurring Job' : 'Create Recurring Job'}</h2>
       </div>
 
       {error && (
@@ -187,6 +226,25 @@ function JobEdit() {
           />
           <p className="help-text">
             Examples: &quot;every day at 7pm&quot;, &quot;every Monday at 9am&quot;, &quot;every hour&quot;, &quot;every weekday at 8:30am&quot;
+          </p>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="job-workflow">Workflow</label>
+          <select
+            id="job-workflow"
+            value={selectedWorkflowId}
+            onChange={(event) => setSelectedWorkflowId(event.target.value)}
+            disabled={saving || workflowOptions.length === 0}
+          >
+            {workflowOptions.map((workflow) => (
+              <option key={workflow.id} value={workflow.id}>
+                {workflow.name}{workflow.builtIn ? ' (Built-in)' : ''}
+              </option>
+            ))}
+          </select>
+          <p className="help-text">
+            Recurring runs use the selected workflow to orchestrate one or more agents.
           </p>
         </div>
 
@@ -245,39 +303,32 @@ function JobEdit() {
           </p>
         </div>
 
-        <div className="form-group">
-          <label htmlFor="llm-provider">LLM Provider</label>
-          <select
-            id="llm-provider"
-            value={llmProvider}
-            onChange={(e) => setLLMProvider(e.target.value as LLMProviderType)}
-            disabled={saving || providers.length === 0}
-          >
-            {providers.map((provider) => (
-              <option key={provider.type} value={provider.type}>
-                {provider.display_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
         <div className="form-group checkbox">
-          <label>
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              disabled={saving}
-            />
-            Enabled
-          </label>
+          <label htmlFor="job-enabled-switch">Enabled</label>
+          <button
+            type="button"
+            id="job-enabled-switch"
+            className={`ios-switch ${enabled ? 'on' : ''}`}
+            role="switch"
+            aria-checked={enabled}
+            aria-label="Enable recurring job"
+            onClick={() => setEnabled((prev) => !prev)}
+            disabled={saving}
+          >
+            <span className="ios-switch-thumb" aria-hidden="true" />
+          </button>
         </div>
 
         <div className="form-actions">
-          <button type="button" onClick={() => navigate(jobId ? `/agent/jobs/${jobId}` : '/agent/jobs')} className="btn btn-secondary" disabled={saving}>
+          <button
+            type="button"
+            onClick={() => navigate(jobId ? `/agent/jobs/${jobId}` : '/agent/jobs')}
+            className="settings-add-btn"
+            disabled={saving}
+          >
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+          <button type="submit" className="settings-save-btn" disabled={saving}>
             {saving ? 'Saving...' : isEditMode ? 'Update Job' : 'Create Job'}
           </button>
         </div>

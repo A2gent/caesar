@@ -106,6 +106,14 @@ function encodeWav(chunks: Float32Array[], sampleRate: number): Blob {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+function activeChatSessionIdFromPath(pathname: string): string | null {
+  const match = pathname.match(/^\/chat\/([^/]+)$/);
+  if (!match?.[1]) {
+    return null;
+  }
+  return decodeURIComponent(match[1]);
+}
+
 function GlobalAvatarVoiceSession() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -269,6 +277,16 @@ function GlobalAvatarVoiceSession() {
       const prompt = (result.text || '').trim();
       if (prompt === '') {
         setIsTranscribing(false);
+        return;
+      }
+
+      const activeChatSessionId = activeChatSessionIdFromPath(location.pathname);
+      if (activeChatSessionId) {
+        navigate(`/chat/${activeChatSessionId}`, {
+          state: {
+            initialMessage: prompt,
+          },
+        });
         return;
       }
 

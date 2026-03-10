@@ -1,10 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { cancelSessionRun, deleteJob, deleteSession, getJob, getSettings, listJobSessions, runJobNow, type RecurringJob, type Session } from './api';
+import { cancelSessionRun, deleteJob, deleteSession, getJob, getSettings, listJobSessions, parseTaskProgress, runJobNow, type RecurringJob, type Session } from './api';
 import { THINKING_JOB_ID_SETTING_KEY } from './thinking';
 import { buildOpenInMyMindUrl } from './myMindNavigation';
+import { SYSTEM_PROJECT_SOUL_ID } from './Sidebar';
 
 const SESSION_POLL_INTERVAL_MS = 1500;
+type SessionListRow = {
+  session: Session;
+  depth: number;
+};
 
 function JobDetail() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -226,6 +231,32 @@ function JobDetail() {
     return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
+  const formatTokenCount = (tokens: number) => {
+    return `${new Intl.NumberFormat('en-US', {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(tokens)} tok`;
+  };
+
+  const formatDurationSeconds = (seconds: number) => {
+    const total = Math.max(0, Math.floor(seconds));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+
+    if (days > 0) {
+      return `${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    }
+    return `${secs}s`;
+  };
+
   const optimisticSession = useMemo<Session | null>(() => {
     if (!pendingRunStartedAt) return null;
     return {
@@ -239,6 +270,45 @@ function JobDetail() {
   }, [pendingRunStartedAt]);
 
   const displayedSessions = optimisticSession ? [optimisticSession, ...sessions] : sessions;
+  const rows = useMemo<SessionListRow[]>(() => {
+    const sorted = [...displayedSessions].sort((a, b) => {
+      const aIsQueued = a.status === 'queued';
+      const bIsQueued = b.status === 'queued';
+      if (aIsQueued && !bIsQueued) return -1;
+      if (!aIsQueued && bIsQueued) return 1;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+    const sessionsById = new Map(sorted.map((session) => [session.id, session]));
+    const children = new Map<string, Session[]>();
+
+    for (const session of sorted) {
+      const parentId = (session.parent_id || '').trim();
+      if (parentId === '' || !sessionsById.has(parentId)) {
+        continue;
+      }
+      const nested = children.get(parentId) || [];
+      nested.push(session);
+      children.set(parentId, nested);
+    }
+
+    const roots = sorted.filter((session) => {
+      const parentId = (session.parent_id || '').trim();
+      return parentId === '' || !sessionsById.has(parentId);
+    });
+
+    const flattened: SessionListRow[] = [];
+    const appendRows = (session: Session, depth: number) => {
+      flattened.push({ session, depth });
+      const nested = children.get(session.id) || [];
+      for (const child of nested) {
+        appendRows(child, depth + 1);
+      }
+    };
+    for (const root of roots) {
+      appendRows(root, 0);
+    }
+    return flattened;
+  }, [displayedSessions]);
 
   if (loading) {
     return <div className="job-detail-loading">Loading job...</div>;
@@ -309,8 +379,8 @@ function JobDetail() {
               <span className="info-value">{job.schedule_human}</span>
             </div>
             <div className="info-item">
-              <span className="info-label">Provider:</span>
-              <span className="info-value">{job.llm_provider || 'Default active provider'}</span>
+              <span className="info-label">Workflow:</span>
+              <span className="info-value">{job.workflow_name || job.workflow_id || 'Default (User <-> Agent)'}</span>
             </div>
             <div className="info-item">
               <span className="info-label">Cron:</span>
@@ -333,7 +403,7 @@ function JobDetail() {
             <div className="job-task-path-row">
               <span className="info-label">Instruction file:</span>{' '}
               <Link
-                to={buildOpenInMyMindUrl(instructionFilePath)}
+                to={buildOpenInMyMindUrl(instructionFilePath, SYSTEM_PROJECT_SOUL_ID)}
                 className="tool-path-link"
                 title={`Open ${instructionFilePath} in My Mind`}
               >
@@ -357,14 +427,15 @@ function JobDetail() {
               </button>
             </div>
           </div>
-          {displayedSessions.length === 0 ? (
+          {rows.length === 0 ? (
             <p className="no-sessions">No executions yet. Run the job to see sessions here.</p>
           ) : (
             <div className="sessions-list">
-              {displayedSessions.map((session) => (
+              {rows.map(({ session, depth }) => (
                 <div 
                   key={session.id} 
-                  className="session-card"
+                  className={`session-card ${depth > 0 ? 'session-child' : ''}`}
+                  style={depth > 0 ? { marginLeft: `${Math.min(depth, 6) * 18}px` } : undefined}
                   onClick={() => {
                     if (session.id.startsWith('optimistic-run-')) {
                       return;
@@ -374,6 +445,15 @@ function JobDetail() {
                 >
                   <div className="session-card-row">
                     <div className="session-name-wrap">
+                      {depth > 0 ? (
+                        <span
+                          className="session-hierarchy-marker"
+                          title="Sub-session"
+                          aria-label="Sub-session"
+                        >
+                          ↳
+                        </span>
+                      ) : null}
                       <span
                         className={`session-status-dot status-${session.status}`}
                         title={`Status: ${formatStatusLabel(session.status)}`}
@@ -385,9 +465,30 @@ function JobDetail() {
                     </div>
                     <div className="session-row-right">
                       <div className="session-meta">
-                        <span className={`status-badge status-${session.status}`}>
-                          {formatStatusLabel(session.status)}
-                        </span>
+                        {!session.id.startsWith('optimistic-run-') ? (
+                          <>
+                            {session.task_progress ? (() => {
+                              const progress = parseTaskProgress(session.task_progress);
+                              if (progress.total > 0) {
+                                return (
+                                  <span
+                                    className="session-task-progress-bar"
+                                    title={`${progress.completed}/${progress.total} tasks (${progress.progressPct}%)`}
+                                  >
+                                    <span className="session-task-progress-fill" style={{ width: `${progress.progressPct}%` }} />
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })() : null}
+                            <span
+                              className="session-token-count"
+                              title={`Ran for ${formatDurationSeconds(session.run_duration_seconds ?? 0)}`}
+                            >
+                              {formatTokenCount(session.total_tokens ?? 0)}
+                            </span>
+                          </>
+                        ) : null}
                         <span className="session-date">{formatDate(session.updated_at || session.created_at)}</span>
                       </div>
                       {!session.id.startsWith('optimistic-run-') && (

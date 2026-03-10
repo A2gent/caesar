@@ -5854,7 +5854,8 @@ body.mind-resizing * {
 }
 
 .form-group input,
-.form-group textarea {
+.form-group textarea,
+.form-group select {
   padding: 12px;
   background-color: #242424;
   border: 1px solid #333;
@@ -5865,13 +5866,15 @@ body.mind-resizing * {
 }
 
 .form-group input:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.form-group select:focus {
   outline: none;
   border-color: #646cff;
 }
 
 .form-group input:disabled,
-.form-group textarea:disabled {
+.form-group textarea:disabled,
+.form-group select:disabled {
   background-color: #1a1a1a;
   color: #666;
   cursor: not-allowed;
@@ -5896,18 +5899,12 @@ body.mind-resizing * {
 .form-group.checkbox {
   flex-direction: row;
   align-items: center;
-  gap: 12px;
-}
-
-.form-group.checkbox input[type="checkbox"] {
-  cursor: pointer;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .form-group.checkbox label {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin: 0;
 }
 
 /* iPhone-style checkbox toggles */
@@ -5968,6 +5965,7 @@ input[type="checkbox"]:disabled {
   display: flex;
   gap: 12px;
   margin-top: 12px;
+  justify-content: flex-end;
 }
 
 /* Loading States */

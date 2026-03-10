@@ -1515,6 +1515,9 @@ export interface RecurringJob {
   task_prompt_source?: 'text' | 'file';
   task_prompt_file?: string;
   llm_provider?: LLMProviderType;
+  workflow_id?: string;
+  workflow_name?: string;
+  workflow_definition?: Record<string, unknown>;
   enabled: boolean;
   last_run_at?: string;
   next_run_at?: string;
@@ -1540,6 +1543,9 @@ export interface CreateJobRequest {
   task_prompt_source?: 'text' | 'file';
   task_prompt_file?: string;
   llm_provider?: LLMProviderType;
+  workflow_id?: string;
+  workflow_name?: string;
+  workflow_definition?: Record<string, unknown>;
   enabled: boolean;
 }
 
@@ -1550,6 +1556,9 @@ export interface UpdateJobRequest {
   task_prompt_source?: 'text' | 'file';
   task_prompt_file?: string;
   llm_provider?: LLMProviderType | '';
+  workflow_id?: string;
+  workflow_name?: string;
+  workflow_definition?: Record<string, unknown>;
   enabled?: boolean;
 }
 
