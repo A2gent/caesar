@@ -1039,8 +1039,7 @@ function ProjectView() {
   const treeResizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   // File session context state
-  const [isSessionContextExpanded, setIsSessionContextExpanded] = useState(false);
-  const [sessionContextMessage, setSessionContextMessage] = useState('');
+  const [sessionComposerMessage, setSessionComposerMessage] = useState('');
   const [sessionTargetLabel, setSessionTargetLabel] = useState('');
   const [agentInstructionFilePaths, setAgentInstructionFilePaths] = useState<Set<string>>(new Set());
   const [isAddingAgentInstructionFile, setIsAddingAgentInstructionFile] = useState(false);
@@ -1547,10 +1546,6 @@ function ProjectView() {
     setError(null);
 
     try {
-      const combinedMessage = sessionContextMessage
-        ? `${sessionContextMessage}\n\n---\n\n${message}`
-        : message;
-
       const workflow = selectedWorkflow;
       if (!workflow) {
         throw new Error('Select a workflow first.');
@@ -1558,9 +1553,7 @@ function ProjectView() {
       const target = resolveWorkflowLaunchTarget(workflow);
 
       if (target.kind === 'external') {
-        setSessionContextMessage('');
         setSessionTargetLabel('');
-        setIsSessionContextExpanded(false);
         navigate(`/a2a/contact/${encodeURIComponent(target.externalAgentId)}`, {
           state: {
             agent: {
@@ -1568,7 +1561,7 @@ function ProjectView() {
               name: target.externalAgentName || target.node.label,
             },
             forceNewSession: true,
-            initialMessage: combinedMessage,
+            initialMessage: message,
             initialImages: images,
           },
         });
@@ -1589,12 +1582,9 @@ function ProjectView() {
         metadata: buildWorkflowSessionMetadata(workflow),
       });
 
-      // Clear context after using it
-      setSessionContextMessage('');
       setSessionTargetLabel('');
-      setIsSessionContextExpanded(false);
 
-      handleSelectSession(created.id, combinedMessage, images);
+      handleSelectSession(created.id, message, images);
     } catch (err) {
       console.error('Failed to create session:', err);
       setError(err instanceof Error ? err.message : 'Failed to create session');
@@ -1608,10 +1598,6 @@ function ProjectView() {
     setError(null);
 
     try {
-      const combinedMessage = sessionContextMessage
-        ? `${sessionContextMessage}\n\n---\n\n${message}`
-        : message;
-
       const workflow = selectedWorkflow;
       if (!workflow) {
         throw new Error('Select a workflow first.');
@@ -1626,7 +1612,7 @@ function ProjectView() {
 
       await createSession({
         agent_id: 'build',
-        task: combinedMessage,
+        task: message,
         images,
         provider: target.kind === 'main' ? (selectedProvider || undefined) : undefined,
         sub_agent_id: target.kind === 'subagent' ? target.subAgentId : undefined,
@@ -1635,10 +1621,8 @@ function ProjectView() {
         metadata: buildWorkflowSessionMetadata(workflow),
       });
       
-      setSessionContextMessage('');
       setSessionTargetLabel('');
-      setIsSessionContextExpanded(false);
-      
+
       await loadSessions();
     } catch (err) {
       console.error('Failed to queue session:', err);
@@ -2389,8 +2373,7 @@ function ProjectView() {
     const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, path) : path;
     const label = type === 'folder' ? `folder "${path || 'root'}"` : `file "${path}"`;
     setSessionTargetLabel(label);
-    setSessionContextMessage(buildMindSessionContext(type, fullPath));
-    setIsSessionContextExpanded(true);
+    setSessionComposerMessage(`${buildMindSessionContext(type, fullPath)}\n`);
     
     // Scroll to the sessions form
     setTimeout(() => {
@@ -4246,46 +4229,6 @@ function ProjectView() {
 
         {showSessionComposer ? (
           <div className="project-sessions-composer">
-            {sessionContextMessage && (
-              <div className="session-context-section">
-                {isSessionContextExpanded ? (
-                  <textarea
-                    className="mind-session-textarea context-textarea"
-                    value={sessionContextMessage}
-                    onChange={(event) => setSessionContextMessage(event.target.value)}
-                    disabled={isCreatingSession}
-                    placeholder="Generated context"
-                  />
-                ) : null}
-                <div className="session-context-controls">
-                  {sessionTargetLabel && (
-                    <span className="session-target-label">
-                      Creating session for {sessionTargetLabel}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    className="mind-session-context-toggle"
-                    onClick={() => setIsSessionContextExpanded((prev) => !prev)}
-                    disabled={isCreatingSession}
-                  >
-                    {isSessionContextExpanded ? 'Hide context' : 'Show context'}
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-remove-btn"
-                    onClick={() => {
-                      setSessionContextMessage('');
-                      setSessionTargetLabel('');
-                      setIsSessionContextExpanded(false);
-                    }}
-                    disabled={isCreatingSession}
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-            )}
             <ChatInput
               onSend={handleStartSession}
               onQueue={handleQueueSession}
@@ -4293,6 +4236,8 @@ function ProjectView() {
               showVoiceButton={false}
               autoFocus={!rootFolder}
               showQueueButton={true}
+              value={sessionComposerMessage}
+              onValueChange={setSessionComposerMessage}
               placeholder={sessionTargetLabel
                 ? `Describe the task for ${sessionTargetLabel}...`
                 : 'Start a new chat...'}
