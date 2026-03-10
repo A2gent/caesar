@@ -974,6 +974,8 @@ function ProjectView() {
   const [selectedHistoryFileDiff, setSelectedHistoryFileDiff] = useState('');
   const [isLoadingHistoryFileDiff, setIsLoadingHistoryFileDiff] = useState(false);
   const commitDiffRequestRef = useRef(0);
+  const gitStatusRequestRef = useRef(0);
+  const commitDialogFilesRequestRef = useRef(0);
   const gitHistoryRequestRef = useRef(0);
   const historyCommitFilesRequestRef = useRef(0);
   const historyFileDiffRequestRef = useRef(0);
@@ -1057,8 +1059,32 @@ function ProjectView() {
 
   // Load project details
   useEffect(() => {
+    // Reset git-scoped UI state so repo sub-path from previous project is never reused.
+    setProject(null);
+    setRootFolder('');
+    setIsGitRepo(false);
+    setGitChangedFiles([]);
+    setCommitRepoPath('');
+    setCommitRepoLabel('');
+    setCommitDialogFiles([]);
+    setCommitMessage('');
+    setSelectedCommitFilePath('');
+    setSelectedCommitFileDiff('');
+    setGitHistoryBranches([]);
+    setGitHistoryCommits([]);
+    setGitHistoryError(null);
+    setSelectedHistoryCommitHash('');
+    setHistoryCommitFiles([]);
+    setSelectedHistoryFilePath('');
+    setSelectedHistoryFileDiff('');
+    commitDiffRequestRef.current += 1;
+    gitStatusRequestRef.current += 1;
+    commitDialogFilesRequestRef.current += 1;
+    gitHistoryRequestRef.current += 1;
+    historyCommitFilesRequestRef.current += 1;
+    historyFileDiffRequestRef.current += 1;
+
     if (!projectId) {
-      setProject(null);
       setIsLoadingProject(false);
       return;
     }
@@ -1133,18 +1159,23 @@ function ProjectView() {
       return;
     }
 
+    const requestID = gitStatusRequestRef.current + 1;
+    gitStatusRequestRef.current = requestID;
     setIsLoadingGitStatus(true);
     try {
       const status = await getProjectGitStatus(projectId);
+      if (requestID !== gitStatusRequestRef.current) return;
 
       setIsGitRepo(status.has_git);
       setGitChangedFiles(status.files || []);
     } catch (err) {
+      if (requestID !== gitStatusRequestRef.current) return;
       console.error('Failed to load git status:', err);
       setIsGitRepo(false);
       setGitChangedFiles([]);
       setError(err instanceof Error ? err.message : 'Failed to load git status');
     } finally {
+      if (requestID !== gitStatusRequestRef.current) return;
       setIsLoadingGitStatus(false);
     }
   }, [projectId, rootFolder]);
@@ -2085,18 +2116,26 @@ function ProjectView() {
 
   const refreshCommitDialogFiles = useCallback(async () => {
     if (!projectId) return;
-    const status = await getProjectGitStatus(projectId, commitRepoPath);
-    const files = status.files || [];
-    setCommitDialogFiles(files);
-    if (files.length === 0) {
-      setSelectedCommitFilePath('');
-      setSelectedCommitFileDiff('');
-      return;
-    }
-    const hasSelected = selectedCommitFilePath !== '' && files.some((file) => file.path === selectedCommitFilePath);
-    if (!hasSelected) {
-      setSelectedCommitFilePath(files[0].path);
-      setSelectedCommitFileDiff('');
+    const requestID = commitDialogFilesRequestRef.current + 1;
+    commitDialogFilesRequestRef.current = requestID;
+    try {
+      const status = await getProjectGitStatus(projectId, commitRepoPath);
+      if (requestID !== commitDialogFilesRequestRef.current) return;
+      const files = status.files || [];
+      setCommitDialogFiles(files);
+      if (files.length === 0) {
+        setSelectedCommitFilePath('');
+        setSelectedCommitFileDiff('');
+        return;
+      }
+      const hasSelected = selectedCommitFilePath !== '' && files.some((file) => file.path === selectedCommitFilePath);
+      if (!hasSelected) {
+        setSelectedCommitFilePath(files[0].path);
+        setSelectedCommitFileDiff('');
+      }
+    } catch (refreshError) {
+      if (requestID !== commitDialogFilesRequestRef.current) return;
+      throw refreshError;
     }
   }, [projectId, commitRepoPath, selectedCommitFilePath]);
 
@@ -2732,23 +2771,28 @@ function ProjectView() {
     void openFile(activeTodoFilePath);
   }, [activeTab, activeTodoFilePath, selectedFilePath, openFile]);
 
+  const isProjectContextReady = Boolean(projectId && project && project.id === projectId);
+
   useEffect(() => {
     if (activeTab !== 'changes') return;
+    if (!isProjectContextReady) return;
     if (!projectId || !rootFolder || (!isGitRepo && commitRepoPath.trim() === '')) return;
     if (commitRepoPath.trim() === '') {
       setCommitRepoLabel(project?.name || 'Project');
     }
     void refreshCommitDialogFiles();
-  }, [activeTab, projectId, rootFolder, isGitRepo, project?.name, commitRepoPath, refreshCommitDialogFiles]);
+  }, [activeTab, isProjectContextReady, projectId, rootFolder, isGitRepo, project?.name, commitRepoPath, refreshCommitDialogFiles]);
 
   useEffect(() => {
     if (activeTab !== 'history') return;
+    if (!isProjectContextReady) return;
     if (!projectId || !rootFolder || (!isGitRepo && commitRepoPath.trim() === '')) return;
     void loadGitHistory();
-  }, [activeTab, projectId, rootFolder, isGitRepo, commitRepoPath, loadGitHistory]);
+  }, [activeTab, isProjectContextReady, projectId, rootFolder, isGitRepo, commitRepoPath, loadGitHistory]);
 
   useEffect(() => {
     if (activeTab !== 'history') return;
+    if (!isProjectContextReady) return;
     if ((!isGitRepo && commitRepoPath.trim() === '') || selectedHistoryCommitHash.trim() === '') {
       setHistoryCommitFiles([]);
       setSelectedHistoryFilePath('');
@@ -2756,16 +2800,17 @@ function ProjectView() {
       return;
     }
     void loadHistoryCommitFiles(selectedHistoryCommitHash);
-  }, [activeTab, isGitRepo, commitRepoPath, selectedHistoryCommitHash, loadHistoryCommitFiles]);
+  }, [activeTab, isProjectContextReady, isGitRepo, commitRepoPath, selectedHistoryCommitHash, loadHistoryCommitFiles]);
 
   useEffect(() => {
     if (activeTab !== 'history') return;
+    if (!isProjectContextReady) return;
     if (selectedHistoryCommitHash.trim() === '' || selectedHistoryFilePath.trim() === '') {
       setSelectedHistoryFileDiff('');
       return;
     }
     void loadHistoryFileDiff(selectedHistoryCommitHash, selectedHistoryFilePath);
-  }, [activeTab, selectedHistoryCommitHash, selectedHistoryFilePath, loadHistoryFileDiff]);
+  }, [activeTab, isProjectContextReady, selectedHistoryCommitHash, selectedHistoryFilePath, loadHistoryFileDiff]);
   
   const selectedFilePathNormalized = normalizeMindPath(selectedFilePath);
   const selectedFileAbsolutePath = rootFolder && selectedFilePath
