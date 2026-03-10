@@ -8,6 +8,7 @@ import {
   listOpenAIModels,
   listOpenAICodexModels,
   listOpenRouterModels,
+  listOpenCodeZenModels,
   listAnthropicModels,
   listProviders,
   setActiveProvider,
@@ -34,7 +35,7 @@ function isFallbackProvider(type?: string): boolean {
 }
 
 function isModelQueryableProvider(type: LLMProviderType): boolean {
-  return type === 'lmstudio' || type === 'kimi' || type === 'google' || type === 'openai' || type === 'openai_codex' || type === 'openrouter' || type === 'anthropic';
+  return type === 'lmstudio' || type === 'kimi' || type === 'google' || type === 'openai' || type === 'openai_codex' || type === 'openrouter' || type === 'opencode_zen' || type === 'anthropic';
 }
 
 function ProviderEditView() {
@@ -132,6 +133,8 @@ function ProviderEditView() {
         (await listOpenAICodexModels(provider.base_url)).forEach((name) => options.add(name));
       } else if (provider.type === 'openrouter') {
         (await listOpenRouterModels(provider.base_url)).forEach((name) => options.add(name));
+      } else if (provider.type === 'opencode_zen') {
+        (await listOpenCodeZenModels(provider.base_url)).forEach((name) => options.add(name));
       } else if (provider.type === 'anthropic') {
         (await listAnthropicModels()).forEach((name) => options.add(name));
       }

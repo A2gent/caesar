@@ -13,7 +13,6 @@ import {
 } from './a2aIdentity';
 
 type AgentStatus = 'active' | 'inactive' | 'suspended';
-type AgentVisibility = 'public' | 'private';
 type AgentType = 'personal' | 'business' | 'government';
 
 interface DiscoveredAgent {
@@ -21,7 +20,7 @@ interface DiscoveredAgent {
   name: string;
   description: string;
   status: AgentStatus;
-  visibility: AgentVisibility;
+  visibility?: string;
   agent_type: AgentType;
   discoverable: boolean;
   price_per_request: number;
@@ -139,6 +138,7 @@ function A2ARegistryView() {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<AgentType | ''>('');
   const [filterStatus, setFilterStatus] = useState<AgentStatus | ''>('');
+  const [registryAPIKey, setRegistryAPIKey] = useState<string>('');
   const [localAgentID, setLocalAgentID] = useState<string>(getStoredLocalA2AAgentID());
   const [favoriteAgentIDs, setFavoriteAgentIDs] = useState<Set<string>>(() => new Set(getStoredFavoriteA2AAgents().map((item) => item.id)));
 
@@ -157,10 +157,12 @@ function A2ARegistryView() {
         const integration = integrations.find(i => i.provider === 'a2_registry');
         const apiKey = integration?.config?.api_key?.trim() || '';
         if (!apiKey) {
+          setRegistryAPIKey('');
           clearStoredLocalA2AAgentID();
           setLocalAgentID('');
           return;
         }
+        setRegistryAPIKey(apiKey);
         const me = await fetchRegistrySelfAgent(registryUrl, apiKey);
         storeLocalA2AAgentID(me.id);
         setLocalAgentID(me.id);
@@ -187,7 +189,10 @@ function A2ARegistryView() {
     const url = `${registryUrl}/agents/discover?${params}`;
 
     try {
-      const resp = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      const headers: HeadersInit = registryAPIKey
+        ? { Authorization: `Bearer ${registryAPIKey}` }
+        : {};
+      const resp = await fetch(url, { headers, signal: AbortSignal.timeout(6000) });
       if (!resp.ok) {
         throw new Error(`Registry returned ${resp.status} ${resp.statusText}`);
       }
@@ -208,7 +213,7 @@ function A2ARegistryView() {
     } finally {
       setLoading(false);
     }
-  }, [registryUrl, search, filterType, filterStatus]);
+  }, [registryUrl, search, filterType, filterStatus, registryAPIKey]);
 
   useEffect(() => {
     void handleListAgents();
@@ -346,7 +351,9 @@ function A2ARegistryView() {
                           <summary>Details</summary>
                           <div className="a2a-agent-chips">
                             <span className="integration-mode-chip">{agentTypeLabel(agent.agent_type)}</span>
-                            <span className="integration-mode-chip">{agent.visibility}</span>
+                            <span className="integration-mode-chip">
+                              {agent.discoverable ? 'visible to public' : 'hidden from public'}
+                            </span>
                             {agent.price_per_request > 0 && (
                               <span className="integration-mode-chip">
                                 ${agent.price_per_request.toFixed(3)}/{agent.currency}

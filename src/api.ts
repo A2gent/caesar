@@ -2668,6 +2668,21 @@ export async function listOpenRouterModels(baseURL?: string): Promise<string[]> 
   return data.models;
 }
 
+export async function listOpenCodeZenModels(baseURL?: string): Promise<string[]> {
+  const url = new URL(`${getApiBaseUrl()}/providers/opencode_zen/models`);
+  const normalizedBaseURL = normalizeLMStudioBaseUrl(baseURL);
+  if (normalizedBaseURL) {
+    url.searchParams.set('base_url', normalizedBaseURL);
+  }
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load OpenCode Zen models');
+  }
+  const data: ProviderModelsResponse = await response.json();
+  return data.models || [];
+}
+
 export async function listAnthropicModels(): Promise<string[]> {
   const response = await fetch(`${getApiBaseUrl()}/providers/anthropic/models`);
   if (!response.ok) {
@@ -2692,6 +2707,8 @@ export async function listProviderModels(providerType: LLMProviderType): Promise
       return listOpenAICodexModels();
     case 'openrouter':
       return listOpenRouterModels();
+    case 'opencode_zen':
+      return listOpenCodeZenModels();
     case 'anthropic':
       return listAnthropicModels();
     default:
