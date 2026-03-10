@@ -44,6 +44,7 @@ import { readWebAppNotification } from './toolResultEvents';
 import { webAppNotificationEventName, type WebAppNotificationEventDetail } from './webappNotifications';
 import { AvatarAudioProvider } from './AvatarAudioProvider';
 import { useAvatarAudio } from './avatarAudio';
+import GlobalAvatarVoiceSession from './GlobalAvatarVoiceSession';
 import './App.css';
 
 const MOBILE_BREAKPOINT = 900;
@@ -783,6 +784,7 @@ function AppLayout() {
       </div>
 
       <div className="main-content">
+        <GlobalAvatarVoiceSession />
         <Routes>
           <Route path="/" element={<Navigate to={`/projects/${SYSTEM_PROJECT_KB_ID}`} replace />} />
           {/* Legacy routes - redirect to project routes */}

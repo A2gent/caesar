@@ -11,7 +11,7 @@ import {
 } from './api';
 import { withAgentEmoji } from './agentVisuals';
 import { AgentAvatar } from './AgentAvatar';
-import { emitToggleVoiceInputEvent } from './voiceInputEvents';
+import { emitStartAvatarVoiceSessionEvent } from './voiceInputEvents';
 
 interface NavItem {
   id: string;
@@ -289,9 +289,9 @@ function Sidebar({
       <button
         type="button"
         className="sidebar-avatar-wrap sidebar-avatar-trigger"
-        onClick={emitToggleVoiceInputEvent}
-        title="Toggle voice input"
-        aria-label="Toggle voice input"
+        onClick={emitStartAvatarVoiceSessionEvent}
+        title="Start voice session"
+        aria-label="Start voice session"
       >
         <AgentAvatar size={96} />
       </button>
