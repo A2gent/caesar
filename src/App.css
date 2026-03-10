@@ -2418,6 +2418,41 @@ body.mind-resizing * {
   margin-bottom: 1px;
 }
 
+/* Collapsible section toggle */
+.nav-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px 10px 3px 12px;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+
+.nav-section-toggle:hover {
+  background: #1e1e1e;
+}
+
+.nav-section-toggle-label {
+  flex: 1;
+  text-align: left;
+}
+
+.nav-section-chevron {
+  font-size: 14px;
+  line-height: 1;
+  color: #555;
+  transition: transform 0.18s ease;
+  transform: rotate(0deg);
+}
+
+.nav-section-chevron--open {
+  transform: rotate(90deg);
+}
+
 .nav-section:first-child .nav-section-header {
   color: #7c9a6a;
 }
@@ -9625,6 +9660,14 @@ button.session-provider-chip:hover {
 
 [data-theme='light'] .nav-section-header {
   color: #5f6f86;
+}
+
+[data-theme='light'] .nav-section-toggle:hover {
+  background: #e6edf8;
+}
+
+[data-theme='light'] .nav-section-chevron {
+  color: #8a9ab5;
 }
 
 [data-theme='light'] .session-item-meta,

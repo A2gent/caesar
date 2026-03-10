@@ -104,6 +104,21 @@ function isNavItemActive(pathname: string, itemPath: string): boolean {
   return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
+function getSectionForPath(pathname: string, sections: NavSection[]): string | null {
+  for (const section of sections) {
+    for (const item of section.items) {
+      if (isNavItemActive(pathname, item.path)) {
+        return section.id;
+      }
+    }
+    // notifications live in the agent section
+    if (section.id === 'agent' && pathname === '/notifications') {
+      return 'agent';
+    }
+  }
+  return null;
+}
+
 function Sidebar({
   title,
   onAgentSelect,
@@ -119,6 +134,37 @@ function Sidebar({
   const [agentOptions, setAgentOptions] = useState(() => getStoredAgentEndpoints());
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const comboRef = useRef<HTMLDivElement | null>(null);
+
+  // Collapsible nav sections — default collapsed, auto-expand active section
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
+    const active = getSectionForPath(location.pathname, navSections);
+    return active ? new Set([active]) : new Set<string>();
+  });
+
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  };
+
+  // Auto-expand section when navigating to a route inside it
+  useEffect(() => {
+    const active = getSectionForPath(location.pathname, navSections);
+    if (active) {
+      setExpandedSections(prev => {
+        if (prev.has(active)) return prev;
+        const next = new Set(prev);
+        next.add(active);
+        return next;
+      });
+    }
+  }, [location.pathname]);
 
   // Projects state
   const [projects, setProjects] = useState<Project[]>([]);
@@ -409,36 +455,49 @@ function Sidebar({
         </div>
 
         {/* Agent/Settings Sections */}
-        {visibleNavSections.map(section => (
-          <div key={section.id} className="nav-section">
-            <div className="nav-section-header">{section.label}</div>
-            <ul className="nav-list">
-              {section.items.map(item => (
-                <li key={item.id} className="nav-item">
-                  <Link
-                    to={item.path}
-                    className={`nav-link ${isNavItemActive(location.pathname, item.path) ? 'active' : ''}`}
-                    onClick={onNavigate}
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-              {/* Notifications in Agent section */}
-              {section.id === 'agent' && (
-                <li className="nav-item">
-                  <Link
-                    to="/notifications"
-                    className={`nav-link ${location.pathname === '/notifications' ? 'active' : ''}`}
-                    onClick={onNavigate}
-                  >
-                    🔔 Notifications {notificationCount ? `(${notificationCount})` : '(0)'}
-                  </Link>
-                </li>
+        {visibleNavSections.map(section => {
+          const isExpanded = expandedSections.has(section.id);
+          return (
+            <div key={section.id} className={`nav-section${isExpanded ? ' nav-section--expanded' : ''}`}>
+              <button
+                type="button"
+                className="nav-section-header nav-section-toggle"
+                onClick={() => toggleSection(section.id)}
+                aria-expanded={isExpanded}
+              >
+                <span className="nav-section-toggle-label">{section.label}</span>
+                <span className={`nav-section-chevron${isExpanded ? ' nav-section-chevron--open' : ''}`}>›</span>
+              </button>
+              {isExpanded && (
+                <ul className="nav-list">
+                  {section.items.map(item => (
+                    <li key={item.id} className="nav-item">
+                      <Link
+                        to={item.path}
+                        className={`nav-link ${isNavItemActive(location.pathname, item.path) ? 'active' : ''}`}
+                        onClick={onNavigate}
+                      >
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                  {/* Notifications in Agent section */}
+                  {section.id === 'agent' && (
+                    <li className="nav-item">
+                      <Link
+                        to="/notifications"
+                        className={`nav-link ${location.pathname === '/notifications' ? 'active' : ''}`}
+                        onClick={onNavigate}
+                      >
+                        🔔 Notifications {notificationCount ? `(${notificationCount})` : '(0)'}
+                      </Link>
+                    </li>
+                  )}
+                </ul>
               )}
-            </ul>
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </nav>
     </div>
   );
