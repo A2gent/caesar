@@ -19,6 +19,7 @@ import {
   storeA2ARegistryOwnerEmail,
   storeA2ARegistryURL,
   storeLocalA2AAgentID,
+  syncA2ASettingsToBackend,
 } from './a2aIdentity';
 
 function A2ARegistrySettingsView() {
@@ -38,6 +39,10 @@ function A2ARegistrySettingsView() {
   const [savingInboundDefaults, setSavingInboundDefaults] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    void syncA2ASettingsToBackend();
+  }, []);
 
   useEffect(() => {
     const resolveSettings = async () => {

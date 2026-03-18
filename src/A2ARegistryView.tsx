@@ -10,9 +10,10 @@ import {
   removeFavoriteA2AAgent,
   storeFavoriteA2AAgent,
   storeLocalA2AAgentID,
+  syncA2ASettingsToBackend,
 } from './a2aIdentity';
 
-type AgentStatus = 'active' | 'inactive' | 'suspended';
+type AgentStatus = 'active' | 'inactive' | 'online' | 'offline' | 'suspended';
 type AgentType = 'personal' | 'business' | 'government';
 
 interface DiscoveredAgent {
@@ -98,11 +99,19 @@ const MOCK_AGENTS: DiscoveredAgent[] = [
   },
 ];
 
+function normalizeAgentStatus(status: string): 'online' | 'offline' | 'suspended' {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === 'active' || normalized === 'online') return 'online';
+  if (normalized === 'inactive' || normalized === 'offline') return 'offline';
+  return 'suspended';
+}
+
 function statusDot(status: AgentStatus) {
-  const color = status === 'active' ? '#4caf82' : status === 'suspended' ? '#f25f5c' : '#aeb7c7';
+  const normalized = normalizeAgentStatus(status);
+  const color = normalized === 'online' ? '#4caf82' : normalized === 'suspended' ? '#f25f5c' : '#aeb7c7';
   return (
     <span
-      title={status}
+      title={normalized}
       style={{
         display: 'inline-block',
         width: 8,
@@ -149,6 +158,10 @@ function A2ARegistryView() {
     }
     setSearch(prefilled);
   }, [searchParams]);
+
+  useEffect(() => {
+    void syncA2ASettingsToBackend();
+  }, []);
 
   useEffect(() => {
     const resolveSelfAgentID = async () => {

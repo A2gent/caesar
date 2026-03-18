@@ -20,6 +20,8 @@ const TOOL_PROVIDER_BY_NAME: Partial<Record<string, IntegrationProvider>> = {
   elevenlabs_tts: 'elevenlabs',
   telegram_send_message: 'telegram',
   exa_search: 'exa',
+  delegate_to_external_agent: 'a2_registry',
+  discover_external_agents: 'a2_registry',
 };
 
 function asIntegrationProvider(provider: string): IntegrationProvider | null {

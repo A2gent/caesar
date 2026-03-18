@@ -609,6 +609,110 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     );
   };
 
+  const renderExternalAgentDelegation = (toolCall: ToolCall, result: ToolResult | undefined, timestamp: string, key: string) => {
+    let taskDescription = '';
+    let externalAgentName = '';
+    let externalAgentId = '';
+    let childSessionId = '';
+    let responseText = '';
+
+    try {
+      if (toolCall.input) {
+        const input = typeof toolCall.input === 'string' ? JSON.parse(toolCall.input) : toolCall.input;
+        taskDescription = String(input.task || '');
+        externalAgentName = String(input.target_agent_name || '');
+        externalAgentId = String(input.target_agent_id || '');
+      }
+    } catch { /* ignore */ }
+
+    if (result) {
+      if (result.metadata?.external_agent_name) {
+        externalAgentName = String(result.metadata.external_agent_name);
+      }
+      if (result.metadata?.external_agent_id) {
+        externalAgentId = String(result.metadata.external_agent_id);
+      }
+      if (result.metadata?.child_session_id) {
+        childSessionId = String(result.metadata.child_session_id);
+      }
+      if (!result.is_error) {
+        try {
+          const output = typeof result.content === 'string' ? JSON.parse(result.content) : result.content;
+          externalAgentName = String(output.external_agent_name || externalAgentName);
+          externalAgentId = String(output.external_agent_id || externalAgentId);
+          childSessionId = String(output.child_session_id || childSessionId);
+          responseText = String(output.response || '');
+        } catch { /* ignore */ }
+      }
+    }
+
+    const label = externalAgentName || externalAgentId || 'external agent';
+    const truncatedTask = taskDescription.length > 120 ? taskDescription.slice(0, 120) + '...' : taskDescription;
+    const truncatedResponse = responseText.length > 500 ? responseText.slice(0, 500) + '...' : responseText;
+
+    return (
+      <div key={key} className="tool-execution-stack tool-execution-stack-offset">
+        <details className={`message message-tool tool-execution-card tool-card-collapsed${result?.is_error ? ' tool-execution-card-error' : ''}`}>
+          <summary className="tool-card-summary">
+            <span className="tool-summary-name">
+              <span className="tool-name tool-name-with-icon">
+                <span className="tool-icon" aria-hidden="true">🌐</span>
+                <span>External: {label}</span>
+              </span>
+              {truncatedTask ? (
+                <>
+                  <span className="tool-inline-separator">&middot;</span>
+                  <span className="tool-details">{truncatedTask}</span>
+                </>
+              ) : null}
+            </span>
+            <span className="message-meta-right">
+              {childSessionId ? (
+                <Link
+                  to={`/chat/${childSessionId}`}
+                  className="tool-path-link"
+                  onClick={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  title="Open external-agent session"
+                >
+                  Open session
+                </Link>
+              ) : null}
+              <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
+            </span>
+          </summary>
+          <div className="tool-card-body">
+            {taskDescription ? (
+              <div className="tool-execution-block">
+                <div className="tool-execution-label">Task</div>
+                <pre className="tool-input">{taskDescription}</pre>
+              </div>
+            ) : null}
+            <div className="tool-execution-block">
+              <div className={`tool-execution-label ${result?.is_error ? 'result-icon-error' : 'result-icon'}`}>
+                {result?.is_error ? 'Error' : 'Response'}
+              </div>
+              <pre className="tool-result-content">{result?.is_error ? result.content : (truncatedResponse || 'Waiting for result...')}</pre>
+            </div>
+            {externalAgentId ? (
+              <div className="tool-execution-block">
+                <div className="tool-execution-label">Agent ID</div>
+                <pre className="tool-result-content">{externalAgentId}</pre>
+              </div>
+            ) : null}
+            {childSessionId ? (
+              <div className="tool-execution-block">
+                <Link to={`/chat/${childSessionId}`} style={{ color: 'var(--link-color, #6eb5ff)' }}>
+                  View full external-agent session &rarr;
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        </details>
+      </div>
+    );
+  };
+
   const renderToolExecutionCard = (toolCall: ToolCall, result: ToolResult | undefined, timestamp: string, key: string) => {
     const provider = integrationProviderForToolName(toolCall.name);
     const filePath = isSupportedFileTool(toolCall.name) ? extractToolFilePath(toolCall.input) : null;
@@ -803,6 +907,8 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         for (const toolCall of toolCalls) {
           if (toolCall.name === 'delegate_to_subagent') {
             nodes.push(renderSubAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`));
+          } else if (toolCall.name === 'delegate_to_external_agent') {
+            nodes.push(renderExternalAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`));
           } else {
             nodes.push(renderToolExecutionCard(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`));
           }

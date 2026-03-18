@@ -1,8 +1,12 @@
+import { getSettings, updateSettings } from './api';
+
 const A2A_LOCAL_AGENT_ID_KEY = 'a2gent.a2a_local_agent_id';
 const A2A_REGISTRY_URL_KEY = 'a2gent.a2a_registry_url';
 const A2A_REGISTRY_OWNER_EMAIL_KEY = 'a2gent.a2a_registry_owner_email';
 const A2A_FAVORITE_AGENTS_KEY = 'a2gent.a2a_favorite_agents';
 const DEFAULT_REGISTRY_URL = 'http://localhost:5174';
+const A2A_REGISTRY_URL_SETTING_KEY = 'A2A_REGISTRY_URL';
+const A2A_FAVORITE_AGENTS_SETTING_KEY = 'A2A_FAVORITE_AGENTS_JSON';
 
 export interface RegistrySelfAgent {
   id: string;
@@ -32,9 +36,11 @@ export function storeA2ARegistryURL(url: string): void {
   const normalized = url.trim().replace(/\/$/, '');
   if (!normalized) {
     localStorage.removeItem(A2A_REGISTRY_URL_KEY);
+    void syncA2ASettingsToBackend();
     return;
   }
   localStorage.setItem(A2A_REGISTRY_URL_KEY, normalized);
+  void syncA2ASettingsToBackend();
 }
 
 export async function fetchRegistrySelfAgent(registryUrl: string, apiKey: string): Promise<RegistrySelfAgent> {
@@ -145,6 +151,7 @@ export function storeFavoriteA2AAgent(agent: Omit<FavoriteA2AAgent, 'saved_at'>)
     saved_at: new Date().toISOString(),
   });
   localStorage.setItem(A2A_FAVORITE_AGENTS_KEY, JSON.stringify(all.slice(0, 200)));
+  void syncA2ASettingsToBackend();
 }
 
 export function removeFavoriteA2AAgent(agentID: string): void {
@@ -154,4 +161,19 @@ export function removeFavoriteA2AAgent(agentID: string): void {
   }
   const remaining = getStoredFavoriteA2AAgents().filter((item) => item.id !== normalizedID);
   localStorage.setItem(A2A_FAVORITE_AGENTS_KEY, JSON.stringify(remaining));
+  void syncA2ASettingsToBackend();
+}
+
+export async function syncA2ASettingsToBackend(): Promise<void> {
+  try {
+    const settings = await getSettings();
+    const nextSettings = {
+      ...settings,
+      [A2A_REGISTRY_URL_SETTING_KEY]: getStoredA2ARegistryURL(),
+      [A2A_FAVORITE_AGENTS_SETTING_KEY]: JSON.stringify(getStoredFavoriteA2AAgents()),
+    };
+    await updateSettings(nextSettings);
+  } catch {
+    // non-fatal; local state still applies for UI
+  }
 }

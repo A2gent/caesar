@@ -29,6 +29,8 @@ const TOOL_ICONS_BY_NAME: Record<string, string> = {
   exa_search: '🔬',
   git_integration: '🌿',
   delegate_to_subagent: '🤖',
+  delegate_to_external_agent: '🌐',
+  discover_external_agents: '🛰️',
 };
 
 // Tool categories for grouping in the UI
@@ -95,9 +97,9 @@ export const TOOL_CATEGORIES: CategoryInfo[] = [
   },
   {
     id: 'mcp',
-    label: 'MCP Servers',
-    icon: '🔌',
-    description: 'Model Context Protocol server management',
+    label: 'External Services & Agents',
+    icon: '🌐',
+    description: 'Access external services, MCP servers, and network agents',
   },
 ];
 
@@ -132,6 +134,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   session_task_progress: 'task-management',
   task: 'task-management',
   delegate_to_subagent: 'task-management',
+  delegate_to_external_agent: 'mcp',
   // Notifications
   notify_webapp: 'notifications',
   telegram_send_message: 'notifications',
@@ -139,6 +142,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   brave_search_query: 'search-external',
   exa_search: 'search-external',
   google_calendar_query: 'search-external',
+  discover_external_agents: 'mcp',
   // MCP
   mcp_manage: 'mcp',
 };
