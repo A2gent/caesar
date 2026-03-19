@@ -2,6 +2,8 @@
 
 > Et tu, Brute?
 
+[![Coverage](https://codecov.io/gh/A2gent/web-app/graph/badge.svg)](https://codecov.io/gh/A2gent/web-app)
+
 A personal AI agent control web app. Uses [A²gent/brute](https://github.com/A2gent/brute) terminal agent as a backend.
 
 A modern, responsive web interface for managing AI agent sessions, jobs, tools, and knowledge base.
@@ -52,6 +54,13 @@ Prerequisites - you have cloned this repo along with [brute](https://github.com/
 npm install
 npm run dev
 open 'http://localhost:5173'
+```
+
+## Testing
+
+```bash
+npm run test:unit
+npm run test:integration
 ```
 
 ## Architecture
