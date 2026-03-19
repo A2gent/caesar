@@ -50,6 +50,9 @@ interface PendingImage extends MessageImage {
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 const VOICE_SHORTCUT_LABEL = IS_MAC ? 'Ctrl+Shift+M' : 'Alt+M';
+const MAX_IMAGE_ATTACHMENTS = 8;
+const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
 const isVoiceShortcut = (event: { altKey: boolean; shiftKey: boolean; metaKey: boolean; ctrlKey: boolean; code?: string; key: string }) => {
   const keyMatch = event.code === 'KeyM' || event.key.toLowerCase() === 'm';
@@ -270,12 +273,32 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (fileArray.length === 0) {
       return;
     }
+    const rejected: string[] = [];
+    const accepted: File[] = [];
+    for (const file of fileArray) {
+      if (!ALLOWED_IMAGE_MIME_TYPES.has(file.type)) {
+        rejected.push(`${file.name}: unsupported format (${file.type || 'unknown'})`);
+        continue;
+      }
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
+        rejected.push(`${file.name}: exceeds 8 MiB`);
+        continue;
+      }
+      accepted.push(file);
+    }
+    if (accepted.length === 0) {
+      alert(rejected[0] || 'No supported images to attach.');
+      return;
+    }
     try {
-      const converted = await Promise.all(fileArray.map((file) => toPendingImage(file)));
+      const converted = await Promise.all(accepted.map((file) => toPendingImage(file)));
       setPendingImages((prev) => {
         const combined = [...prev, ...converted];
-        return combined.slice(0, 8);
+        return combined.slice(0, MAX_IMAGE_ATTACHMENTS);
       });
+      if (rejected.length > 0) {
+        alert(rejected.join('\n'));
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to attach image.');
     }
