@@ -43,6 +43,43 @@ function resolveAgentApiUrl(agent: LocalDockerAgent): string {
   return '';
 }
 
+interface BatchAgentSpec {
+  name?: string;
+  kind?: string;
+  systemPrompt?: string;
+}
+
+function slugifyForContainerName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function parseBatchAgentSpecs(raw: string): BatchAgentSpec[] {
+  const specs: BatchAgentSpec[] = [];
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+    const parts = line.split('|').map(part => part.trim());
+    if (parts.length === 1) {
+      specs.push({ kind: parts[0] });
+      continue;
+    }
+    if (parts.length === 2) {
+      specs.push({ kind: parts[0], systemPrompt: parts[1] });
+      continue;
+    }
+    const [name, kind, ...promptParts] = parts;
+    specs.push({ name, kind, systemPrompt: promptParts.join(' | ').trim() });
+  }
+  return specs;
+}
+
 interface A2ALocalAgentsViewProps {
   onOpenAgent?: (baseUrl: string) => void | Promise<void>;
 }
@@ -58,6 +95,12 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
   const [newEmoji, setNewEmoji] = useState('🐳');
   const [newPort, setNewPort] = useState('');
   const [newImage, setNewImage] = useState('a2gent-brute:latest');
+  const [newAgentKind, setNewAgentKind] = useState('');
+  const [newSystemPrompt, setNewSystemPrompt] = useState('');
+  const [newSessionID, setNewSessionID] = useState('');
+  const [batchRolesSpec, setBatchRolesSpec] = useState('');
+  const [batchNamePrefix, setBatchNamePrefix] = useState('a2gent-local');
+  const [batchStartPort, setBatchStartPort] = useState('');
   const [rebuildNoCache, setRebuildNoCache] = useState(false);
 
   const [registeringID, setRegisteringID] = useState<string | null>(null);
@@ -109,12 +152,50 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
         name: newName.trim() || undefined,
         host_port: Number.isFinite(hostPort) ? hostPort : undefined,
         image: newImage.trim() || undefined,
+        agent_kind: newAgentKind.trim() || undefined,
+        system_prompt: newSystemPrompt.trim() || undefined,
+        session_id: newSessionID.trim() || undefined,
       });
       setAgentEmoji('local', newEmoji, created.id);
       setNewName('');
       setNewEmoji('🐳');
       setNewPort('');
+      setNewAgentKind('');
+      setNewSystemPrompt('');
       setSuccess('Local agent container started.');
+    });
+  };
+
+  const handleCreateBatch = () => {
+    void runAction('create-batch', async () => {
+      const specs = parseBatchAgentSpecs(batchRolesSpec);
+      if (specs.length === 0) {
+        throw new Error('Enter at least one role line for batch creation.');
+      }
+      const prefix = batchNamePrefix.trim() || 'a2gent-local';
+      const parsedStartPort = Number.parseInt(batchStartPort, 10);
+      const useSequentialPorts = Number.isFinite(parsedStartPort);
+      const sessionID = newSessionID.trim() || undefined;
+      const image = newImage.trim() || undefined;
+      const createdAgents: string[] = [];
+      const timestampSuffix = Date.now();
+
+      for (let index = 0; index < specs.length; index += 1) {
+        const spec = specs[index];
+        const fallbackToken = slugifyForContainerName(spec.kind || '') || `agent-${index + 1}`;
+        const generatedName = `${prefix}-${timestampSuffix}-${index + 1}-${fallbackToken}`;
+        const created = await createLocalDockerAgent({
+          name: (spec.name || '').trim() || generatedName,
+          host_port: useSequentialPorts ? (parsedStartPort + index) : undefined,
+          image,
+          agent_kind: (spec.kind || '').trim() || undefined,
+          system_prompt: (spec.systemPrompt || '').trim() || undefined,
+          session_id: sessionID,
+        });
+        setAgentEmoji('local', newEmoji, created.id);
+        createdAgents.push(created.name);
+      }
+      setSuccess(`Started ${createdAgents.length} local agent containers.`);
     });
   };
 
@@ -266,6 +347,33 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
                 placeholder="a2gent-brute:latest"
               />
             </label>
+            <label className="settings-field" style={{ gap: 4 }}>
+              <span>Agent kind / role (optional)</span>
+              <input
+                type="text"
+                value={newAgentKind}
+                onChange={e => setNewAgentKind(e.target.value)}
+                placeholder="researcher, planner, reviewer..."
+              />
+            </label>
+            <label className="settings-field" style={{ gap: 4, gridColumn: '1 / -1' }}>
+              <span>Initial system prompt (optional)</span>
+              <textarea
+                value={newSystemPrompt}
+                onChange={e => setNewSystemPrompt(e.target.value)}
+                placeholder="You are a focused code reviewer. Prioritize correctness risks and actionable findings."
+                rows={4}
+              />
+            </label>
+            <label className="settings-field" style={{ gap: 4 }}>
+              <span>Session ID (optional)</span>
+              <input
+                type="text"
+                value={newSessionID}
+                onChange={e => setNewSessionID(e.target.value)}
+                placeholder="session-uuid"
+              />
+            </label>
           </div>
 
           <div style={{ marginTop: 10 }}>
@@ -293,6 +401,49 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
           </div>
           <p className="settings-help" style={{ marginTop: 8, marginBottom: 0 }}>
             Run build once on new machines if image pull fails.
+          </p>
+        </section>
+
+        <section className="a2a-config-block local-agents-form-block">
+          <div className="integration-form-title-row" style={{ marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>Batch create role-based agents</h3>
+          </div>
+          <div className="local-agents-form-grid">
+            <label className="settings-field" style={{ gap: 4 }}>
+              <span>Name prefix</span>
+              <input
+                type="text"
+                value={batchNamePrefix}
+                onChange={e => setBatchNamePrefix(e.target.value)}
+                placeholder="a2gent-local"
+              />
+            </label>
+            <label className="settings-field" style={{ gap: 4 }}>
+              <span>Start port (optional, increments)</span>
+              <input
+                type="number"
+                value={batchStartPort}
+                onChange={e => setBatchStartPort(e.target.value)}
+                placeholder="18100"
+              />
+            </label>
+            <label className="settings-field" style={{ gap: 4, gridColumn: '1 / -1' }}>
+              <span>Roles spec (one per line)</span>
+              <textarea
+                value={batchRolesSpec}
+                onChange={e => setBatchRolesSpec(e.target.value)}
+                placeholder={'researcher | You focus on source-backed research.\nplanner | You create concise implementation plans.\nreviewer | You review code for correctness and regressions.'}
+                rows={6}
+              />
+            </label>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <button type="button" className="settings-add-btn" onClick={handleCreateBatch} disabled={busy !== null}>
+              {busy === 'create-batch' ? 'Starting…' : 'Start batch'}
+            </button>
+          </div>
+          <p className="settings-help" style={{ marginTop: 8, marginBottom: 0 }}>
+            Format: <code>kind</code>, or <code>kind | system prompt</code>, or <code>name | kind | system prompt</code>.
           </p>
         </section>
 
@@ -336,6 +487,12 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
                         <div className="a2a-agent-chips">
                           <span className="integration-mode-chip">{agent.state}</span>
                           <span className="integration-mode-chip">{agent.image}</span>
+                          {agent.labels?.['a2gent.agent_kind'] && (
+                            <span className="integration-mode-chip">kind:{agent.labels['a2gent.agent_kind']}</span>
+                          )}
+                          {agent.labels?.['a2gent.session_id'] && (
+                            <span className="integration-mode-chip">session:{agent.labels['a2gent.session_id']}</span>
+                          )}
                           {agent.managed && <span className="integration-mode-chip">managed</span>}
                           {agent.host_port && <span className="integration-mode-chip">:{agent.host_port}</span>}
                         </div>

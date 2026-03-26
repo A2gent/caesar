@@ -962,6 +962,9 @@ export interface CreateLocalDockerAgentRequest {
   image?: string;
   host_port?: number;
   lm_studio_base_url?: string;
+  agent_kind?: string;
+  system_prompt?: string;
+  session_id?: string;
 }
 
 export interface BuildLocalDockerAgentImageRequest {

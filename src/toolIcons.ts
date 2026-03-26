@@ -31,6 +31,7 @@ const TOOL_ICONS_BY_NAME: Record<string, string> = {
   delegate_to_subagent: '🤖',
   delegate_to_external_agent: '🌐',
   discover_external_agents: '🛰️',
+  create_local_docker_agents_bulk: '🐳',
 };
 
 // Tool categories for grouping in the UI
@@ -134,6 +135,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   session_task_progress: 'task-management',
   task: 'task-management',
   delegate_to_subagent: 'task-management',
+  create_local_docker_agents_bulk: 'mcp',
   delegate_to_external_agent: 'mcp',
   // Notifications
   notify_webapp: 'notifications',
