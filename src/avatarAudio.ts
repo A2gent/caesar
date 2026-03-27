@@ -19,6 +19,8 @@ export interface AvatarAudioState {
   level: number;
   /** Live AnalyserNode from mic graph (null when not recording) */
   analyser: AnalyserNode | null;
+  /** True while live meeting recording is active. */
+  isRecording: boolean;
 }
 
 export interface AvatarAudioContextValue {
@@ -31,12 +33,17 @@ export interface AvatarAudioContextValue {
   setSpeaking: () => void;
   /** Call when TTS playback stops */
   clearSpeaking: () => void;
+  /** Call when live meeting recording starts */
+  setRecording: () => void;
+  /** Call when live meeting recording stops/pauses */
+  clearRecording: () => void;
 }
 
 export const defaultAvatarAudioState: AvatarAudioState = {
   mode: 'idle',
   level: 0,
   analyser: null,
+  isRecording: false,
 };
 
 export const AvatarAudioContext = createContext<AvatarAudioContextValue>({
@@ -45,6 +52,8 @@ export const AvatarAudioContext = createContext<AvatarAudioContextValue>({
   clearListening: () => undefined,
   setSpeaking: () => undefined,
   clearSpeaking: () => undefined,
+  setRecording: () => undefined,
+  clearRecording: () => undefined,
 });
 
 export function useAvatarAudio(): AvatarAudioContextValue {

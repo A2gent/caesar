@@ -19,6 +19,7 @@ export function AvatarAudioProvider({ children }: AvatarAudioProviderProps) {
     mode: 'idle',
     level: 0,
     analyser: null,
+    isRecording: false,
   });
 
   // Track which sources are active so they don't cancel each other
@@ -33,7 +34,8 @@ export function AvatarAudioProvider({ children }: AvatarAudioProviderProps) {
 
   const setListening = useCallback((analyser: AnalyserNode) => {
     listeningRef.current = true;
-    setState(() => ({
+    setState((prev) => ({
+      ...prev,
       mode: resolveMode(),
       level: 0,
       analyser,
@@ -67,8 +69,22 @@ export function AvatarAudioProvider({ children }: AvatarAudioProviderProps) {
     }));
   }, [resolveMode]);
 
+  const setRecording = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      isRecording: true,
+    }));
+  }, []);
+
+  const clearRecording = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      isRecording: false,
+    }));
+  }, []);
+
   return (
-    <AvatarAudioContext.Provider value={{ state, setListening, clearListening, setSpeaking, clearSpeaking }}>
+    <AvatarAudioContext.Provider value={{ state, setListening, clearListening, setSpeaking, clearSpeaking, setRecording, clearRecording }}>
       {children}
     </AvatarAudioContext.Provider>
   );

@@ -255,6 +255,28 @@ export interface Session {
   a2a_target_agent_name?: string;
 }
 
+export interface MeetingAudioUpload {
+  filename: string;
+  blob: Blob;
+}
+
+export interface SaveMeetingArtifactsRequest {
+  meetingId: string;
+  title: string;
+  startedAt: string;
+  endedAt: string;
+  notesMarkdown: string;
+  notesFolder: string;
+  audioFolder: string;
+  audioFiles: MeetingAudioUpload[];
+}
+
+export interface SaveMeetingArtifactsResponse {
+  meeting_id: string;
+  notes_path: string;
+  audio_paths: string[];
+}
+
 export interface ProviderFailure {
   timestamp: string;
   provider?: string;
@@ -2412,6 +2434,29 @@ export async function transcribeSpeech(audio: Blob, language?: string): Promise<
   });
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to transcribe speech');
+  }
+  return response.json();
+}
+
+export async function saveMeetingArtifacts(payload: SaveMeetingArtifactsRequest): Promise<SaveMeetingArtifactsResponse> {
+  const formData = new FormData();
+  formData.append('meeting_id', payload.meetingId);
+  formData.append('title', payload.title);
+  formData.append('started_at', payload.startedAt);
+  formData.append('ended_at', payload.endedAt);
+  formData.append('notes_markdown', payload.notesMarkdown);
+  formData.append('notes_folder', payload.notesFolder);
+  formData.append('audio_folder', payload.audioFolder);
+  for (const audio of payload.audioFiles) {
+    formData.append('audio', audio.blob, audio.filename);
+  }
+
+  const response = await fetch(`${getApiBaseUrl()}/meetings/save`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to save meeting artifacts');
   }
   return response.json();
 }

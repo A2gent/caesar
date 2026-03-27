@@ -52,6 +52,7 @@ import {
   type Session,
 } from './api';
 import ChatInput from './ChatInput';
+import MeetingsView from './MeetingsView';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from './EmptyState';
 import {
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
@@ -70,7 +71,7 @@ import {
 } from './workflows';
 
 type MarkdownMode = 'kanban' | 'preview' | 'source';
-type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'changes' | 'history';
+type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'meetings' | 'changes' | 'history';
 
 const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);
 const TODO_TASK_LINE_PATTERN = /^(\s*)-\s+\[( |x|X)\]\s+(.*?)(?:\s+<!--\s*task-file:\s*([^\s][^>]*)\s*-->)?\s*$/;
@@ -2710,6 +2711,12 @@ function ProjectView() {
   };
 
   useEffect(() => {
+    if (activeTab !== 'meetings') return;
+    if (project?.id === SYSTEM_PROJECT_KB_ID) return;
+    setActiveTab('explorer');
+  }, [activeTab, project?.id]);
+
+  useEffect(() => {
     if (activeTab !== 'changes') return;
     if (!selectedCommitFilePath) {
       setSelectedCommitFileDiff('');
@@ -3270,6 +3277,7 @@ function ProjectView() {
   const hasSearchHits = fileNameSearchMatches.length > 0 || contentSearchMatches.length > 0;
   const viewerPlaceholder = getProjectViewerPlaceholder(project);
   const showSessionComposer = activeTab === 'explorer' || activeTab === 'sessions';
+  const isKnowledgeBaseProject = project?.id === SYSTEM_PROJECT_KB_ID;
 
   const sessionsListBlock = (
     <>
@@ -3548,6 +3556,11 @@ function ProjectView() {
           <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`project-view-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
             Sessions ({sessions.length})
           </button>
+          {isKnowledgeBaseProject ? (
+            <button type="button" role="tab" aria-selected={activeTab === 'meetings'} className={`project-view-tab ${activeTab === 'meetings' ? 'active' : ''}`} onClick={() => setActiveTab('meetings')}>
+              Meetings
+            </button>
+          ) : null}
           <button type="button" role="tab" aria-selected={activeTab === 'changes'} className={`project-view-tab ${activeTab === 'changes' ? 'active' : ''}`} onClick={() => setActiveTab('changes')}>
             Changes ({gitChangedFiles.length})
           </button>
@@ -3928,6 +3941,10 @@ function ProjectView() {
             </div>
             <div className="project-sessions-body">{sessionsListBlock}</div>
           </div>
+        ) : null}
+
+        {activeTab === 'meetings' ? (
+          <MeetingsView />
         ) : null}
 
         {activeTab === 'changes' ? (

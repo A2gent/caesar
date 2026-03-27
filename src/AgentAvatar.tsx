@@ -294,7 +294,7 @@ export function AgentAvatar({ size = 96, className }: AgentAvatarProps) {
 
   return (
     <div
-      className={`agent-avatar${className ? ` ${className}` : ''}`}
+      className={`agent-avatar${state.isRecording ? ' recording-active' : ''}${className ? ` ${className}` : ''}`}
       style={{ width: size, height: size }}
       aria-label={`Agent avatar (${state.mode})`}
       role="img"
