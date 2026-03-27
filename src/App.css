@@ -7741,11 +7741,19 @@ input[type="checkbox"]:disabled {
 
 .project-view-tabs {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 8px 10px;
   border-bottom: 1px solid #3a3a3a;
   background: #171b22;
   flex-shrink: 0;
   overflow-x: auto;
+}
+
+.project-view-tabs-main {
+  display: flex;
+  min-width: 0;
 }
 
 .project-view-tab {
@@ -7764,15 +7772,15 @@ input[type="checkbox"]:disabled {
   z-index: 1;
 }
 
-.project-view-tab:first-child {
+.project-view-tabs-main .project-view-tab:first-child {
   border-radius: 8px 0 0 8px;
 }
 
-.project-view-tab + .project-view-tab {
+.project-view-tabs-main .project-view-tab + .project-view-tab {
   margin-left: 0;
 }
 
-.project-view-tab:last-child {
+.project-view-tabs-main .project-view-tab:last-child {
   border-radius: 0 8px 8px 0;
   margin-right: 0;
 }
@@ -7787,6 +7795,59 @@ input[type="checkbox"]:disabled {
   color: #e6edfb;
   background: #233149;
   z-index: 3;
+}
+
+.project-view-tab-link {
+  margin-left: auto;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #8ea5c5;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 8px 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.project-view-tab-link:hover {
+  color: #bfd5f4;
+}
+
+.project-view-tab-link.active {
+  color: #e6edfb;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.project-settings-tab {
+  gap: 14px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.project-settings-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 14px;
+}
+
+.project-settings-panel h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.project-settings-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.project-settings-actions {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .project-tab-panel {
@@ -10353,6 +10414,23 @@ button.session-provider-chip:hover {
   color: #1e3765;
 }
 
+[data-theme='light'] .project-view-tab-link {
+  color: #5a6f8f;
+}
+
+[data-theme='light'] .project-view-tab-link:hover {
+  color: #3a5f99;
+}
+
+[data-theme='light'] .project-view-tab-link.active {
+  color: #1e3765;
+}
+
+[data-theme='light'] .project-settings-panel {
+  background: #fff;
+  border-color: #d6deec;
+}
+
 [data-theme='light'] .project-sessions-header-static {
   border-bottom-color: #d7deea;
   background: #edf3fc;
@@ -11424,6 +11502,33 @@ button.session-provider-chip:hover {
   gap: 16px;
 }
 
+.meetings-panel-switch {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  width: fit-content;
+  margin: 0 auto;
+}
+
+.meetings-panel-switch-btn {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #b9cae1;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.meetings-panel-switch-btn.active {
+  background: rgba(84, 146, 196, 0.35);
+  border-color: rgba(120, 194, 249, 0.6);
+  color: #eef6ff;
+}
+
 .meetings-controls {
   display: grid;
   gap: 12px;
@@ -11530,10 +11635,266 @@ button.session-provider-chip:hover {
   word-break: break-word;
 }
 
+.meetings-history-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  align-items: start;
+}
+
+.meetings-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(74vh, calc(100vh - 230px));
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.meetings-history-item {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.meetings-history-item-main {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.meetings-history-delete-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: #ffb9b9;
+  min-width: 34px;
+  padding: 0 8px;
+  font-size: 14px;
+}
+
+.meetings-history-delete-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.meetings-history-item.active {
+  border-color: rgba(123, 194, 255, 0.85);
+  background: rgba(63, 126, 173, 0.34);
+}
+
+.meetings-history-item span {
+  color: #9bb5d8;
+  font-size: 12px;
+}
+
+.meetings-history-detail {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.meetings-history-top {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 1fr) minmax(280px, 420px);
+  align-items: start;
+}
+
+.meetings-history-meta {
+  display: grid;
+  gap: 4px;
+  word-break: break-word;
+}
+
+.meetings-history-meta h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.meetings-history-meta-time {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: #9bb5d8;
+}
+
+.meetings-history-note-link {
+  display: inline-block;
+  width: fit-content;
+  font-size: 12px;
+  color: #8ec5ff;
+  text-decoration: none;
+}
+
+.meetings-history-note-link:hover {
+  text-decoration: underline;
+}
+
+.meetings-history-file-links {
+  display: grid;
+  gap: 4px;
+}
+
+.meetings-history-audio {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.meetings-history-audio-item {
+  display: grid;
+  gap: 4px;
+}
+
+.meetings-history-audio-item audio {
+  width: 100%;
+}
+
+.meetings-history-transcript {
+  display: grid;
+  gap: 6px;
+}
+
+.meetings-history-transcript h4,
+.meetings-history-audio h4 {
+  margin: 0;
+}
+
+.meetings-history-transcript-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(64vh, calc(100vh - 320px));
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.meetings-transcript-time-btn {
+  border: none;
+  background: transparent;
+  color: #9bb5d8;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.meetings-transcript-time-btn:hover {
+  text-decoration: underline;
+}
+
+.meetings-transcript-entry-past {
+  grid-template-columns: minmax(104px, 120px) 1fr;
+  align-items: start;
+}
+
+.meetings-transcript-meta {
+  display: grid;
+  gap: 2px;
+}
+
+.meetings-transcript-entry-past .meetings-transcript-speaker {
+  font-size: 12px;
+  font-weight: 600;
+  color: #b9d4f1;
+}
+
+.meetings-transcript-entry-past.speaker-me {
+  background: rgba(35, 88, 54, 0.35);
+  border-color: rgba(90, 188, 125, 0.5);
+}
+
+.meetings-transcript-entry-past.speaker-them {
+  background: rgba(53, 72, 118, 0.35);
+  border-color: rgba(122, 164, 255, 0.5);
+}
+
+.meetings-transcript-entry-past.speaker-other {
+  background: rgba(96, 83, 33, 0.3);
+  border-color: rgba(210, 177, 85, 0.45);
+}
+
+.meetings-transcript-entry-past.active {
+  position: relative;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.42) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.35);
+  transform: translateX(1px);
+}
+
+.meetings-transcript-entry-past.active::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 6px;
+  bottom: 6px;
+  width: 5px;
+  border-radius: 999px;
+  background: #9fd0ff;
+}
+
+.meetings-transcript-entry-past.speaker-me.active {
+  background: rgba(52, 128, 79, 0.56);
+  border-color: rgba(125, 220, 160, 0.9);
+}
+
+.meetings-transcript-entry-past.speaker-them.active {
+  background: rgba(78, 108, 181, 0.56);
+  border-color: rgba(154, 186, 255, 0.9);
+}
+
+.meetings-transcript-entry-past.speaker-other.active {
+  background: rgba(141, 119, 42, 0.56);
+  border-color: rgba(236, 204, 112, 0.88);
+}
+
+.meetings-history-transcript pre {
+  margin: 0;
+  max-height: min(64vh, calc(100vh - 320px));
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+  color: #e8edf7;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
 [data-theme='light'] .meetings-controls,
 [data-theme='light'] .meetings-transcript {
   background: #fff;
   border-color: #d6deec;
+}
+
+[data-theme='light'] .meetings-panel-switch {
+  background: #fff;
+  border-color: #d6deec;
+}
+
+[data-theme='light'] .meetings-panel-switch-btn {
+  color: #567297;
+}
+
+[data-theme='light'] .meetings-panel-switch-btn.active {
+  color: #1f3d63;
+  background: #dcebfb;
+  border-color: #93bce6;
 }
 
 [data-theme='light'] .meetings-transcript-entry {
@@ -11551,4 +11912,100 @@ button.session-provider-chip:hover {
 
 [data-theme='light'] .meetings-transcript-text {
   color: #1f2f44;
+}
+
+[data-theme='light'] .meetings-history-item {
+  background: #f7faff;
+  border-color: #dce6f5;
+}
+
+[data-theme='light'] .meetings-history-item.active {
+  background: #eaf4ff;
+  border-color: #7db6ef;
+}
+
+[data-theme='light'] .meetings-history-item span {
+  color: #5d779c;
+}
+
+[data-theme='light'] .meetings-history-delete-btn {
+  border-color: #d6deec;
+  background: #fff;
+  color: #b33b3b;
+}
+
+[data-theme='light'] .meetings-history-meta-time {
+  color: #5d779c;
+}
+
+[data-theme='light'] .meetings-history-note-link {
+  color: #2f6da8;
+}
+
+[data-theme='light'] .meetings-history-transcript pre {
+  background: #f7faff;
+  border-color: #dce6f5;
+  color: #1f2f44;
+}
+
+[data-theme='light'] .meetings-transcript-time-btn {
+  color: #5d779c;
+}
+
+[data-theme='light'] .meetings-transcript-entry-past .meetings-transcript-speaker {
+  color: #3f5f86;
+}
+
+[data-theme='light'] .meetings-transcript-entry-past.speaker-me {
+  background: #e7f7ef;
+  border-color: #a8dcbf;
+}
+
+[data-theme='light'] .meetings-transcript-entry-past.speaker-them {
+  background: #e9f1ff;
+  border-color: #b1c8f4;
+}
+
+[data-theme='light'] .meetings-transcript-entry-past.speaker-other {
+  background: #f8f1de;
+  border-color: #e0cfa4;
+}
+
+[data-theme='light'] .meetings-transcript-entry-past.active {
+  box-shadow:
+    0 0 0 2px rgba(43, 102, 170, 0.42) inset,
+    0 0 0 1px rgba(43, 102, 170, 0.28);
+}
+
+[data-theme='light'] .meetings-transcript-entry-past.active::before {
+  background: #2f79c9;
+}
+
+[data-theme='light'] .meetings-transcript-entry-past.speaker-me.active {
+  background: #cfeede;
+  border-color: #6db892;
+}
+
+[data-theme='light'] .meetings-transcript-entry-past.speaker-them.active {
+  background: #d8e7ff;
+  border-color: #7ea5e7;
+}
+
+[data-theme='light'] .meetings-transcript-entry-past.speaker-other.active {
+  background: #f0e4be;
+  border-color: #d0b062;
+}
+
+@media (max-width: 960px) {
+  .meetings-history-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .meetings-history-list {
+    max-height: 280px;
+  }
+
+  .meetings-history-top {
+    grid-template-columns: 1fr;
+  }
 }

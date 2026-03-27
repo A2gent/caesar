@@ -5,6 +5,7 @@ import { FileDiff, type FileDiffMetadata } from '@pierre/diffs/react';
 import { parsePatchFiles } from '@pierre/diffs';
 import {
   browseMindDirectories,
+  browseSkillDirectories,
   commitProjectGit,
   createProjectFolder,
   createSession,
@@ -71,7 +72,8 @@ import {
 } from './workflows';
 
 type MarkdownMode = 'kanban' | 'preview' | 'source';
-type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'meetings' | 'changes' | 'history';
+type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'meetings' | 'changes' | 'history' | 'settings';
+type MeetingSettingsPickerTarget = 'notes' | 'audio' | null;
 
 const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);
 const TODO_TASK_LINE_PATTERN = /^(\s*)-\s+\[( |x|X)\]\s+(.*?)(?:\s+<!--\s*task-file:\s*([^\s][^>]*)\s*-->)?\s*$/;
@@ -108,6 +110,10 @@ type DraggedTodoTask = {
 };
 
 const GIT_HISTORY_COLORS = ['#5b8cff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#e879f9', '#f97316'];
+const MEETING_AUDIO_FOLDER_KEY = 'A2GENT_MEETINGS_AUDIO_FOLDER';
+const MEETING_NOTES_FOLDER_KEY = 'A2GENT_MEETINGS_NOTES_FOLDER';
+const MEETING_CAPTURE_REMOTE_AUDIO_KEY = 'A2GENT_MEETINGS_CAPTURE_REMOTE_AUDIO';
+const MEETING_ME_SPEAKER_LABEL_KEY = 'A2GENT_MEETINGS_ME_SPEAKER_LABEL';
 
 function gitHistoryColorForRef(ref: string): string {
   if (ref.trim() === '') {
@@ -1021,6 +1027,15 @@ function ProjectView() {
   const [browsePath, setBrowsePath] = useState('');
   const [browseEntries, setBrowseEntries] = useState<MindTreeEntry[]>([]);
   const [isLoadingBrowse, setIsLoadingBrowse] = useState(false);
+  const [meetingNotesFolder, setMeetingNotesFolder] = useState('');
+  const [meetingAudioFolder, setMeetingAudioFolder] = useState('');
+  const [meetingCaptureRemoteAudio, setMeetingCaptureRemoteAudio] = useState(true);
+  const [meetingMeSpeakerLabel, setMeetingMeSpeakerLabel] = useState('Me');
+  const [isSavingMeetingSettings, setIsSavingMeetingSettings] = useState(false);
+  const [meetingSettingsPickerTarget, setMeetingSettingsPickerTarget] = useState<MeetingSettingsPickerTarget>(null);
+  const [meetingSettingsPickerPath, setMeetingSettingsPickerPath] = useState('');
+  const [meetingSettingsPickerEntries, setMeetingSettingsPickerEntries] = useState<MindTreeEntry[]>([]);
+  const [isMeetingSettingsPickerLoading, setIsMeetingSettingsPickerLoading] = useState(false);
   const [treeEntries, setTreeEntries] = useState<Record<string, MindTreeEntry[]>>({});
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set<string>(['']));
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(() => new Set<string>());
@@ -1057,6 +1072,7 @@ function ProjectView() {
   const fileActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const handledOpenFileQueryRef = useRef('');
   const projectSearchRequestRef = useRef(0);
+  const isKnowledgeBaseProject = project?.id === SYSTEM_PROJECT_KB_ID;
 
   // Load project details
   useEffect(() => {
@@ -2019,6 +2035,61 @@ function ProjectView() {
     }
   };
 
+  const loadMeetingSettingsPickerPath = async (path: string) => {
+    setIsMeetingSettingsPickerLoading(true);
+    try {
+      const response = await browseSkillDirectories(path);
+      setMeetingSettingsPickerPath(response.path);
+      setMeetingSettingsPickerEntries(response.entries);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to browse meeting folders');
+      setMeetingSettingsPickerEntries([]);
+    } finally {
+      setIsMeetingSettingsPickerLoading(false);
+    }
+  };
+
+  const openMeetingSettingsPicker = async (target: Exclude<MeetingSettingsPickerTarget, null>) => {
+    setMeetingSettingsPickerTarget(target);
+    const basePath = target === 'audio' ? meetingAudioFolder : meetingNotesFolder;
+    await loadMeetingSettingsPickerPath(basePath || '');
+  };
+
+  const closeMeetingSettingsPicker = () => {
+    setMeetingSettingsPickerTarget(null);
+    setMeetingSettingsPickerPath('');
+    setMeetingSettingsPickerEntries([]);
+  };
+
+  const handleSaveMeetingSettings = async () => {
+    if (!isKnowledgeBaseProject) return;
+    const trimmedNotes = meetingNotesFolder.trim();
+    const trimmedAudio = meetingAudioFolder.trim();
+    const trimmedMeSpeakerLabel = meetingMeSpeakerLabel.trim() || 'Me';
+    if (!trimmedNotes || !trimmedAudio) {
+      setError('Both notes and audio folders are required.');
+      return;
+    }
+
+    setIsSavingMeetingSettings(true);
+    try {
+      const settings = await getSettings();
+      const nextSettings = {
+        ...settings,
+        [MEETING_NOTES_FOLDER_KEY]: trimmedNotes,
+        [MEETING_AUDIO_FOLDER_KEY]: trimmedAudio,
+        [MEETING_CAPTURE_REMOTE_AUDIO_KEY]: meetingCaptureRemoteAudio ? 'true' : 'false',
+        [MEETING_ME_SPEAKER_LABEL_KEY]: trimmedMeSpeakerLabel,
+      };
+      await updateSettings(nextSettings);
+      setSuccess('Meeting settings saved.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save meeting settings');
+    } finally {
+      setIsSavingMeetingSettings(false);
+    }
+  };
+
   // Project deletion handler
   const handleDeleteProject = async () => {
     if (!projectId || !project) return;
@@ -2717,6 +2788,29 @@ function ProjectView() {
   }, [activeTab, project?.id]);
 
   useEffect(() => {
+    if (!isKnowledgeBaseProject) {
+      setMeetingNotesFolder('');
+      setMeetingAudioFolder('');
+      setMeetingCaptureRemoteAudio(true);
+      setMeetingMeSpeakerLabel('Me');
+      return;
+    }
+
+    const loadMeetingSettings = async () => {
+      try {
+        const settings = await getSettings();
+        setMeetingNotesFolder((settings[MEETING_NOTES_FOLDER_KEY] || '').trim());
+        setMeetingAudioFolder((settings[MEETING_AUDIO_FOLDER_KEY] || '').trim());
+        setMeetingCaptureRemoteAudio(settings[MEETING_CAPTURE_REMOTE_AUDIO_KEY] !== 'false');
+        setMeetingMeSpeakerLabel((settings[MEETING_ME_SPEAKER_LABEL_KEY] || 'Me').trim() || 'Me');
+      } catch (settingsError) {
+        setError(settingsError instanceof Error ? settingsError.message : 'Failed to load meeting settings');
+      }
+    };
+    void loadMeetingSettings();
+  }, [isKnowledgeBaseProject]);
+
+  useEffect(() => {
     if (activeTab !== 'changes') return;
     if (!selectedCommitFilePath) {
       setSelectedCommitFileDiff('');
@@ -2892,6 +2986,7 @@ function ProjectView() {
     }
 
     const openFromQuery = async () => {
+      setActiveTab('explorer');
       await expandTreePath(relativePath);
       await openFile(relativePath);
 
@@ -3277,7 +3372,6 @@ function ProjectView() {
   const hasSearchHits = fileNameSearchMatches.length > 0 || contentSearchMatches.length > 0;
   const viewerPlaceholder = getProjectViewerPlaceholder(project);
   const showSessionComposer = activeTab === 'explorer' || activeTab === 'sessions';
-  const isKnowledgeBaseProject = project?.id === SYSTEM_PROJECT_KB_ID;
 
   const sessionsListBlock = (
     <>
@@ -3512,11 +3606,6 @@ function ProjectView() {
           </div>
         ) : null}
         <div className="project-header-actions">
-          {rootFolder ? (
-            <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
-              Change folder
-            </button>
-          ) : null}
           {!project.is_system && (
             <button
               type="button"
@@ -3547,25 +3636,36 @@ function ProjectView() {
 
       <div className="page-content project-view-content">
         <div className="project-view-tabs" role="tablist" aria-label="Project workflow views">
-          <button type="button" role="tab" aria-selected={activeTab === 'explorer'} className={`project-view-tab ${activeTab === 'explorer' ? 'active' : ''}`} onClick={() => setActiveTab('explorer')}>
-            Explorer
-          </button>
-          <button type="button" role="tab" aria-selected={activeTab === 'tasks'} className={`project-view-tab ${activeTab === 'tasks' ? 'active' : ''}`} onClick={() => setActiveTab('tasks')}>
-            Tasks
-          </button>
-          <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`project-view-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
-            Sessions ({sessions.length})
-          </button>
-          {isKnowledgeBaseProject ? (
-            <button type="button" role="tab" aria-selected={activeTab === 'meetings'} className={`project-view-tab ${activeTab === 'meetings' ? 'active' : ''}`} onClick={() => setActiveTab('meetings')}>
-              Meetings
+          <div className="project-view-tabs-main">
+            <button type="button" role="tab" aria-selected={activeTab === 'explorer'} className={`project-view-tab ${activeTab === 'explorer' ? 'active' : ''}`} onClick={() => setActiveTab('explorer')}>
+              Explorer
             </button>
-          ) : null}
-          <button type="button" role="tab" aria-selected={activeTab === 'changes'} className={`project-view-tab ${activeTab === 'changes' ? 'active' : ''}`} onClick={() => setActiveTab('changes')}>
-            Changes ({gitChangedFiles.length})
-          </button>
-          <button type="button" role="tab" aria-selected={activeTab === 'history'} className={`project-view-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-            History
+            <button type="button" role="tab" aria-selected={activeTab === 'tasks'} className={`project-view-tab ${activeTab === 'tasks' ? 'active' : ''}`} onClick={() => setActiveTab('tasks')}>
+              Tasks
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`project-view-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
+              Sessions ({sessions.length})
+            </button>
+            {isKnowledgeBaseProject ? (
+              <button type="button" role="tab" aria-selected={activeTab === 'meetings'} className={`project-view-tab ${activeTab === 'meetings' ? 'active' : ''}`} onClick={() => setActiveTab('meetings')}>
+                Meetings
+              </button>
+            ) : null}
+            <button type="button" role="tab" aria-selected={activeTab === 'changes'} className={`project-view-tab ${activeTab === 'changes' ? 'active' : ''}`} onClick={() => setActiveTab('changes')}>
+              Changes ({gitChangedFiles.length})
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === 'history'} className={`project-view-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+              History
+            </button>
+          </div>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'settings'}
+            className={`project-view-tab-link ${activeTab === 'settings' ? 'active' : ''}`}
+            onClick={() => setActiveTab('settings')}
+          >
+            Settings
           </button>
         </div>
 
@@ -3945,6 +4045,83 @@ function ProjectView() {
 
         {activeTab === 'meetings' ? (
           <MeetingsView />
+        ) : null}
+
+        {activeTab === 'settings' ? (
+          <div className="project-tab-panel project-settings-tab">
+            <div className="project-settings-panel">
+              <h2>Project Settings</h2>
+              <div className="project-settings-grid">
+                <label className="settings-field">
+                  <span>Project folder</span>
+                  <div className="tool-folder-picker-row">
+                    <input type="text" value={rootFolder} readOnly placeholder="/path/to/project" />
+                    <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+                      {rootFolder ? 'Change folder' : 'Configure folder'}
+                    </button>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {isKnowledgeBaseProject ? (
+              <div className="project-settings-panel">
+                <h2>Meetings Settings</h2>
+                <div className="project-settings-grid">
+                  <label className="settings-field">
+                    <span>Notes folder (Markdown)</span>
+                    <div className="tool-folder-picker-row">
+                      <input
+                        type="text"
+                        value={meetingNotesFolder}
+                        onChange={(event) => setMeetingNotesFolder(event.target.value)}
+                        placeholder="/path/to/meeting-notes"
+                      />
+                      <button type="button" className="settings-add-btn" onClick={() => void openMeetingSettingsPicker('notes')}>
+                        Browse
+                      </button>
+                    </div>
+                  </label>
+                  <label className="settings-field">
+                    <span>Audio folder</span>
+                    <div className="tool-folder-picker-row">
+                      <input
+                        type="text"
+                        value={meetingAudioFolder}
+                        onChange={(event) => setMeetingAudioFolder(event.target.value)}
+                        placeholder="/path/to/meeting-audio"
+                      />
+                      <button type="button" className="settings-add-btn" onClick={() => void openMeetingSettingsPicker('audio')}>
+                        Browse
+                      </button>
+                    </div>
+                  </label>
+                  <label className="settings-field settings-field-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={meetingCaptureRemoteAudio}
+                      onChange={(event) => setMeetingCaptureRemoteAudio(event.target.checked)}
+                    />
+                    <span>Capture remote/system audio (share tab/app audio when prompted)</span>
+                  </label>
+                  <label className="settings-field">
+                    <span>Your speaker label</span>
+                    <input
+                      type="text"
+                      value={meetingMeSpeakerLabel}
+                      onChange={(event) => setMeetingMeSpeakerLabel(event.target.value)}
+                      placeholder="Me"
+                    />
+                  </label>
+                </div>
+                <div className="project-settings-actions">
+                  <button type="button" className="settings-save-btn" onClick={() => void handleSaveMeetingSettings()} disabled={isSavingMeetingSettings}>
+                    {isSavingMeetingSettings ? 'Saving...' : 'Save meeting settings'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         {activeTab === 'changes' ? (
@@ -4398,6 +4575,65 @@ function ProjectView() {
                   <button key={entry.path} type="button" className="mind-picker-item" onClick={() => void loadBrowse(entry.path)}>
                     <span className="mind-tree-icon" aria-hidden="true">📁</span>
                     <span>{entry.name}</span>
+                  </button>
+                ))
+                : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {meetingSettingsPickerTarget ? (
+        <div className="mind-picker-overlay" role="dialog" aria-modal="true" aria-label="Choose meetings folder">
+          <div className="mind-picker-dialog">
+            <h2>Choose {meetingSettingsPickerTarget === 'notes' ? 'notes' : 'audio'} folder</h2>
+            <div className="mind-picker-path">{meetingSettingsPickerPath || 'Loading...'}</div>
+            <div className="mind-picker-actions">
+              <button
+                type="button"
+                className="settings-add-btn"
+                onClick={() => void loadMeetingSettingsPickerPath(getParentPath(meetingSettingsPickerPath))}
+                disabled={
+                  isMeetingSettingsPickerLoading
+                  || meetingSettingsPickerPath.trim() === ''
+                  || getParentPath(meetingSettingsPickerPath) === meetingSettingsPickerPath
+                }
+              >
+                Up
+              </button>
+              <button
+                type="button"
+                className="settings-save-btn"
+                onClick={() => {
+                  if (meetingSettingsPickerTarget === 'notes') {
+                    setMeetingNotesFolder(meetingSettingsPickerPath);
+                  } else {
+                    setMeetingAudioFolder(meetingSettingsPickerPath);
+                  }
+                  closeMeetingSettingsPicker();
+                }}
+                disabled={isMeetingSettingsPickerLoading || meetingSettingsPickerPath.trim() === ''}
+              >
+                Use this folder
+              </button>
+              <button type="button" className="settings-remove-btn" onClick={closeMeetingSettingsPicker}>
+                Cancel
+              </button>
+            </div>
+            <div className="mind-picker-list">
+              {isMeetingSettingsPickerLoading ? <div className="sessions-loading">Loading directories...</div> : null}
+              {!isMeetingSettingsPickerLoading && meetingSettingsPickerEntries.length === 0 ? (
+                <div className="sessions-empty">No sub-folders found.</div>
+              ) : null}
+              {!isMeetingSettingsPickerLoading
+                ? meetingSettingsPickerEntries.map((entry) => (
+                  <button
+                    type="button"
+                    key={entry.path}
+                    className="mind-picker-item"
+                    onClick={() => void loadMeetingSettingsPickerPath(entry.path)}
+                  >
+                    📁 {entry.name}
                   </button>
                 ))
                 : null}

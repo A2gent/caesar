@@ -277,6 +277,31 @@ export interface SaveMeetingArtifactsResponse {
   audio_paths: string[];
 }
 
+export interface MeetingHistoryItem {
+  meeting_id?: string;
+  title: string;
+  started_at?: string;
+  ended_at?: string;
+  notes_path: string;
+  audio_paths: string[];
+  transcript_markdown: string;
+  updated_at?: string;
+}
+
+export interface ListMeetingArtifactsResponse {
+  meetings: MeetingHistoryItem[];
+}
+
+export interface DeleteMeetingArtifactsRequest {
+  notes_path: string;
+  audio_paths: string[];
+}
+
+export interface DeleteMeetingArtifactsResponse {
+  deleted_notes_path: string;
+  deleted_audio_paths: string[];
+}
+
 export interface ProviderFailure {
   timestamp: string;
   provider?: string;
@@ -2457,6 +2482,36 @@ export async function saveMeetingArtifacts(payload: SaveMeetingArtifactsRequest)
   });
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to save meeting artifacts');
+  }
+  return response.json();
+}
+
+export async function listMeetingArtifacts(notesFolder: string, audioFolder: string): Promise<ListMeetingArtifactsResponse> {
+  const query = new URLSearchParams({
+    notes_folder: notesFolder,
+    audio_folder: audioFolder,
+  });
+  const response = await fetch(`${getApiBaseUrl()}/meetings/list?${query}`);
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to list saved meetings');
+  }
+  return response.json();
+}
+
+export function getMeetingAudioAssetUrl(path: string): string {
+  return `${getApiBaseUrl()}/meetings/audio?path=${encodeURIComponent(path)}`;
+}
+
+export async function deleteMeetingArtifacts(payload: DeleteMeetingArtifactsRequest): Promise<DeleteMeetingArtifactsResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/meetings/delete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to delete meeting artifacts');
   }
   return response.json();
 }
