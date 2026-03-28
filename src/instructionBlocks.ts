@@ -14,6 +14,7 @@ export interface InstructionBlock {
 }
 
 export const AGENT_INSTRUCTION_BLOCKS_SETTING_KEY = 'A2GENT_AGENT_INSTRUCTION_BLOCKS';
+export const AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY = 'A2GENT_AGENT_BASE_SYSTEM_PROMPT';
 export const AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY = 'AAGENT_SYSTEM_PROMPT_APPEND';
 export const BUILTIN_TOOLS_BLOCK_TYPE: InstructionBlockType = 'builtin_tools';
 export const INTEGRATION_SKILLS_BLOCK_TYPE: InstructionBlockType = 'integration_skills';

@@ -10,6 +10,7 @@ import {
 } from './api';
 import InstructionBlocksEditor from './InstructionBlocksEditor';
 import {
+  AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY,
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
   AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
   BUILTIN_TOOLS_BLOCK_TYPE,
@@ -141,6 +142,7 @@ const MANAGED_KEYS = [
   SESSIONS_FOLDER,
   REPEAT_INITIAL_PROMPT,
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
+  AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY,
   AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
   LLM_PROVIDER_PROXY_ENABLED,
   'SAG_VOICE_ID',
@@ -218,6 +220,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [agentInstructionBlocks, setAgentInstructionBlocks] = useState<InstructionBlock[]>(
     ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')),
   );
+  const [agentBaseSystemPrompt, setAgentBaseSystemPrompt] = useState(
+    (settings[AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY] || defaultSystemPromptWithoutBuiltInTools || defaultSystemPrompt).trim(),
+  );
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
@@ -249,9 +254,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setSessionsFolder(settings[SESSIONS_FOLDER] || '');
     setLLMProviderProxyEnabled(settings[LLM_PROVIDER_PROXY_ENABLED] !== 'false');
     setAgentInstructionBlocks(ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')));
+    setAgentBaseSystemPrompt((settings[AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY] || defaultSystemPromptWithoutBuiltInTools || defaultSystemPrompt).trim());
     setGitCommitProvider((settings[GIT_COMMIT_PROVIDER] || '').trim());
     setGitCommitPromptTemplate(settings[GIT_COMMIT_PROMPT_TEMPLATE] || DEFAULT_GIT_COMMIT_PROMPT_TEMPLATE);
-  }, [settings]);
+  }, [settings, defaultSystemPrompt, defaultSystemPromptWithoutBuiltInTools]);
 
   useEffect(() => {
     const loadProvidersList = async () => {
@@ -350,21 +356,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     });
   }, [agentInstructionBlocks, instructionBlockEstimatedTokens]);
 
-  const builtInToolsBlock = useMemo(
-    () => agentInstructionBlocks.find((block) => block.type === BUILTIN_TOOLS_BLOCK_TYPE),
-    [agentInstructionBlocks],
-  );
-  const builtInToolsEnabled = builtInToolsBlock?.enabled !== false;
-  const builtInToolsBlockTokens = useMemo(() => {
-    const index = agentInstructionBlocks.findIndex((block) => block.type === BUILTIN_TOOLS_BLOCK_TYPE);
-    if (index < 0) {
-      return 0;
-    }
-    return instructionBlockEstimatedTokens[index] ?? 0;
-  }, [agentInstructionBlocks, instructionBlockEstimatedTokens]);
-  const activeBuiltInPrompt = builtInToolsEnabled ? defaultSystemPrompt : defaultSystemPromptWithoutBuiltInTools;
-  const alternateBuiltInPrompt = builtInToolsEnabled ? defaultSystemPromptWithoutBuiltInTools : defaultSystemPrompt;
-
   const enabledInstructionTotalTokens = useMemo(() => {
     if (!instructionEstimate) {
       return null;
@@ -388,6 +379,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
     return {
       ...settings,
+      [AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY]: (agentBaseSystemPrompt.trim() || defaultSystemPromptWithoutBuiltInTools || defaultSystemPrompt).trim(),
       [AGENT_INSTRUCTION_BLOCKS_SETTING_KEY]: JSON.stringify(serializedAgentBlocks),
       [AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY]: buildAgentSystemPromptAppend(serializedAgentBlocks),
     };
@@ -411,7 +403,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [settings, agentInstructionBlocks]);
+  }, [settings, agentInstructionBlocks, agentBaseSystemPrompt, defaultSystemPrompt, defaultSystemPromptWithoutBuiltInTools]);
 
   const addRow = () => {
     setCustomRows((prev) => [...prev, { id: crypto.randomUUID(), key: '', value: '' }]);
@@ -495,6 +487,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     payload[LLM_PROVIDER_PROXY_ENABLED] = llmProviderProxyEnabled ? 'true' : 'false';
 
     const draftSettings = buildInstructionSettingsDraft();
+    payload[AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY] = draftSettings[AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY] || defaultSystemPromptWithoutBuiltInTools || defaultSystemPrompt;
     payload[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] = draftSettings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '';
     payload[AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY] = draftSettings[AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY] || '';
 
@@ -600,11 +593,29 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <p className="settings-help">
           Compose reusable instruction blocks for the agent system prompt. Thinking runs inherit these and can add extra blocks.
         </p>
+        <div className="settings-group">
+          <label className="settings-field">
+            <span>Base system prompt</span>
+            <textarea
+              value={agentBaseSystemPrompt}
+              onChange={(event) => setAgentBaseSystemPrompt(event.target.value)}
+              rows={14}
+              spellCheck={false}
+              placeholder={defaultSystemPromptWithoutBuiltInTools || defaultSystemPrompt}
+            />
+            <span className="settings-field-hint">
+              Saved as <code>{AGENT_BASE_SYSTEM_PROMPT_SETTING_KEY}</code>. If empty, the built-in default prompt is used.
+            </span>
+          </label>
+        </div>
         <div className="settings-actions">
           <Link to="/tools" className="settings-add-btn">
             Open Tools
           </Link>
         </div>
+        <p className="settings-help">
+          The <strong>Built-in tools</strong> block below is auto-generated from currently enabled tools and cannot be edited directly.
+        </p>
         <InstructionBlocksEditor
           blocks={agentInstructionBlocks}
           onChange={setAgentInstructionBlocks}
@@ -642,26 +653,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             },
           }}
         />
-        {defaultSystemPrompt || defaultSystemPromptWithoutBuiltInTools ? (
-          <details className="builtin-system-prompt">
-            <summary>
-              Built-in tools prompt text ({builtInToolsBlockTokens} tokens, {builtInToolsEnabled ? 'enabled variant active' : 'disabled variant active'})
-            </summary>
-            <p className="settings-help">
-              This is the hard-coded base prompt variant. It is only used when <code>AAGENT_SYSTEM_PROMPT</code> is not set.
-            </p>
-            <div className="builtin-system-prompt-panels">
-              <div className="builtin-system-prompt-panel">
-                <h3>Active variant</h3>
-                <pre>{activeBuiltInPrompt}</pre>
-              </div>
-              <div className="builtin-system-prompt-panel">
-                <h3>Other variant</h3>
-                <pre>{alternateBuiltInPrompt}</pre>
-              </div>
-            </div>
-          </details>
-        ) : null}
       </div>
 
       <div className="settings-panel">
