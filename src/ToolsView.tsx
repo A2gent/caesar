@@ -497,7 +497,7 @@ function ToolsView() {
     setIsLaunchingBrowserChrome(true);
     try {
       const result = await launchBrowserChrome();
-      setSuccess(`Chrome launched with agent profile (PID: ${result.pid})`);
+      setSuccess(`Chrome launched with agent profile (PID: ${result.pid}) at ${result.profile}`);
       // Refresh profile status after launch
       await loadBrowserChromeProfile();
     } catch (err) {
@@ -1014,12 +1014,13 @@ function ToolsView() {
                                     </div>
                                     <div className="settings-help" style={{ marginTop: '8px' }}>
                                       Opens a new Chrome window with the agent profile as a separate "person".
-                                      You can have both your main profile and agent profile open at the same time.
-                                      Log in to websites in the agent window - the agent will use these sessions.
+                                      Chrome must be fully closed first so it can restart with remote debugging enabled.
+                                      You can switch back to this AgentProfile later from the Chrome profile picker.
+                                      Log in to websites in the agent profile window - the agent will use these sessions.
                                     </div>
                                     {browserChromeProfile?.exists ? (
                                       <div className="settings-help" style={{ marginTop: '8px' }}>
-                                        <div>Profile exists at: <code>~/Library/Application Support/Google/Chrome/AgentProfile</code></div>
+                                        <div>Profile exists at: <code>{browserChromeProfile.path}</code></div>
                                         {browserChromeProfile.lastUsed && (
                                           <div>Last modified: {new Date(browserChromeProfile.lastUsed).toLocaleString()}</div>
                                         )}

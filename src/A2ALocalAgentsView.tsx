@@ -4,12 +4,14 @@ import {
   createLocalDockerAgent,
   getLocalDockerAgentLogs,
   listLocalDockerAgents,
+  listProjects,
   registerLocalDockerAgent,
   removeLocalDockerAgent,
   startLocalDockerAgent,
   stopLocalDockerAgent,
   getApiBaseUrl,
   type LocalDockerAgent,
+  type Project,
   type RegisterLocalDockerAgentResponse,
 } from './api';
 import { getStoredA2ARegistryOwnerEmail, getStoredA2ARegistryURL } from './a2aIdentity';
@@ -98,10 +100,13 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
   const [newAgentKind, setNewAgentKind] = useState('');
   const [newSystemPrompt, setNewSystemPrompt] = useState('');
   const [newSessionID, setNewSessionID] = useState('');
+  const [newProjectID, setNewProjectID] = useState('');
+  const [newProjectMountMode, setNewProjectMountMode] = useState<'ro' | 'rw'>('ro');
   const [batchRolesSpec, setBatchRolesSpec] = useState('');
   const [batchNamePrefix, setBatchNamePrefix] = useState('a2gent-local');
   const [batchStartPort, setBatchStartPort] = useState('');
   const [rebuildNoCache, setRebuildNoCache] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
 
   const [registeringID, setRegisteringID] = useState<string | null>(null);
   const [lastRegisterResult, setLastRegisterResult] = useState<RegisterLocalDockerAgentResponse | null>(null);
@@ -125,6 +130,23 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
   useEffect(() => {
     void loadAgents();
   }, [loadAgents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await listProjects();
+        if (!cancelled) {
+          setProjects(data);
+        }
+      } catch {
+        // Keep local-agent form usable even if projects fail to load.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const runAction = useCallback(async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -155,6 +177,8 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
         agent_kind: newAgentKind.trim() || undefined,
         system_prompt: newSystemPrompt.trim() || undefined,
         session_id: newSessionID.trim() || undefined,
+        project_id: newProjectID.trim() || undefined,
+        project_mount_mode: newProjectID.trim() ? newProjectMountMode : undefined,
       });
       setAgentEmoji('local', newEmoji, created.id);
       setNewName('');
@@ -176,6 +200,7 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
       const parsedStartPort = Number.parseInt(batchStartPort, 10);
       const useSequentialPorts = Number.isFinite(parsedStartPort);
       const sessionID = newSessionID.trim() || undefined;
+      const projectID = newProjectID.trim() || undefined;
       const image = newImage.trim() || undefined;
       const createdAgents: string[] = [];
       const timestampSuffix = Date.now();
@@ -191,6 +216,8 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
           agent_kind: (spec.kind || '').trim() || undefined,
           system_prompt: (spec.systemPrompt || '').trim() || undefined,
           session_id: sessionID,
+          project_id: projectID,
+          project_mount_mode: projectID ? newProjectMountMode : undefined,
         });
         setAgentEmoji('local', newEmoji, created.id);
         createdAgents.push(created.name);
@@ -373,6 +400,33 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
                 onChange={e => setNewSessionID(e.target.value)}
                 placeholder="session-uuid"
               />
+            </label>
+            <label className="settings-field" style={{ gap: 4 }}>
+              <span>Project access (optional)</span>
+              <select
+                value={newProjectID}
+                onChange={e => setNewProjectID(e.target.value)}
+              >
+                <option value="">No project mount</option>
+                {projects
+                  .filter(project => (project.folder || '').trim() !== '')
+                  .map(project => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="settings-field" style={{ gap: 4 }}>
+              <span>Project permission</span>
+              <select
+                value={newProjectMountMode}
+                onChange={e => setNewProjectMountMode(e.target.value === 'rw' ? 'rw' : 'ro')}
+                disabled={newProjectID.trim() === ''}
+              >
+                <option value="ro">Read-only</option>
+                <option value="rw">Read-write</option>
+              </select>
             </label>
           </div>
 

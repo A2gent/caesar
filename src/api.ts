@@ -1012,6 +1012,8 @@ export interface CreateLocalDockerAgentRequest {
   agent_kind?: string;
   system_prompt?: string;
   session_id?: string;
+  project_id?: string;
+  project_mount_mode?: 'ro' | 'rw';
 }
 
 export interface BuildLocalDockerAgentImageRequest {
