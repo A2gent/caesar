@@ -313,6 +313,9 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
         <p className="settings-help">
           Manage local Dockerized Brute agents: list, start, stop, remove, inspect logs, and register them in A2 Registry.
         </p>
+        <p className="settings-help">
+          Security default: newly created local agents start with all built-in tools disabled. Open each agent and enable only the tools you need in its Tools screen.
+        </p>
 
         {error && (
           <div className="error-banner">

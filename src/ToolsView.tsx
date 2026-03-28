@@ -4,7 +4,6 @@ import {
   browseSkillDirectories,
   getApiBaseUrl,
   getSettings,
-  listProviders,
   listCameraDevices,
   listBuiltInSkills,
   listIntegrationBackedSkills,
@@ -19,7 +18,6 @@ import {
   updateSettings,
   getBrowserChromeProfileStatus,
   launchBrowserChrome,
-  type ProviderConfig,
   type BrowserChromeProfileStatus,
 } from './api';
 import { EmptyState, EmptyStateTitle } from './EmptyState';
@@ -38,8 +36,6 @@ import {
   SCREENSHOT_OUTPUT_DIR,
   parseDisabledTools,
   serializeDisabledTools,
-  GIT_COMMIT_PROMPT_TEMPLATE,
-  GIT_COMMIT_PROVIDER,
   speedToOptionIndex,
 } from './skills';
 import { IntegrationProviderIcon, integrationProviderLabel } from './integrationMeta';
@@ -50,17 +46,6 @@ import {
   type ToolCategory,
 } from './toolIcons';
 import { ToolIcon } from './ToolIcon';
-
-const DEFAULT_GIT_COMMIT_PROMPT_TEMPLATE = [
-  'Generate one concise Git commit message in imperative mood.',
-  'Return only the commit message text, no quotes, no bullets, no explanation.',
-  '',
-  'Changed files:',
-  '{{files}}',
-  '',
-  'Diff snippets:',
-  '{{diffs}}',
-].join('\n');
 
 function getParentPath(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, '');
@@ -196,17 +181,6 @@ function ToolsView() {
       list.push(skill);
       groups.set(category, list);
     }
-    const systemTools = groups.get('system') || [];
-    if (!systemTools.some((skill) => skill.name === 'git_integration')) {
-      systemTools.push({
-        id: 'tool:git_integration',
-        name: 'git_integration',
-        kind: 'tool',
-        description: 'Configure commit-message generation provider/model/prompt used by Git integration in project commit dialog.',
-      });
-      groups.set('system', systemTools);
-    }
-
     // Return only non-empty groups in category order
     return TOOL_CATEGORIES
       .map((cat) => ({ category: cat, skills: groups.get(cat.id) || [] }))
@@ -218,9 +192,6 @@ function ToolsView() {
   const [browserChromeProfile, setBrowserChromeProfile] = useState<BrowserChromeProfileStatus | null>(null);
   const [isLoadingBrowserChromeProfile, setIsLoadingBrowserChromeProfile] = useState(false);
   const [isLaunchingBrowserChrome, setIsLaunchingBrowserChrome] = useState(false);
-  const [providers, setProviders] = useState<ProviderConfig[]>([]);
-  const [gitCommitProvider, setGitCommitProvider] = useState('');
-  const [gitCommitPromptTemplate, setGitCommitPromptTemplate] = useState('');
   const hasBrowserChromeTool = builtInSkills.some((skill) => skill.name === 'browser_chrome');
 
   const hasElevenLabsSkill = integrationSkills.some((integration) => integration.provider === 'elevenlabs');
@@ -280,28 +251,11 @@ function ToolsView() {
       setCameraIndex(loaded[CAMERA_INDEX] || '');
       setChromeHeadless((loaded[CHROME_HEADLESS] || '').trim().toLowerCase() === 'true');
       setDisabledTools(parseDisabledTools(loaded[DISABLED_TOOLS_KEY] || ''));
-      setGitCommitProvider((loaded[GIT_COMMIT_PROVIDER] || '').trim());
-      setGitCommitPromptTemplate(loaded[GIT_COMMIT_PROMPT_TEMPLATE] || DEFAULT_GIT_COMMIT_PROMPT_TEMPLATE);
     } catch (loadError) {
       console.error('Failed to load tools settings:', loadError);
       setError(loadError instanceof Error ? loadError.message : 'Failed to load tools settings');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const loadProvidersList = async () => {
-    try {
-      const loadedProviders = await listProviders();
-      setProviders(loadedProviders);
-      if (gitCommitProvider.trim() === '') {
-        const active = loadedProviders.find((provider) => provider.is_active);
-        if (active) {
-          setGitCommitProvider(active.type);
-        }
-      }
-    } catch (loadError) {
-      console.error('Failed to load providers for Git tool:', loadError);
     }
   };
 
@@ -401,10 +355,6 @@ function ToolsView() {
 
   useEffect(() => {
     void loadSettings();
-  }, []);
-
-  useEffect(() => {
-    void loadProvidersList();
   }, []);
 
   useEffect(() => {
@@ -631,18 +581,6 @@ function ToolsView() {
       payload[CAMERA_INDEX] = camIndex;
     }
     payload[CHROME_HEADLESS] = chromeHeadless ? 'true' : 'false';
-    const gitProvider = gitCommitProvider.trim();
-    if (gitProvider === '') {
-      delete payload[GIT_COMMIT_PROVIDER];
-    } else {
-      payload[GIT_COMMIT_PROVIDER] = gitProvider;
-    }
-    const gitPromptTemplate = gitCommitPromptTemplate.trim();
-    if (gitPromptTemplate === '') {
-      delete payload[GIT_COMMIT_PROMPT_TEMPLATE];
-    } else {
-      payload[GIT_COMMIT_PROMPT_TEMPLATE] = gitPromptTemplate;
-    }
     const serializedDisabledTools = serializeDisabledTools(disabledTools);
     if (serializedDisabledTools === '') {
       delete payload[DISABLED_TOOLS_KEY];
@@ -1027,43 +965,6 @@ function ToolsView() {
                                       </div>
                                     ) : null}
                                   </div>
-                                </div>
-                              </details>
-                            ) : null}
-                            {skill.name === 'git_integration' ? (
-                              <details className="skill-tool-details" open>
-                                <summary>Configure commit message generation</summary>
-                                <p>Controls how commit message suggestions are generated in Project Git commit dialog.</p>
-                                <div className="settings-group">
-                                  <label className="settings-field">
-                                    <span>LLM provider</span>
-                                    <select
-                                      value={gitCommitProvider}
-                                      onChange={(event) => setGitCommitProvider(event.target.value)}
-                                    >
-                                      <option value="">Use active provider</option>
-                                      {providers.map((provider) => (
-                                        <option key={provider.type} value={provider.type}>
-                                          {provider.display_name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <div className="settings-help">
-                                      Saved as <code>{GIT_COMMIT_PROVIDER}</code>. Leave empty to use currently active provider.
-                                    </div>
-                                  </label>
-                                  <label className="settings-field">
-                                    <span>Prompt template</span>
-                                    <textarea
-                                      value={gitCommitPromptTemplate}
-                                      onChange={(event) => setGitCommitPromptTemplate(event.target.value)}
-                                      rows={10}
-                                      spellCheck={false}
-                                    />
-                                    <div className="settings-help">
-                                      Saved as <code>{GIT_COMMIT_PROMPT_TEMPLATE}</code>. Available placeholders: <code>{'{{files}}'}</code>, <code>{'{{diffs}}'}</code>.
-                                    </div>
-                                  </label>
                                 </div>
                               </details>
                             ) : null}

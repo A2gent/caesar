@@ -27,7 +27,6 @@ const TOOL_ICONS_BY_NAME: Record<string, string> = {
   mcp_manage: '🔌',
   fetch_url: '📡',
   exa_search: '🔬',
-  git_integration: '🌿',
   delegate_to_subagent: '🤖',
   delegate_to_external_agent: '🌐',
   discover_external_agents: '🛰️',
@@ -129,7 +128,6 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   bash: 'system',
   code_execution: 'system',
   pipeline: 'system',
-  git_integration: 'system',
   // Task Management
   recurring_jobs_tool: 'task-management',
   session_task_progress: 'task-management',

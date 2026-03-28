@@ -990,6 +990,10 @@ function ProjectView() {
   const [isStagingAll, setIsStagingAll] = useState(false);
   const [folderGitStatusByPath, setFolderGitStatusByPath] = useState<Record<string, { hasGit: boolean; hasChanges: boolean }>>({});
   const folderGitScanGenerationRef = useRef(0);
+  const invalidateFolderGitStatusCache = useCallback(() => {
+    folderGitScanGenerationRef.current += 1;
+    setFolderGitStatusByPath({});
+  }, []);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -1269,9 +1273,8 @@ function ProjectView() {
   }, [treeEntries, expandedDirs]);
 
   useEffect(() => {
-    folderGitScanGenerationRef.current += 1;
-    setFolderGitStatusByPath({});
-  }, [projectId, rootFolder]);
+    invalidateFolderGitStatusCache();
+  }, [projectId, rootFolder, invalidateFolderGitStatusCache]);
 
   useEffect(() => {
     if (!projectId || !rootFolder || visibleDirectoryPaths.length === 0) {
@@ -2403,6 +2406,8 @@ function ProjectView() {
       await loadGitStatus();
       await refreshCommitDialogFiles();
       await loadGitHistory();
+      invalidateFolderGitStatusCache();
+      setActiveTab('explorer');
     } catch (commitError) {
       setError(commitError instanceof Error ? commitError.message : 'Failed to commit changes');
     } finally {
@@ -2431,6 +2436,8 @@ function ProjectView() {
       await loadGitStatus();
       await refreshCommitDialogFiles();
       await loadGitHistory();
+      invalidateFolderGitStatusCache();
+      setActiveTab('explorer');
     } catch (err) {
       const messageText = err instanceof Error ? err.message : 'Failed to commit and push';
       const normalized = messageText.toLowerCase();

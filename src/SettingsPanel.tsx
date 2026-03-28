@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { browseSkillDirectories, estimateInstructionPrompt, type MindTreeEntry, type SystemPromptSnapshot } from './api';
+import {
+  browseSkillDirectories,
+  estimateInstructionPrompt,
+  listProviders,
+  type MindTreeEntry,
+  type ProviderConfig,
+  type SystemPromptSnapshot,
+} from './api';
 import InstructionBlocksEditor from './InstructionBlocksEditor';
 import {
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
@@ -14,7 +21,11 @@ import {
   type InstructionBlock,
   type InstructionBlockType,
 } from './instructionBlocks';
-import { SKILLS_MANAGED_SETTING_KEYS } from './skills';
+import {
+  GIT_COMMIT_PROMPT_TEMPLATE,
+  GIT_COMMIT_PROVIDER,
+  SKILLS_MANAGED_SETTING_KEYS,
+} from './skills';
 import {
   VOICE_LANGUAGE_OPTIONS,
   readVoiceInputDeviceSetting,
@@ -47,6 +58,20 @@ const LLM_PROVIDER_PROXY_ENABLED = 'A2GENT_LLM_PROVIDER_PROXY_ENABLED';
 const DEFAULT_COMPACTION_TRIGGER = '80';
 const DEFAULT_COMPACTION_PROMPT = 'Create a concise continuation summary preserving goals, progress, constraints, and next actions.';
 const DEFAULT_LLM_RETRIES = '3';
+const DEFAULT_GIT_COMMIT_PROMPT_TEMPLATE = [
+  'Generate a descriptive Git commit message based on provided files and diffs.',
+  'Return plain text only (no markdown, no code fences).',
+  'Format:',
+  '1) First line: imperative summary (max 72 chars).',
+  '2) Blank line.',
+  '3) 2-4 bullet points with specific technical changes.',
+  '',
+  'Changed files:',
+  '{{files}}',
+  '',
+  'Diff snippets:',
+  '{{diffs}}',
+].join('\n');
 
 const MANAGED_INSTRUCTION_BLOCK_TYPES: InstructionBlockType[] = [
   BUILTIN_TOOLS_BLOCK_TYPE,
@@ -203,6 +228,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [voiceInputDeviceId, setVoiceInputDeviceId] = useState(() => readVoiceInputDeviceSetting());
   const [voiceInputDevices, setVoiceInputDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
   const [isLoadingVoiceInputDevices, setIsLoadingVoiceInputDevices] = useState(false);
+  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [gitCommitProvider, setGitCommitProvider] = useState((settings[GIT_COMMIT_PROVIDER] || '').trim());
+  const [gitCommitPromptTemplate, setGitCommitPromptTemplate] = useState(
+    settings[GIT_COMMIT_PROMPT_TEMPLATE] || DEFAULT_GIT_COMMIT_PROMPT_TEMPLATE,
+  );
 
   useEffect(() => {
     const rows: CustomRow[] = [];
@@ -219,7 +249,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setSessionsFolder(settings[SESSIONS_FOLDER] || '');
     setLLMProviderProxyEnabled(settings[LLM_PROVIDER_PROXY_ENABLED] !== 'false');
     setAgentInstructionBlocks(ensureManagedInstructionBlocks(parseInstructionBlocksSetting(settings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '')));
+    setGitCommitProvider((settings[GIT_COMMIT_PROVIDER] || '').trim());
+    setGitCommitPromptTemplate(settings[GIT_COMMIT_PROMPT_TEMPLATE] || DEFAULT_GIT_COMMIT_PROMPT_TEMPLATE);
   }, [settings]);
+
+  useEffect(() => {
+    const loadProvidersList = async () => {
+      try {
+        const loadedProviders = await listProviders();
+        setProviders(loadedProviders);
+      } catch (error) {
+        console.error('Failed to load providers in settings:', error);
+      }
+    };
+    void loadProvidersList();
+  }, []);
 
   const refreshVoiceInputDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) {
@@ -454,6 +498,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     payload[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] = draftSettings[AGENT_INSTRUCTION_BLOCKS_SETTING_KEY] || '';
     payload[AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY] = draftSettings[AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY] || '';
 
+    delete payload[GIT_COMMIT_PROVIDER];
+    delete payload[GIT_COMMIT_PROMPT_TEMPLATE];
+
+    const trimmedGitProvider = gitCommitProvider.trim();
+    if (trimmedGitProvider !== '') {
+      payload[GIT_COMMIT_PROVIDER] = trimmedGitProvider;
+    }
+    const trimmedGitPrompt = gitCommitPromptTemplate.trim();
+    if (trimmedGitPrompt !== '') {
+      payload[GIT_COMMIT_PROMPT_TEMPLATE] = trimmedGitPrompt;
+    }
+
     for (const row of customRows) {
       const key = row.key.trim();
       if (!key || REMOVED_ENV_KEYS.has(key)) {
@@ -606,6 +662,44 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
           </details>
         ) : null}
+      </div>
+
+      <div className="settings-panel">
+        <h2>🌿 Git integration</h2>
+        <p className="settings-help">
+          Configure auto-generated commit messages used in Project View Git Changes.
+        </p>
+        <div className="settings-group">
+          <label className="settings-field">
+            <span>LLM provider</span>
+            <select
+              value={gitCommitProvider}
+              onChange={(event) => setGitCommitProvider(event.target.value)}
+            >
+              <option value="">Use active provider</option>
+              {providers.map((provider) => (
+                <option key={provider.type} value={provider.type}>
+                  {provider.display_name}
+                </option>
+              ))}
+            </select>
+            <span className="settings-field-hint">
+              Saved as <code>{GIT_COMMIT_PROVIDER}</code>.
+            </span>
+          </label>
+          <label className="settings-field">
+            <span>Prompt template</span>
+            <textarea
+              value={gitCommitPromptTemplate}
+              onChange={(event) => setGitCommitPromptTemplate(event.target.value)}
+              rows={10}
+              spellCheck={false}
+            />
+            <span className="settings-field-hint">
+              Saved as <code>{GIT_COMMIT_PROMPT_TEMPLATE}</code>. Placeholders: <code>{'{{files}}'}</code>, <code>{'{{diffs}}'}</code>.
+            </span>
+          </label>
+        </div>
       </div>
 
       <div className="settings-panel">
