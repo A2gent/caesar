@@ -129,6 +129,40 @@ export function getStoredFavoriteA2AAgents(): FavoriteA2AAgent[] {
   }
 }
 
+export async function updateRegistryAgentDiscoverable(registryUrl: string, apiKey: string, agentId: string, discoverable: boolean): Promise<RegistrySelfAgent> {
+  const normalizedURL = registryUrl.trim().replace(/\/$/, '');
+  const normalizedKey = apiKey.trim();
+  if (!normalizedURL) {
+    throw new Error('Registry URL is not set');
+  }
+  if (!normalizedKey) {
+    throw new Error('API key is not set');
+  }
+
+  const response = await fetch(`${normalizedURL}/agents/${encodeURIComponent(agentId)}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${normalizedKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ discoverable }),
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json() as { error?: string };
+      if (body.error?.trim()) {
+        detail = body.error.trim();
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return response.json() as Promise<RegistrySelfAgent>;
+}
+
 export function isFavoriteA2AAgent(agentID: string): boolean {
   const normalized = agentID.trim();
   if (!normalized) {

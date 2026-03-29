@@ -21,6 +21,7 @@ import {
   getStoredA2ARegistryURL,
   getStoredLocalA2AAgentID,
   storeLocalA2AAgentID,
+  updateRegistryAgentDiscoverable,
 } from './a2aIdentity';
 
 const DEFAULT_SQUARE_GRPC_ADDR = 'a2gent.net:9001';
@@ -134,6 +135,7 @@ function A2AMyAgentView() {
 
   const [localAgentID, setLocalAgentID] = useState<string>(getStoredLocalA2AAgentID());
   const [localAgentIDError, setLocalAgentIDError] = useState<string | null>(null);
+  const [isDiscoverable, setIsDiscoverable] = useState(false);
   const [isContainerizedAgent, setIsContainerizedAgent] = useState(false);
 
   // Derived
@@ -245,6 +247,7 @@ function A2AMyAgentView() {
         const me = await fetchRegistrySelfAgent(registryURL, apiKey);
         storeLocalA2AAgentID(me.id);
         setLocalAgentID(me.id);
+        setIsDiscoverable(me.discoverable);
         setLocalAgentIDError(null);
       } catch (err) {
         clearStoredLocalA2AAgentID();
@@ -303,6 +306,7 @@ function A2AMyAgentView() {
         const me = await fetchRegistrySelfAgent(getStoredA2ARegistryURL(), key);
         storeLocalA2AAgentID(me.id);
         setLocalAgentID(me.id);
+        setIsDiscoverable(me.discoverable);
         setLocalAgentIDError(null);
       } catch {
         clearStoredLocalA2AAgentID();
@@ -319,21 +323,19 @@ function A2AMyAgentView() {
     }
   };
 
-  const handleToggleEnabled = async (next: boolean) => {
-    if (!integration) return;
+  const handleToggleVisibility = async (next: boolean) => {
+    if (!integration || !localAgentID) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      await updateIntegration(integration.id, {
-        provider: 'a2_registry', name: integration.name, mode: 'duplex',
-        enabled: next, config: integration.config,
-      });
-      setSuccess(next ? 'Agent is now active on the network.' : 'Agent is now offline.');
-      await loadIntegration();
-      void loadTunnelStatus();
+      const apiKey = integration.config?.api_key || '';
+      const registryURL = getStoredA2ARegistryURL();
+      await updateRegistryAgentDiscoverable(registryURL, apiKey, localAgentID, next);
+      setIsDiscoverable(next);
+      setSuccess(next ? 'Agent is now public on the network.' : 'Agent is now private (hidden).');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update');
+      setError(err instanceof Error ? err.message : 'Failed to update visibility');
     } finally {
       setSaving(false);
     }
@@ -484,7 +486,6 @@ function A2AMyAgentView() {
   }
 
   function renderConnectedPanel() {
-    const enabled = integration?.enabled ?? false;
     const state = tunnelStatus?.state ?? 'disconnected';
     const transport = (integration?.config?.transport as 'grpc' | 'websocket') || 'grpc';
     const addr = transport === 'websocket'
@@ -535,13 +536,13 @@ function A2AMyAgentView() {
           {'•'.repeat(24)}
         </code>
 
-        {/* Enable toggle */}
+        {/* Visibility toggle */}
         <label className="settings-field integration-toggle" style={{ cursor: saving ? 'not-allowed' : 'pointer', userSelect: 'none' }}>
           <span>Public — visible to other agents on the network</span>
           <input
             type="checkbox"
-            checked={enabled}
-            onChange={e => void handleToggleEnabled(e.target.checked)}
+            checked={isDiscoverable}
+            onChange={e => void handleToggleVisibility(e.target.checked)}
             disabled={saving}
           />
         </label>
