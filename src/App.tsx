@@ -23,6 +23,8 @@ import A2ARegistrySettingsView from './A2ARegistrySettingsView';
 import A2AMyAgentView from './A2AMyAgentView';
 import A2AContactView from './A2AContactView';
 import A2ALocalAgentsView from './A2ALocalAgentsView';
+import A2ACreateLocalAgentView from './A2ACreateLocalAgentView';
+import A2ACreateBatchAgentsView from './A2ACreateBatchAgentsView';
 import WorkflowsView from './WorkflowsView';
 import WorkflowEditView from './WorkflowEditView';
 import {
@@ -826,6 +828,8 @@ function AppLayout() {
           <Route path="/a2a/registry-settings" element={<A2ARegistrySettingsView />} />
           <Route path="/a2a/my-agent" element={<A2AMyAgentView />} />
           <Route path="/a2a/local-agents" element={<A2ALocalAgentsView onOpenAgent={handleOpenSubAgent} />} />
+          <Route path="/a2a/local-agents/create" element={<A2ACreateLocalAgentView />} />
+          <Route path="/a2a/local-agents/batch-create" element={<A2ACreateBatchAgentsView />} />
           <Route path="/a2a/contact/:agentId" element={<A2AContactView />} />
         </Routes>
       </div>

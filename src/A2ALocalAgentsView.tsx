@@ -1,21 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  buildLocalDockerAgentImage,
-  createLocalDockerAgent,
   getLocalDockerAgentLogs,
   listLocalDockerAgents,
-  listProjects,
   registerLocalDockerAgent,
   removeLocalDockerAgent,
   startLocalDockerAgent,
   stopLocalDockerAgent,
   getApiBaseUrl,
   type LocalDockerAgent,
-  type Project,
   type RegisterLocalDockerAgentResponse,
 } from './api';
 import { getStoredA2ARegistryOwnerEmail, getStoredA2ARegistryURL } from './a2aIdentity';
-import { setAgentEmoji, withAgentEmoji } from './agentVisuals';
+import { withAgentEmoji } from './agentVisuals';
 
 function relativeTime(iso?: string): string {
   if (!iso) return 'unknown';
@@ -45,45 +42,8 @@ function resolveAgentApiUrl(agent: LocalDockerAgent): string {
   return '';
 }
 
-interface BatchAgentSpec {
-  name?: string;
-  kind?: string;
-  systemPrompt?: string;
-}
-
-function slugifyForContainerName(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function parseBatchAgentSpecs(raw: string): BatchAgentSpec[] {
-  const specs: BatchAgentSpec[] = [];
-  const lines = raw.split('\n');
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i].trim();
-    if (!line || line.startsWith('#')) {
-      continue;
-    }
-    const parts = line.split('|').map(part => part.trim());
-    if (parts.length === 1) {
-      specs.push({ kind: parts[0] });
-      continue;
-    }
-    if (parts.length === 2) {
-      specs.push({ kind: parts[0], systemPrompt: parts[1] });
-      continue;
-    }
-    const [name, kind, ...promptParts] = parts;
-    specs.push({ name, kind, systemPrompt: promptParts.join(' | ').trim() });
-  }
-  return specs;
-}
-
-interface A2ALocalAgentsViewProps {
-  onOpenAgent?: (baseUrl: string) => void | Promise<void>;
+export interface A2ALocalAgentsViewProps {
+  onOpenAgent?: (apiUrl: string) => Promise<void>;
 }
 
 function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
@@ -92,21 +52,6 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-
-  const [newName, setNewName] = useState('');
-  const [newEmoji, setNewEmoji] = useState('🐳');
-  const [newPort, setNewPort] = useState('');
-  const [newImage, setNewImage] = useState('a2gent-brute:latest');
-  const [newAgentKind, setNewAgentKind] = useState('');
-  const [newSystemPrompt, setNewSystemPrompt] = useState('');
-  const [newSessionID, setNewSessionID] = useState('');
-  const [newProjectID, setNewProjectID] = useState('');
-  const [newProjectMountMode, setNewProjectMountMode] = useState<'ro' | 'rw'>('ro');
-  const [batchRolesSpec, setBatchRolesSpec] = useState('');
-  const [batchNamePrefix, setBatchNamePrefix] = useState('a2gent-local');
-  const [batchStartPort, setBatchStartPort] = useState('');
-  const [rebuildNoCache, setRebuildNoCache] = useState(false);
-  const [projects, setProjects] = useState<Project[]>([]);
 
   const [registeringID, setRegisteringID] = useState<string | null>(null);
   const [lastRegisterResult, setLastRegisterResult] = useState<RegisterLocalDockerAgentResponse | null>(null);
@@ -131,23 +76,6 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
     void loadAgents();
   }, [loadAgents]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const data = await listProjects();
-        if (!cancelled) {
-          setProjects(data);
-        }
-      } catch {
-        // Keep local-agent form usable even if projects fail to load.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const runAction = useCallback(async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
     setError(null);
@@ -166,75 +94,6 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
       setBusy(null);
     }
   }, [loadAgents]);
-
-  const handleCreate = () => {
-    void runAction('create', async () => {
-      const hostPort = Number.parseInt(newPort, 10);
-      const created = await createLocalDockerAgent({
-        name: newName.trim() || undefined,
-        host_port: Number.isFinite(hostPort) ? hostPort : undefined,
-        image: newImage.trim() || undefined,
-        agent_kind: newAgentKind.trim() || undefined,
-        system_prompt: newSystemPrompt.trim() || undefined,
-        session_id: newSessionID.trim() || undefined,
-        project_id: newProjectID.trim() || undefined,
-        project_mount_mode: newProjectID.trim() ? newProjectMountMode : undefined,
-      });
-      setAgentEmoji('local', newEmoji, created.id);
-      setNewName('');
-      setNewEmoji('🐳');
-      setNewPort('');
-      setNewAgentKind('');
-      setNewSystemPrompt('');
-      setSuccess('Local agent container started.');
-    });
-  };
-
-  const handleCreateBatch = () => {
-    void runAction('create-batch', async () => {
-      const specs = parseBatchAgentSpecs(batchRolesSpec);
-      if (specs.length === 0) {
-        throw new Error('Enter at least one role line for batch creation.');
-      }
-      const prefix = batchNamePrefix.trim() || 'a2gent-local';
-      const parsedStartPort = Number.parseInt(batchStartPort, 10);
-      const useSequentialPorts = Number.isFinite(parsedStartPort);
-      const sessionID = newSessionID.trim() || undefined;
-      const projectID = newProjectID.trim() || undefined;
-      const image = newImage.trim() || undefined;
-      const createdAgents: string[] = [];
-      const timestampSuffix = Date.now();
-
-      for (let index = 0; index < specs.length; index += 1) {
-        const spec = specs[index];
-        const fallbackToken = slugifyForContainerName(spec.kind || '') || `agent-${index + 1}`;
-        const generatedName = `${prefix}-${timestampSuffix}-${index + 1}-${fallbackToken}`;
-        const created = await createLocalDockerAgent({
-          name: (spec.name || '').trim() || generatedName,
-          host_port: useSequentialPorts ? (parsedStartPort + index) : undefined,
-          image,
-          agent_kind: (spec.kind || '').trim() || undefined,
-          system_prompt: (spec.systemPrompt || '').trim() || undefined,
-          session_id: sessionID,
-          project_id: projectID,
-          project_mount_mode: projectID ? newProjectMountMode : undefined,
-        });
-        setAgentEmoji('local', newEmoji, created.id);
-        createdAgents.push(created.name);
-      }
-      setSuccess(`Started ${createdAgents.length} local agent containers.`);
-    });
-  };
-
-  const handleBuildImage = () => {
-    void runAction('build-image', async () => {
-      const resp = await buildLocalDockerAgentImage({
-        image: newImage.trim() || undefined,
-        no_cache: rebuildNoCache,
-      });
-      setSuccess(`Built ${resp.image} from ${resp.dockerfile}.`);
-    });
-  };
 
   const handleLogs = (agent: LocalDockerAgent) => {
     const isOpen = !!openLogs[agent.id];
@@ -331,178 +190,13 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
           </div>
         )}
 
-        <section className="a2a-config-block local-agents-form-block">
-          <div className="integration-form-title-row" style={{ marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>Start a local agent</h3>
-            <button type="button" className="settings-add-btn" onClick={() => void loadAgents()} disabled={loading || busy !== null}>
-              Refresh
-            </button>
-          </div>
-
-          <div className="local-agents-form-grid">
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Name (optional)</span>
-              <input
-                type="text"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                placeholder="a2gent-local-..."
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Emoji</span>
-              <input
-                type="text"
-                value={newEmoji}
-                onChange={e => setNewEmoji(e.target.value)}
-                placeholder="🐳"
-                maxLength={4}
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Host port (optional)</span>
-              <input
-                type="number"
-                value={newPort}
-                onChange={e => setNewPort(e.target.value)}
-                placeholder="18080"
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Image</span>
-              <input
-                type="text"
-                value={newImage}
-                onChange={e => setNewImage(e.target.value)}
-                placeholder="a2gent-brute:latest"
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Agent kind / role (optional)</span>
-              <input
-                type="text"
-                value={newAgentKind}
-                onChange={e => setNewAgentKind(e.target.value)}
-                placeholder="researcher, planner, reviewer..."
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4, gridColumn: '1 / -1' }}>
-              <span>Initial system prompt (optional)</span>
-              <textarea
-                value={newSystemPrompt}
-                onChange={e => setNewSystemPrompt(e.target.value)}
-                placeholder="You are a focused code reviewer. Prioritize correctness risks and actionable findings."
-                rows={4}
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Session ID (optional)</span>
-              <input
-                type="text"
-                value={newSessionID}
-                onChange={e => setNewSessionID(e.target.value)}
-                placeholder="session-uuid"
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Project access (optional)</span>
-              <select
-                value={newProjectID}
-                onChange={e => setNewProjectID(e.target.value)}
-              >
-                <option value="">No project mount</option>
-                {projects
-                  .filter(project => (project.folder || '').trim() !== '')
-                  .map(project => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Project permission</span>
-              <select
-                value={newProjectMountMode}
-                onChange={e => setNewProjectMountMode(e.target.value === 'rw' ? 'rw' : 'ro')}
-                disabled={newProjectID.trim() === ''}
-              >
-                <option value="ro">Read-only</option>
-                <option value="rw">Read-write</option>
-              </select>
-            </label>
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <button type="button" className="settings-add-btn" onClick={handleCreate} disabled={busy !== null}>
-              {busy === 'create' ? 'Starting…' : 'Start container'}
-            </button>
-            <button
-              type="button"
-              className="settings-add-btn"
-              onClick={handleBuildImage}
-              disabled={busy !== null}
-              style={{ marginLeft: 8 }}
-            >
-              {busy === 'build-image' ? 'Building…' : 'Build/Rebuild image'}
-            </button>
-            <label className="settings-help" style={{ display: 'inline-flex', marginLeft: 12, gap: 6, alignItems: 'center' }}>
-              <input
-                type="checkbox"
-                checked={rebuildNoCache}
-                onChange={e => setRebuildNoCache(e.target.checked)}
-                disabled={busy !== null}
-              />
-              no cache
-            </label>
-          </div>
-          <p className="settings-help" style={{ marginTop: 8, marginBottom: 0 }}>
-            Run build once on new machines if image pull fails.
-          </p>
-        </section>
-
-        <section className="a2a-config-block local-agents-form-block">
-          <div className="integration-form-title-row" style={{ marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>Batch create role-based agents</h3>
-          </div>
-          <div className="local-agents-form-grid">
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Name prefix</span>
-              <input
-                type="text"
-                value={batchNamePrefix}
-                onChange={e => setBatchNamePrefix(e.target.value)}
-                placeholder="a2gent-local"
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4 }}>
-              <span>Start port (optional, increments)</span>
-              <input
-                type="number"
-                value={batchStartPort}
-                onChange={e => setBatchStartPort(e.target.value)}
-                placeholder="18100"
-              />
-            </label>
-            <label className="settings-field" style={{ gap: 4, gridColumn: '1 / -1' }}>
-              <span>Roles spec (one per line)</span>
-              <textarea
-                value={batchRolesSpec}
-                onChange={e => setBatchRolesSpec(e.target.value)}
-                placeholder={'researcher | You focus on source-backed research.\nplanner | You create concise implementation plans.\nreviewer | You review code for correctness and regressions.'}
-                rows={6}
-              />
-            </label>
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <button type="button" className="settings-add-btn" onClick={handleCreateBatch} disabled={busy !== null}>
-              {busy === 'create-batch' ? 'Starting…' : 'Start batch'}
-            </button>
-          </div>
-          <p className="settings-help" style={{ marginTop: 8, marginBottom: 0 }}>
-            Format: <code>kind</code>, or <code>kind | system prompt</code>, or <code>name | kind | system prompt</code>.
-          </p>
-        </section>
+        <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+          <Link to="/a2a/local-agents/create" className="settings-add-btn">Create New Agent</Link>
+          <Link to="/a2a/local-agents/batch-create" className="settings-add-btn">Create Multiple Agents</Link>
+          <button type="button" className="settings-add-btn" onClick={() => void loadAgents()} disabled={loading || busy !== null} style={{ marginLeft: 'auto' }}>
+            Refresh
+          </button>
+        </div>
 
         <section className="a2a-config-block">
           <div className="integration-form-title-row" style={{ marginBottom: 10 }}>
