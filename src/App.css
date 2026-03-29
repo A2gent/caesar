@@ -1284,6 +1284,10 @@ body.mind-resizing * {
   border-radius: 7px;
   padding: 6px;
   min-width: 0;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
 .session-workflow-node.status-completed {
@@ -1296,6 +1300,20 @@ body.mind-resizing * {
 
 .session-workflow-node.status-failed {
   border-color: #8a4b4b;
+}
+
+.session-workflow-node.clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.session-workflow-node.clickable:hover {
+  border-color: #6b89b3;
+  background: #263044;
+}
+
+.session-workflow-node:disabled {
+  cursor: default;
 }
 
 .session-workflow-node-top {
@@ -1313,17 +1331,25 @@ body.mind-resizing * {
 .session-workflow-node-status {
   font-size: 11px;
   color: #9fb3d8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+  margin-left: auto;
+  text-align: right;
 }
 
-.session-workflow-node-open {
-  margin-left: auto;
-  border: 1px solid #415273;
-  background: #2a3550;
-  color: #bdd0f0;
-  border-radius: 5px;
-  font-size: 11px;
-  padding: 1px 6px;
-  cursor: pointer;
+.session-workflow-node-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #8ecbff;
+}
+
+.session-workflow-node-running .session-status-dot {
+  width: 9px;
+  height: 9px;
 }
 
 .session-workflow-node-preview {
@@ -10135,6 +10161,11 @@ button.session-provider-chip:hover {
   border-color: #ddaaaa;
 }
 
+[data-theme='light'] .session-workflow-node.clickable:hover {
+  border-color: #8fb1d6;
+  background: #f2f7ff;
+}
+
 [data-theme='light'] .session-workflow-node-id {
   color: #1f2f4d;
 }
@@ -10143,10 +10174,8 @@ button.session-provider-chip:hover {
   color: #4f6380;
 }
 
-[data-theme='light'] .session-workflow-node-open {
-  background: #eaf1fd;
-  border-color: #b8c8e3;
-  color: #284a78;
+[data-theme='light'] .session-workflow-node-running {
+  color: #24679c;
 }
 
 [data-theme='light'] .session-workflow-node-preview {

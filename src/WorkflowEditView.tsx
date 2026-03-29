@@ -215,6 +215,71 @@ function parseYamlStopCondition(raw: unknown): WorkflowStopCondition | null {
   return null;
 }
 
+function workflowCycleWarning(nodes: WorkflowNode[], edges: WorkflowEdge[]): string | null {
+  if (nodes.length === 0) {
+    return null;
+  }
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const inDegree = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+  nodeIds.forEach((nodeID) => {
+    inDegree.set(nodeID, 0);
+    outgoing.set(nodeID, []);
+  });
+
+  edges.forEach((edge) => {
+    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+      return;
+    }
+    inDegree.set(edge.to, (inDegree.get(edge.to) || 0) + 1);
+    outgoing.get(edge.from)?.push(edge.to);
+  });
+
+  const queue: string[] = [];
+  inDegree.forEach((deg, nodeID) => {
+    if (deg === 0) {
+      queue.push(nodeID);
+    }
+  });
+
+  let visited = 0;
+  while (queue.length > 0) {
+    const nodeID = queue.shift();
+    if (!nodeID) continue;
+    visited += 1;
+    (outgoing.get(nodeID) || []).forEach((nextID) => {
+      const nextDegree = (inDegree.get(nextID) || 0) - 1;
+      inDegree.set(nextID, nextDegree);
+      if (nextDegree === 0) {
+        queue.push(nextID);
+      }
+    });
+  }
+
+  if (visited === nodeIds.size) {
+    return null;
+  }
+  const blocked = Array.from(inDegree.entries())
+    .filter(([, deg]) => deg > 0)
+    .map(([nodeID]) => nodeID)
+    .sort();
+  return `Workflow graph contains a loop. Nodes in loop: ${blocked.join(', ')}. Use policy.maxTurns/timeboxMinutes and, for judge workflows, make the judge output VERDICT: APPROVED to end early.`;
+}
+
+function withTopologyValidation(graph: ParsedGraph): ParsedGraph {
+  if (graph.errors.length > 0) {
+    return graph;
+  }
+  const cycleWarning = workflowCycleWarning(graph.nodes, graph.edges);
+  if (!cycleWarning) {
+    return graph;
+  }
+  return {
+    ...graph,
+    warnings: [...graph.warnings, cycleWarning],
+  };
+}
+
 function parseYamlGraph(
   source: string,
   subAgents: SubAgent[],
@@ -485,7 +550,7 @@ function parseGraphDefinition(
   try {
     const yamlParsed = parseYamlGraph(source, subAgents, localAgents, favoriteExternalAgents);
     if (yamlParsed.errors.length === 0 || yamlIntent) {
-      return yamlParsed;
+      return withTopologyValidation(yamlParsed);
     }
   } catch {
     if (yamlIntent) {
@@ -494,10 +559,10 @@ function parseGraphDefinition(
   }
   const legacy = parseGraphDsl(source, subAgents, localAgents, favoriteExternalAgents);
   if (legacy.errors.length === 0) {
-    return {
+    return withTopologyValidation({
       ...legacy,
       warnings: [...legacy.warnings, 'Parsed as legacy line DSL. Prefer YAML nodes/edges format.'],
-    };
+    });
   }
   return legacy;
 }
@@ -1076,6 +1141,9 @@ function WorkflowEditView() {
                     </p>
                     <p className="settings-help">
                       Define <code>nodes</code> with <code>id</code>. <code>label</code>, <code>kind</code>, and <code>ref</code> are optional. Define stop policy in <code>policy</code>.
+                    </p>
+                    <p className="settings-help">
+                      Loops are supported (for example, <code>developer -&gt; critic -&gt; developer</code>). Use <code>policy.maxTurns</code> and/or <code>policy.timeboxMinutes</code> to cap iterations. For <code>stopCondition: judge</code>, the judge node should emit <code>VERDICT: APPROVED</code> to stop early.
                     </p>
                     <textarea
                       className="mind-session-textarea"

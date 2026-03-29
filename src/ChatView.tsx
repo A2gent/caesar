@@ -5,6 +5,7 @@ import MessageList from './MessageList';
 import QuestionPrompt from './QuestionPrompt';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from './EmptyState';
 import { TaskProgressPanel } from './TaskProgressPanel';
+import { withAgentEmoji } from './agentVisuals';
 import {
   getSession,
   cancelSessionRun,
@@ -50,6 +51,11 @@ function routedTargetLabel(session: Session | null): string {
 
 type WorkflowNodeStateView = {
   id: string;
+  label: string;
+  kind?: string;
+  subAgentId?: string;
+  localAgentId?: string;
+  externalAgentId?: string;
   status: string;
   childSessionId?: string;
   outputPreview?: string;
@@ -62,6 +68,52 @@ type WorkflowStateView = {
   updatedAt: string;
   nodes: WorkflowNodeStateView[];
 };
+
+type WorkflowDefinitionNodeView = {
+  id: string;
+  label: string;
+  kind: string;
+  subAgentId?: string;
+  localAgentId?: string;
+  externalAgentId?: string;
+};
+
+function parseWorkflowDefinitionNodes(metadata: Record<string, unknown>): WorkflowDefinitionNodeView[] {
+  const rawDefinition = metadata.workflow_definition;
+  if (!rawDefinition || typeof rawDefinition !== 'object') {
+    return [];
+  }
+  const definition = rawDefinition as Record<string, unknown>;
+  const rawNodes = definition.nodes;
+  if (!Array.isArray(rawNodes)) {
+    return [];
+  }
+  const nodes: WorkflowDefinitionNodeView[] = [];
+  for (const rawNode of rawNodes) {
+    if (!rawNode || typeof rawNode !== 'object') {
+      continue;
+    }
+    const node = rawNode as Record<string, unknown>;
+    const id = typeof node.id === 'string' ? node.id.trim() : '';
+    if (!id) {
+      continue;
+    }
+    const label = typeof node.label === 'string' ? node.label.trim() : '';
+    const kind = typeof node.kind === 'string' ? node.kind.trim() : '';
+    const subAgentId = typeof node.subAgentId === 'string' ? node.subAgentId : undefined;
+    const localAgentId = typeof node.localAgentId === 'string' ? node.localAgentId : undefined;
+    const externalAgentId = typeof node.externalAgentId === 'string' ? node.externalAgentId : undefined;
+    nodes.push({
+      id,
+      label: label || id,
+      kind,
+      subAgentId,
+      localAgentId,
+      externalAgentId,
+    });
+  }
+  return nodes;
+}
 
 function parseWorkflowState(session: Session | null): WorkflowStateView | null {
   const metadata = session?.metadata;
@@ -77,17 +129,43 @@ function parseWorkflowState(session: Session | null): WorkflowStateView | null {
   if (!nodesRaw || typeof nodesRaw !== 'object') {
     return null;
   }
+  const definitionNodes = parseWorkflowDefinitionNodes(metadata);
+  const definitionOrder = new Map<string, number>();
+  const definitionByID = new Map<string, WorkflowDefinitionNodeView>();
+  definitionNodes.forEach((node, index) => {
+    definitionOrder.set(node.id, index);
+    definitionByID.set(node.id, node);
+  });
   const nodeEntries = Object.entries(nodesRaw as Record<string, unknown>);
   const nodes: WorkflowNodeStateView[] = nodeEntries.map(([id, value]) => {
     const row = (value && typeof value === 'object') ? (value as Record<string, unknown>) : {};
+    const definition = definitionByID.get(id);
     return {
       id,
+      label: definition?.label || id,
+      kind: definition?.kind,
+      subAgentId: definition?.subAgentId,
+      localAgentId: definition?.localAgentId,
+      externalAgentId: definition?.externalAgentId,
       status: typeof row.status === 'string' ? row.status : 'pending',
       childSessionId: typeof row.childSessionId === 'string' ? row.childSessionId : undefined,
       outputPreview: typeof row.outputPreview === 'string' ? row.outputPreview : undefined,
       error: typeof row.error === 'string' ? row.error : undefined,
     };
-  }).sort((a, b) => a.id.localeCompare(b.id));
+  }).sort((a, b) => {
+    const aOrder = definitionOrder.get(a.id);
+    const bOrder = definitionOrder.get(b.id);
+    if (aOrder !== undefined && bOrder !== undefined) {
+      return aOrder - bOrder;
+    }
+    if (aOrder !== undefined) {
+      return -1;
+    }
+    if (bOrder !== undefined) {
+      return 1;
+    }
+    return a.id.localeCompare(b.id);
+  });
   return {
     workflowName: typeof state.workflowName === 'string' ? state.workflowName : (typeof metadata.workflow_name === 'string' ? metadata.workflow_name : 'Workflow'),
     status: typeof state.status === 'string' ? state.status : 'running',
@@ -249,6 +327,43 @@ function summarizeTraceReason(reason: string): string {
     return normalized;
   }
   return `${normalized.slice(0, 257)}...`;
+}
+
+function formatWorkflowNodeLabel(node: WorkflowNodeStateView): string {
+  const label = node.label || node.id;
+  switch (node.kind) {
+    case 'main':
+      return withAgentEmoji(label, 'main');
+    case 'subagent':
+      return withAgentEmoji(label, 'subagent', node.subAgentId);
+    case 'local':
+      return withAgentEmoji(label, 'local', node.localAgentId);
+    case 'external':
+      return `🌐 ${label}`;
+    case 'user':
+      return `👤 ${label}`;
+    default:
+      return label;
+  }
+}
+
+function isWorkflowNodeRunning(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'running' || normalized === 'in_progress' || normalized === 'active';
+}
+
+function formatWorkflowNodeStatus(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  switch (normalized) {
+    case 'completed':
+      return `✅ ${status}`;
+    case 'pending':
+      return `⏸ ${status}`;
+    case 'failed':
+      return `❗ ${status}`;
+    default:
+      return status;
+  }
 }
 
 function formatProviderFailure(item: ProviderFailure): string {
@@ -1274,6 +1389,48 @@ function ChatView() {
                   <TaskProgressPanel taskProgress={session.task_progress} />
                 </div>
               ) : null}
+              {workflowState ? (
+                <div className="session-workflow-panel">
+                  <div className="session-workflow-header">
+                    <span className="session-workflow-title">🔀 {workflowState.workflowName}</span>
+                    <span className={`session-workflow-status status-${workflowState.status}`}>{workflowState.status}</span>
+                  </div>
+                  <div className="session-workflow-nodes">
+                    {workflowState.nodes.map((node) => (
+                      <button
+                        key={node.id}
+                        type="button"
+                        className={`session-workflow-node status-${node.status}${node.childSessionId ? ' clickable' : ''}`}
+                        onClick={node.childSessionId ? () => navigate(`/chat/${node.childSessionId}`) : undefined}
+                        disabled={!node.childSessionId}
+                        title={node.childSessionId ? `Open child session ${node.childSessionId}` : node.id}
+                      >
+                        <div className="session-workflow-node-top">
+                          <span className="session-workflow-node-id" title={node.id}>
+                            {formatWorkflowNodeLabel(node)}
+                          </span>
+                          <span className="session-workflow-node-status">
+                            {isWorkflowNodeRunning(node.status) ? (
+                              <span className="session-workflow-node-running" title="This agent is currently running">
+                                <span className="session-status-dot status-running" aria-hidden="true" />
+                                Working
+                              </span>
+                            ) : (
+                              formatWorkflowNodeStatus(node.status)
+                            )}
+                          </span>
+                          {/*
+                            Node card itself is clickable when childSessionId is present,
+                            so no separate Open control is needed.
+                          */}
+                        </div>
+                        {node.error ? <div className="session-workflow-node-error">{node.error}</div> : null}
+                        {node.outputPreview ? <div className="session-workflow-node-preview">{node.outputPreview}</div> : null}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {(session.parent_id || childSessions.length > 0) ? (
                 <div className="session-relations-panel">
                   {session.parent_id ? (
@@ -1301,36 +1458,6 @@ function ChatView() {
                       ))}
                     </div>
                   ) : null}
-                </div>
-              ) : null}
-              {workflowState ? (
-                <div className="session-workflow-panel">
-                  <div className="session-workflow-header">
-                    <span className="session-workflow-title">🔀 {workflowState.workflowName}</span>
-                    <span className={`session-workflow-status status-${workflowState.status}`}>{workflowState.status}</span>
-                  </div>
-                  <div className="session-workflow-nodes">
-                    {workflowState.nodes.map((node) => (
-                      <div key={node.id} className={`session-workflow-node status-${node.status}`}>
-                        <div className="session-workflow-node-top">
-                          <span className="session-workflow-node-id">{node.id}</span>
-                          <span className="session-workflow-node-status">{node.status}</span>
-                          {node.childSessionId ? (
-                            <button
-                              type="button"
-                              className="session-workflow-node-open"
-                              onClick={() => navigate(`/chat/${node.childSessionId}`)}
-                              title="Open child session"
-                            >
-                              Open
-                            </button>
-                          ) : null}
-                        </div>
-                        {node.error ? <div className="session-workflow-node-error">{node.error}</div> : null}
-                        {node.outputPreview ? <div className="session-workflow-node-preview">{node.outputPreview}</div> : null}
-                      </div>
-                    ))}
-                  </div>
                 </div>
               ) : null}
               {session.status === 'failed' && sessionFailureReason ? (
@@ -1396,7 +1523,7 @@ function ChatView() {
         disabled={inputDisabled}
         showVoiceButton={false}
         onStop={() => void handleCancelSession()}
-        showStopButton={Boolean(session && isActiveRequest)}
+        showStopButton={Boolean(session && (isActiveRequest || session.status === 'running' || session.status === 'input_required'))}
         canStop={Boolean(session)}
         value={composerValue}
         onValueChange={setComposerValue}
