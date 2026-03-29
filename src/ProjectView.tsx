@@ -68,6 +68,8 @@ import {
   DEFAULT_WORKFLOW_ID,
   listWorkflows,
   resolveWorkflowLaunchTarget,
+  SELECTED_WORKFLOW_STORAGE_KEY_PREFIX,
+  buildWorkflowSessionMetadata,
   type WorkflowDefinition,
 } from './workflows';
 
@@ -308,43 +310,8 @@ const DEFAULT_TREE_PANEL_WIDTH = 360;
 const MIN_TREE_PANEL_WIDTH = 240;
 const MAX_TREE_PANEL_WIDTH = 720;
 const TREE_PANEL_WIDTH_STORAGE_KEY = 'a2gent.project.tree.width';
-
-function buildWorkflowSessionMetadata(workflow: WorkflowDefinition): Record<string, unknown> {
-  return {
-    workflow_id: workflow.id,
-    workflow_name: workflow.name,
-    workflow_definition: {
-      id: workflow.id,
-      name: workflow.name,
-      description: workflow.description,
-      entryNodeId: workflow.entryNodeId,
-      policy: workflow.policy,
-      nodes: workflow.nodes.map((node) => ({
-        id: node.id,
-        label: node.label,
-        kind: node.kind,
-        ref: node.kind === 'subagent'
-          ? (node.subAgentId || '')
-          : node.kind === 'local'
-            ? (node.localAgentId || '')
-            : node.kind === 'external'
-              ? (node.externalAgentId || '')
-              : '',
-        subAgentId: node.subAgentId,
-        localAgentId: node.localAgentId,
-        externalAgentId: node.externalAgentId,
-      })),
-      edges: workflow.edges.map((edge) => ({
-        from: edge.from,
-        to: edge.to,
-        mode: edge.mode,
-      })),
-    },
-  };
-}
 const EXPANDED_DIRS_STORAGE_KEY_PREFIX = 'a2gent.project.expandedDirs.';
 const SELECTED_FILE_STORAGE_KEY_PREFIX = 'a2gent.project.selectedFile.';
-const SELECTED_WORKFLOW_STORAGE_KEY_PREFIX = 'a2gent.project.selectedWorkflow.';
 const SYSTEM_PROJECT_KB_ID = 'system-kb';
 const SYSTEM_PROJECT_BODY_ID = 'system-agent';
 const SYSTEM_PROJECT_SOUL_ID = 'system-soul';
@@ -1382,16 +1349,6 @@ function ProjectView() {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
-
-  // Persist selected workflow for this project
-  useEffect(() => {
-    try {
-      if (!projectId) return;
-      localStorage.setItem(SELECTED_WORKFLOW_STORAGE_KEY_PREFIX + projectId, selectedWorkflowId);
-    } catch {
-      // Ignore storage failures
-    }
   }, [selectedWorkflowId, projectId]);
 
   // File tree loading
@@ -4492,7 +4449,15 @@ function ProjectView() {
                   <label className="chat-provider-select">
                     <select
                       value={selectedWorkflowId}
-                      onChange={(event) => setSelectedWorkflowId(event.target.value)}
+                      onChange={(event) => {
+                        const nextId = event.target.value;
+                        setSelectedWorkflowId(nextId);
+                        if (projectId) {
+                          try {
+                            localStorage.setItem(SELECTED_WORKFLOW_STORAGE_KEY_PREFIX + projectId, nextId);
+                          } catch {}
+                        }
+                      }}
                       title="Workflow"
                       aria-label="Workflow"
                     >

@@ -16,6 +16,13 @@ import {
 import { START_AVATAR_VOICE_SESSION_EVENT } from './voiceInputEvents';
 import { SYSTEM_PROJECT_KB_ID } from './Sidebar';
 
+import {
+  SELECTED_WORKFLOW_STORAGE_KEY_PREFIX,
+  listWorkflows,
+  DEFAULT_WORKFLOW_ID,
+  resolveWorkflowLaunchTarget,
+  buildWorkflowSessionMetadata,
+} from './workflows';
 function mergeFloat32(chunks: Float32Array[]): Float32Array {
   let total = 0;
   for (const chunk of chunks) {
@@ -295,10 +302,33 @@ function GlobalAvatarVoiceSession() {
         resolveActiveProvider(),
       ]);
 
+      const storedWorkflowId = projectId ? localStorage.getItem(SELECTED_WORKFLOW_STORAGE_KEY_PREFIX + projectId) || DEFAULT_WORKFLOW_ID : DEFAULT_WORKFLOW_ID;
+      const availableWorkflows = await listWorkflows();
+      const workflow = availableWorkflows.find((w) => w.id === storedWorkflowId) || availableWorkflows.find((w) => w.id === DEFAULT_WORKFLOW_ID);
+
+      let targetProvider = provider;
+      let targetSubAgentId: string | undefined = undefined;
+      let targetMetadata: Record<string, unknown> | undefined = undefined;
+
+      if (workflow) {
+        const target = resolveWorkflowLaunchTarget(workflow);
+        if (target.kind === 'subagent') {
+          targetSubAgentId = target.subAgentId;
+          targetProvider = undefined; // Sub-agents handle their own provider setup
+        } else if (target.kind === 'main' || target.kind === 'none') {
+          targetProvider = provider;
+        } else {
+          throw new Error(`Voice sessions do not support ${target.kind} workflow targets yet.`);
+        }
+        targetMetadata = buildWorkflowSessionMetadata(workflow);
+      }
+
       const created = await createSession({
         agent_id: 'build',
-        provider,
+        provider: targetProvider,
+        sub_agent_id: targetSubAgentId,
         project_id: projectId,
+        metadata: targetMetadata,
       });
 
       navigate(`/chat/${created.id}`, {

@@ -2,46 +2,12 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { createJob, updateJob, getJob, type CreateJobRequest } from './api';
 import SoulFilePickerDialog from './SoulFilePickerDialog';
-import { DEFAULT_WORKFLOW_ID, listWorkflows, type WorkflowDefinition } from './workflows';
+import { DEFAULT_WORKFLOW_ID, listWorkflows, type WorkflowDefinition, buildWorkflowSessionMetadata } from './workflows';
 
 type TaskPromptSource = 'text' | 'file';
 
 function buildFileTaskPrompt(path: string): string {
   return `Load and follow instructions from this file path: ${path}`;
-}
-
-function buildWorkflowSessionMetadata(workflow: WorkflowDefinition): Record<string, unknown> {
-  return {
-    workflow_id: workflow.id,
-    workflow_name: workflow.name,
-    workflow_definition: {
-      id: workflow.id,
-      name: workflow.name,
-      description: workflow.description,
-      entryNodeId: workflow.entryNodeId,
-      policy: workflow.policy,
-      nodes: workflow.nodes.map((node) => ({
-        id: node.id,
-        label: node.label,
-        kind: node.kind,
-        ref: node.kind === 'subagent'
-          ? (node.subAgentId || '')
-          : node.kind === 'local'
-            ? (node.localAgentId || '')
-            : node.kind === 'external'
-              ? (node.externalAgentId || '')
-              : '',
-        subAgentId: node.subAgentId,
-        localAgentId: node.localAgentId,
-        externalAgentId: node.externalAgentId,
-      })),
-      edges: workflow.edges.map((edge) => ({
-        from: edge.from,
-        to: edge.to,
-        mode: edge.mode,
-      })),
-    },
-  };
 }
 
 function JobEdit() {
