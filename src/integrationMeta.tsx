@@ -8,6 +8,7 @@ const INTEGRATION_PROVIDER_LABELS: Record<IntegrationProvider, string> = {
   webhook: 'Webhook',
   google_calendar: 'Google Calendar',
   elevenlabs: 'ElevenLabs',
+  leonardo: 'Leonardo AI',
   perplexity: 'Perplexity',
   brave_search: 'Brave Search',
   exa: 'Exa',
@@ -18,6 +19,7 @@ const TOOL_PROVIDER_BY_NAME: Partial<Record<string, IntegrationProvider>> = {
   google_calendar_query: 'google_calendar',
   brave_search_query: 'brave_search',
   elevenlabs_tts: 'elevenlabs',
+  leonardo_generate_image: 'leonardo',
   telegram_send_message: 'telegram',
   exa_search: 'exa',
   delegate_to_external_agent: 'a2_registry',
@@ -122,6 +124,14 @@ export function IntegrationProviderIcon({ provider, label }: { provider: string;
         <span className="integration-provider-icon integration-provider-icon-elevenlabs" title={title}>
           <svg {...commonProps}>
             <path d="M8 4.5a3.5 3.5 0 0 1 3.5 3.5v2h-2V8a1.5 1.5 0 0 0-3 0v8a1.5 1.5 0 0 0 3 0v-2h2v2a3.5 3.5 0 0 1-7 0V8A3.5 3.5 0 0 1 8 4.5Zm8 0a3.5 3.5 0 0 1 3.5 3.5v8a3.5 3.5 0 1 1-7 0v-2h2v2a1.5 1.5 0 1 0 3 0V8a1.5 1.5 0 0 0-3 0v2h-2V8A3.5 3.5 0 0 1 16 4.5Z" />
+          </svg>
+        </span>
+      );
+    case 'leonardo':
+      return (
+        <span className="integration-provider-icon integration-provider-icon-elevenlabs" title={title}>
+          <svg {...commonProps}>
+            <path d="M5 5.5h6.5v3H8v3.2h3v3H8v4H5V5.5Zm8.5 0H19v13.2h-3V8.5h-2.5v-3Z" />
           </svg>
         </span>
       );

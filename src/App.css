@@ -795,6 +795,11 @@ body.mind-resizing * {
   background-color: #ff9800;
 }
 
+.status-dot.status-waiting_external {
+  background-color: #ff9800;
+  animation: pulse 2s ease-in-out infinite;
+}
+
 .status-dot.status-input_required {
   background-color: #9c27b0;
   animation: pulse 2s ease-in-out infinite;
@@ -1151,6 +1156,12 @@ body.mind-resizing * {
 }
 
 .session-status.status-paused {
+  background-color: rgba(255, 152, 0, 0.2);
+  border-color: #ff9800;
+  color: #ff9800;
+}
+
+.session-status.status-waiting_external {
   background-color: rgba(255, 152, 0, 0.2);
   border-color: #ff9800;
   color: #ff9800;
@@ -3040,6 +3051,11 @@ body.mind-resizing * {
   background-color: #ff9800;
 }
 
+.session-status-dot.status-waiting_external {
+  background-color: #ff9800;
+  animation: pulse 2s ease-in-out infinite;
+}
+
 .session-status-dot.status-input_required {
   background-color: #9c27b0;
   animation: pulse 2s ease-in-out infinite;
@@ -3086,6 +3102,11 @@ body.mind-resizing * {
 
 .session-status-dot-large.status-paused {
   background-color: #ff9800;
+}
+
+.session-status-dot-large.status-waiting_external {
+  background-color: #ff9800;
+  animation: pulse 2s ease-in-out infinite;
 }
 
 .session-status-dot-large.status-input_required {

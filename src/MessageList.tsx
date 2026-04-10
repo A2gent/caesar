@@ -257,13 +257,35 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       return false;
     }
     const normalizedToolName = (toolName || '').trim().toLowerCase();
-    if (normalizedToolName === 'take_camera_photo_tool' || normalizedToolName === 'take_screenshot_tool') {
+    if (
+      normalizedToolName === 'take_camera_photo_tool' ||
+      normalizedToolName === 'take_screenshot_tool' ||
+      normalizedToolName === 'leonardo_generate_image'
+    ) {
       return true;
     }
     const metadata = (result.metadata || {}) as Record<string, unknown>;
     const imageFile = metadata.image_file as Record<string, unknown> | undefined;
     const sourceTool = typeof imageFile?.source_tool === 'string' ? imageFile.source_tool.trim().toLowerCase() : '';
-    return sourceTool === 'take_camera_photo_tool' || sourceTool === 'take_screenshot_tool';
+    return (
+      sourceTool === 'take_camera_photo_tool' ||
+      sourceTool === 'take_screenshot_tool' ||
+      sourceTool === 'leonardo_generate_image'
+    );
+  };
+
+  const toolResultSourceToolName = (result: ToolResult | undefined): string => {
+    if (!result) {
+      return '';
+    }
+    const directName = (result.name || '').trim();
+    if (directName !== '') {
+      return directName;
+    }
+    const metadata = (result.metadata || {}) as Record<string, unknown>;
+    const imageFile = metadata.image_file as Record<string, unknown> | undefined;
+    const sourceTool = typeof imageFile?.source_tool === 'string' ? imageFile.source_tool.trim() : '';
+    return sourceTool;
   };
 
   // Check if user is at the bottom of the scrollable container
@@ -817,12 +839,23 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const imageUrl = resolveImageUrl(result);
     const keepPreviewVisible = imageUrl !== '' && isPinnedImageToolResult(result);
     const toolAudioClipUrl = toolResultAudioClipUrl(result);
+    const sourceToolName = toolResultSourceToolName(result);
+    const provider = sourceToolName !== '' ? integrationProviderForToolName(sourceToolName) : null;
     return (
       <div key={key} className="tool-execution-stack tool-execution-stack-offset">
         <details className={`message message-tool tool-execution-card tool-card-collapsed${result.is_error ? ' tool-execution-card-error' : ''}`}>
           <summary className="tool-card-summary">
             <span className="tool-summary-name">
-              <span className="tool-name">Tool result</span>
+              {provider ? (
+                <span className="tool-provider-chip">
+                  <IntegrationProviderIcon provider={provider} />
+                  <span>{integrationProviderLabel(provider)}</span>
+                </span>
+              ) : null}
+              <span className="tool-name tool-name-with-icon">
+                <span className="tool-icon" aria-hidden="true">{toolIconForName(sourceToolName || 'result')}</span>
+                <span>{sourceToolName || 'Tool result'}</span>
+              </span>
             </span>
             <CopyButton text={result.content} />
             <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
@@ -849,8 +882,8 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         </details>
         {imageUrl && keepPreviewVisible ? (
           <div className="tool-execution-card tool-preview-always">
-            <div className="tool-execution-label">Preview</div>
-            <img className="tool-result-image" src={imageUrl} alt="Camera preview" loading="lazy" />
+            <div className="tool-execution-label">{sourceToolName === 'leonardo_generate_image' ? 'Generated image' : 'Preview'}</div>
+            <img className="tool-result-image" src={imageUrl} alt={sourceToolName === 'leonardo_generate_image' ? 'Leonardo generated image' : 'Camera preview'} loading="lazy" />
           </div>
         ) : null}
       </div>
