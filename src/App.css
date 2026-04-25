@@ -110,7 +110,7 @@ body.mind-resizing * {
   width: var(--sidebar-width);
   flex-shrink: 0;
   overflow: hidden;
-  background-color: #1a1a1a;
+  background-color: #000000;
 }
 
 .sidebar-resize-handle {
@@ -517,7 +517,7 @@ body.mind-resizing * {
 /* Sidebar Styles */
 .sidebar {
   width: 100%;
-  background-color: #1a1a1a;
+  background-color: #000000;
   color: white;
   height: 100%;
   padding: 16px;
