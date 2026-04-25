@@ -108,8 +108,8 @@ function builtInWorkflows(): WorkflowDefinition[] {
     },
     {
       id: 'builtin:user-main-critic',
-      name: 'User -> Agent -> Critic',
-      description: 'Main agent produces changes, then a critic sub-agent reviews.',
+      name: 'User -> Agent <-> Critic',
+      description: 'Main agent produces changes, then a critic sub-agent reviews and routes feedback back for revision.',
       builtIn: true,
       nodes: [
         { id: 'n-user', label: 'User', kind: 'user', x: 60, y: 140 },
@@ -119,6 +119,7 @@ function builtInWorkflows(): WorkflowDefinition[] {
       edges: [
         { id: 'e-user-main', from: 'n-user', to: 'n-main', mode: 'sequential' },
         { id: 'e-main-critic', from: 'n-main', to: 'n-critic', mode: 'sequential' },
+        { id: 'e-critic-main', from: 'n-critic', to: 'n-main', mode: 'sequential' },
       ],
       entryNodeId: 'n-user',
       policy: { ...basePolicy(), stopCondition: 'judge', judgeNodeId: 'n-critic' },

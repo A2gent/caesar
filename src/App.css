@@ -207,6 +207,89 @@ body.mind-resizing * {
   padding: 20px; /* Padding for history */
 }
 
+.inline-child-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 880px;
+  margin: 12px 0 4px 52px;
+}
+
+.inline-child-session {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid #313b4c;
+  background: #171d28;
+  color: #d9e4f6;
+  border-radius: 8px;
+  padding: 9px 11px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.inline-child-session:hover {
+  border-color: #5f85bd;
+  background: #1d2635;
+}
+
+.inline-child-session-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #7b8494;
+}
+
+.inline-child-session-dot.status-running,
+.inline-child-session-dot.status-in_progress,
+.inline-child-session-dot.status-active {
+  background: #65b6ff;
+  box-shadow: 0 0 0 4px rgba(101, 182, 255, 0.12);
+}
+
+.inline-child-session-dot.status-completed {
+  background: #7bd99a;
+}
+
+.inline-child-session-dot.status-failed {
+  background: #ff8585;
+}
+
+.inline-child-session-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inline-child-session-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.inline-child-session-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #91a2bd;
+}
+
+.inline-child-session-status {
+  font-size: 11px;
+  color: #9fb3d8;
+  text-transform: uppercase;
+}
+
 .chat-input-container {
   padding: 20px; /* Padding for the input area */
   border-top: 1px solid #3a3a3a;
@@ -10152,6 +10235,25 @@ button.session-provider-chip:hover {
   background: #e5efff;
   border-color: #9fb8de;
   color: #173765;
+}
+
+[data-theme='light'] .inline-child-session {
+  background: #f8fbff;
+  border-color: #c9d3e2;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .inline-child-session:hover {
+  background: #eef5ff;
+  border-color: #9fb8de;
+}
+
+[data-theme='light'] .inline-child-session-subtitle {
+  color: #52627a;
+}
+
+[data-theme='light'] .inline-child-session-status {
+  color: #4d617f;
 }
 
 [data-theme='light'] .session-workflow-panel {

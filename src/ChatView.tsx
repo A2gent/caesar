@@ -371,6 +371,16 @@ function formatWorkflowNodeStatus(status: string): string {
   }
 }
 
+function childSessionWorkflowLabel(child: Session): string {
+  const metadata = (child.metadata || {}) as Record<string, unknown>;
+  const nodeLabel = typeof metadata.workflow_node_label === 'string' ? metadata.workflow_node_label.trim() : '';
+  const workflowName = typeof metadata.workflow_name === 'string' ? metadata.workflow_name.trim() : '';
+  if (nodeLabel && workflowName) {
+    return `${workflowName} / ${nodeLabel}`;
+  }
+  return nodeLabel || workflowName || 'Child session';
+}
+
 function formatProviderFailure(item: ProviderFailure): string {
   const provider = (item.provider || '').trim();
   const model = (item.model || '').trim();
@@ -1437,33 +1447,16 @@ function ChatView() {
                   </div>
                 </div>
               ) : null}
-              {(session.parent_id || childSessions.length > 0) ? (
+              {session.parent_id ? (
                 <div className="session-relations-panel">
-                  {session.parent_id ? (
-                    <button
-                      type="button"
-                      className="session-relation-link parent"
-                      onClick={() => navigate(`/chat/${session.parent_id}`)}
-                      title={`Open parent session ${session.parent_id}`}
-                    >
-                      ← Parent: {parentSessionSummary?.title || `Session ${session.parent_id.slice(0, 8)}`}
-                    </button>
-                  ) : null}
-                  {childSessions.length > 0 ? (
-                    <div className="session-children-list">
-                      {childSessions.map((child) => (
-                        <button
-                          key={child.id}
-                          type="button"
-                          className="session-relation-link child"
-                          onClick={() => navigate(`/chat/${child.id}`)}
-                          title={`Open child session ${child.id}`}
-                        >
-                          ↳ {child.title || `Session ${child.id.slice(0, 8)}`} ({child.status})
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="session-relation-link parent"
+                    onClick={() => navigate(`/chat/${session.parent_id}`)}
+                    title={`Open parent session ${session.parent_id}`}
+                  >
+                    ← Parent: {parentSessionSummary?.title || `Session ${session.parent_id.slice(0, 8)}`}
+                  </button>
                 </div>
               ) : null}
               {session.status === 'failed' && sessionFailureReason ? (
@@ -1499,15 +1492,41 @@ function ChatView() {
       )}
       
       <div className="chat-history">
-        {messages.length > 0 || systemPromptSnapshot ? (
-          <MessageList 
-            messages={messagesWithProviderFailures} 
-            isLoading={isLoading} 
-            sessionId={session?.id || null}
-            projectId={session?.project_id || null}
-            systemPromptSnapshot={systemPromptSnapshot}
-            session={session}
-          />
+        {messages.length > 0 || systemPromptSnapshot || childSessions.length > 0 ? (
+          <>
+            <MessageList 
+              messages={messagesWithProviderFailures} 
+              isLoading={isLoading} 
+              sessionId={session?.id || null}
+              projectId={session?.project_id || null}
+              systemPromptSnapshot={systemPromptSnapshot}
+              session={session}
+            />
+            {childSessions.length > 0 ? (
+              <div className="inline-child-sessions" aria-label="Child sessions">
+                {childSessions.map((child) => (
+                  <button
+                    key={child.id}
+                    type="button"
+                    className="inline-child-session"
+                    onClick={() => navigate(`/chat/${child.id}`)}
+                    title={`Open child session ${child.id}`}
+                  >
+                    <span className={`inline-child-session-dot status-${child.status}`} aria-hidden="true" />
+                    <span className="inline-child-session-main">
+                      <span className="inline-child-session-title">
+                        {child.title || `Session ${child.id.slice(0, 8)}`}
+                      </span>
+                      <span className="inline-child-session-subtitle">
+                        {childSessionWorkflowLabel(child)}
+                      </span>
+                    </span>
+                    <span className="inline-child-session-status">{child.status}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </>
         ) : (
           <EmptyState>
             <EmptyStateTitle>Start a conversation</EmptyStateTitle>
