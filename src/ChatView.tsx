@@ -352,6 +352,11 @@ function isWorkflowNodeRunning(status: string): boolean {
   return normalized === 'running' || normalized === 'in_progress' || normalized === 'active';
 }
 
+function isCancelableSessionStatus(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'running' || normalized === 'in_progress' || normalized === 'active';
+}
+
 function formatWorkflowNodeStatus(status: string): string {
   const normalized = status.trim().toLowerCase();
   switch (normalized) {
@@ -1074,6 +1079,7 @@ function ChatView() {
   };
 
   const isActiveRequest = Boolean(session && activeRequestSessionId === session.id);
+  const showStopButton = Boolean(session && (isActiveRequest || isCancelableSessionStatus(session.status)));
   const inputDisabled = isLoading && !session;
   const linkedPromptForSelectedType = session ? linkedSessionDefaultPrompt(linkedSessionType, session) : '';
 
@@ -1523,8 +1529,8 @@ function ChatView() {
         disabled={inputDisabled}
         showVoiceButton={false}
         onStop={() => void handleCancelSession()}
-        showStopButton={Boolean(session && (isActiveRequest || session.status === 'running' || session.status === 'input_required'))}
-        canStop={Boolean(session)}
+        showStopButton={showStopButton}
+        canStop={showStopButton}
         value={composerValue}
         onValueChange={setComposerValue}
         slashCommands={sessionSlashCommands}

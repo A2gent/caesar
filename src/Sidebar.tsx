@@ -298,7 +298,14 @@ function Sidebar({
     if (project.id === SYSTEM_PROJECT_KB_ID) return '🧠';
     if (project.id === SYSTEM_PROJECT_AGENT_ID) return '🤖';
     if (project.id === SYSTEM_PROJECT_SOUL_ID) return '🫀';
-    return '📁';
+    return (
+      <span className="nav-project-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 7.5a2.5 2.5 0 0 1 2.5-2.5h4l2 2H18.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
+          <path d="M3 9.5h18" />
+        </svg>
+      </span>
+    );
   };
 
   const alternateAgents = agentOptions.filter((endpoint) => endpoint.url !== activeBaseUrl);
