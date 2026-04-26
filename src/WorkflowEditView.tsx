@@ -134,6 +134,7 @@ function workflowToGraphYaml(workflow: WorkflowDefinition): string {
       id: node.id,
       label: node.label,
       kind: node.kind,
+      instruction: node.instruction || undefined,
       x: Math.round(node.x),
       y: Math.round(node.y),
       ref: node.kind === 'subagent'
@@ -147,8 +148,10 @@ function workflowToGraphYaml(workflow: WorkflowDefinition): string {
         ? {
           workerSubAgentId: node.workerSubAgentId,
           workerLabel: node.workerLabel,
+          workerInstruction: node.workerInstruction || undefined,
           reviewerSubAgentId: node.reviewerSubAgentId,
           reviewerLabel: node.reviewerLabel,
+          reviewerInstruction: node.reviewerInstruction || undefined,
           maxTurns: node.loopMaxTurns,
         }
         : undefined,
@@ -173,12 +176,15 @@ type YamlNodeSeed = {
   label: string;
   kind: WorkflowNodeKind | null;
   ref: string;
+  instruction?: string;
   x?: number;
   y?: number;
   workerSubAgentId?: string;
   workerLabel?: string;
+  workerInstruction?: string;
   reviewerSubAgentId?: string;
   reviewerLabel?: string;
+  reviewerInstruction?: string;
   loopMaxTurns?: number;
 };
 
@@ -297,6 +303,7 @@ function parseYamlGraph(
     const label = typeof nodeObj.label === 'string' ? nodeObj.label.trim() : '';
     const kindRaw = typeof nodeObj.kind === 'string' ? nodeObj.kind.trim().toLowerCase() : '';
     const ref = typeof nodeObj.ref === 'string' ? nodeObj.ref.trim() : '';
+    const instruction = typeof nodeObj.instruction === 'string' ? nodeObj.instruction.trim() : '';
     const x = typeof nodeObj.x === 'number' && Number.isFinite(nodeObj.x) ? nodeObj.x : undefined;
     const y = typeof nodeObj.y === 'number' && Number.isFinite(nodeObj.y) ? nodeObj.y : undefined;
     const loopObj = nodeObj.loop && typeof nodeObj.loop === 'object' && !Array.isArray(nodeObj.loop)
@@ -304,8 +311,10 @@ function parseYamlGraph(
       : {};
     const workerSubAgentId = typeof loopObj.workerSubAgentId === 'string' ? loopObj.workerSubAgentId.trim() : '';
     const workerLabel = typeof loopObj.workerLabel === 'string' ? loopObj.workerLabel.trim() : '';
+    const workerInstruction = typeof loopObj.workerInstruction === 'string' ? loopObj.workerInstruction.trim() : '';
     const reviewerSubAgentId = typeof loopObj.reviewerSubAgentId === 'string' ? loopObj.reviewerSubAgentId.trim() : '';
     const reviewerLabel = typeof loopObj.reviewerLabel === 'string' ? loopObj.reviewerLabel.trim() : '';
+    const reviewerInstruction = typeof loopObj.reviewerInstruction === 'string' ? loopObj.reviewerInstruction.trim() : '';
     const loopMaxTurns = typeof loopObj.maxTurns === 'number' && Number.isFinite(loopObj.maxTurns) ? Math.floor(loopObj.maxTurns) : undefined;
     const kind = kindRaw === ''
       ? null
@@ -326,7 +335,7 @@ function parseYamlGraph(
       return;
     }
     const resolvedLabel = label !== '' ? label : (ref !== '' ? ref : id);
-    yamlNodes.push({ id, label: resolvedLabel, kind, ref, x, y, workerSubAgentId, workerLabel, reviewerSubAgentId, reviewerLabel, loopMaxTurns });
+    yamlNodes.push({ id, label: resolvedLabel, kind, ref, instruction, x, y, workerSubAgentId, workerLabel, workerInstruction, reviewerSubAgentId, reviewerLabel, reviewerInstruction, loopMaxTurns });
   });
 
   rawEdges.forEach((entry, index) => {
@@ -404,12 +413,17 @@ function parseYamlGraph(
       x: pos.x,
       y: pos.y,
     };
+    if (node.instruction) {
+      result.instruction = node.instruction;
+    }
 
     if (inferredKind === 'review_loop') {
       result.workerSubAgentId = node.workerSubAgentId;
       result.workerLabel = node.workerLabel || 'Worker';
+      result.workerInstruction = node.workerInstruction;
       result.reviewerSubAgentId = node.reviewerSubAgentId;
       result.reviewerLabel = node.reviewerLabel || 'Critic';
+      result.reviewerInstruction = node.reviewerInstruction;
       if (node.loopMaxTurns && node.loopMaxTurns > 0) result.loopMaxTurns = node.loopMaxTurns;
       if (!result.workerSubAgentId) {
         errors.push(`Review loop "${node.label}" needs loop.workerSubAgentId.`);
@@ -1182,6 +1196,7 @@ function WorkflowEditView() {
           kind,
           x: node.x,
           y: node.y,
+          instruction: node.instruction,
         };
       }),
     });
@@ -1298,8 +1313,10 @@ function WorkflowEditView() {
       y: 80 + Math.floor(base.nodes.length / 4) * 120,
       workerSubAgentId: worker.id,
       workerLabel: worker.name || 'Worker',
+      workerInstruction: 'Produce or revise the requested work. Use the available tools when implementation is needed, and incorporate critic feedback before handing off.',
       reviewerSubAgentId: reviewer.id,
       reviewerLabel: reviewer.name || 'Critic',
+      reviewerInstruction: 'Review the worker output against the user request. Give concrete revision feedback unless the work is complete and verified.',
       loopMaxTurns: 6,
     };
     setActiveNodeId(node.id);
@@ -1362,8 +1379,10 @@ function WorkflowEditView() {
       y: 220,
       workerSubAgentId: researcherNode.subAgentId,
       workerLabel: researcherNode.label,
+      workerInstruction: researcherNode.instruction,
       reviewerSubAgentId: criticNode.subAgentId,
       reviewerLabel: criticNode.label,
+      reviewerInstruction: criticNode.instruction,
       loopMaxTurns: Math.max(4, base.policy.maxTurns || 6),
     };
     if (!loopNode.workerSubAgentId || !loopNode.reviewerSubAgentId) {
@@ -1623,6 +1642,7 @@ function WorkflowEditView() {
                               <option value="subagent">Sub-agent</option>
                               <option value="local">Local agent</option>
                               <option value="external">External agent</option>
+                              <option value="review_loop">Review loop</option>
                             </select>
                           </label>
                           {activeNode.kind === 'subagent' ? (
@@ -1688,6 +1708,22 @@ function WorkflowEditView() {
                               </select>
                             </label>
                           ) : null}
+                          {activeNode.kind !== 'user' && activeNode.kind !== 'review_loop' ? (
+                            <label className="settings-field">
+                              <span>Role instructions</span>
+                              <textarea
+                                rows={5}
+                                value={activeNode.instruction || ''}
+                                onChange={(event) => updateNode(activeNode.id, { instruction: event.target.value })}
+                                disabled={!canBuild}
+                                placeholder={
+                                  activeNode.kind === 'main'
+                                    ? 'Example: Orchestrate the workflow. Plan the task and hand off implementation to downstream nodes.'
+                                    : 'Describe this node role, responsibilities, and completion criteria.'
+                                }
+                              />
+                            </label>
+                          ) : null}
                           {activeNode.kind === 'review_loop' ? (
                             <>
                               <label className="settings-field">
@@ -1721,6 +1757,26 @@ function WorkflowEditView() {
                                     <option key={agent.id} value={agent.id}>{agent.name}</option>
                                   ))}
                                 </select>
+                              </label>
+                              <label className="settings-field">
+                                <span>Worker role</span>
+                                <textarea
+                                  rows={4}
+                                  value={activeNode.workerInstruction || ''}
+                                  onChange={(event) => updateNode(activeNode.id, { workerInstruction: event.target.value })}
+                                  disabled={!canBuild}
+                                  placeholder="Tell the worker what to produce and how to react to critic feedback."
+                                />
+                              </label>
+                              <label className="settings-field">
+                                <span>Critic role</span>
+                                <textarea
+                                  rows={4}
+                                  value={activeNode.reviewerInstruction || ''}
+                                  onChange={(event) => updateNode(activeNode.id, { reviewerInstruction: event.target.value })}
+                                  disabled={!canBuild}
+                                  placeholder="Tell the critic what to check before approving the loop."
+                                />
                               </label>
                               <label className="settings-field">
                                 <span>Loop max turns</span>

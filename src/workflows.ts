@@ -24,10 +24,13 @@ export interface WorkflowNode {
   localAgentBaseUrl?: string;
   externalAgentId?: string;
   externalAgentName?: string;
+  instruction?: string;
   workerSubAgentId?: string;
   workerLabel?: string;
+  workerInstruction?: string;
   reviewerSubAgentId?: string;
   reviewerLabel?: string;
+  reviewerInstruction?: string;
   loopMaxTurns?: number;
 }
 
@@ -204,11 +207,14 @@ function normalizeWorkflow(raw: unknown): WorkflowDefinition | null {
       const localAgentBaseUrl = asString(node.localAgentBaseUrl).trim();
       const externalAgentId = asString(node.externalAgentId).trim();
       const externalAgentName = asString(node.externalAgentName).trim();
+      const instruction = asString(node.instruction).trim();
       const loopObj = asObject(node.loop) || {};
       const workerSubAgentId = asString(node.workerSubAgentId).trim() || asString(loopObj.workerSubAgentId).trim();
       const workerLabel = asString(node.workerLabel).trim() || asString(loopObj.workerLabel).trim();
+      const workerInstruction = asString(node.workerInstruction).trim() || asString(loopObj.workerInstruction).trim();
       const reviewerSubAgentId = asString(node.reviewerSubAgentId).trim() || asString(loopObj.reviewerSubAgentId).trim();
       const reviewerLabel = asString(node.reviewerLabel).trim() || asString(loopObj.reviewerLabel).trim();
+      const reviewerInstruction = asString(node.reviewerInstruction).trim() || asString(loopObj.reviewerInstruction).trim();
       const loopMaxTurns = asNumber(node.loopMaxTurns, asNumber(loopObj.maxTurns, 0));
       if (subAgentId !== '') next.subAgentId = subAgentId;
       if (localAgentId !== '') next.localAgentId = localAgentId;
@@ -216,10 +222,13 @@ function normalizeWorkflow(raw: unknown): WorkflowDefinition | null {
       if (localAgentBaseUrl !== '') next.localAgentBaseUrl = localAgentBaseUrl;
       if (externalAgentId !== '') next.externalAgentId = externalAgentId;
       if (externalAgentName !== '') next.externalAgentName = externalAgentName;
+      if (instruction !== '') next.instruction = instruction;
       if (workerSubAgentId !== '') next.workerSubAgentId = workerSubAgentId;
       if (workerLabel !== '') next.workerLabel = workerLabel;
+      if (workerInstruction !== '') next.workerInstruction = workerInstruction;
       if (reviewerSubAgentId !== '') next.reviewerSubAgentId = reviewerSubAgentId;
       if (reviewerLabel !== '') next.reviewerLabel = reviewerLabel;
+      if (reviewerInstruction !== '') next.reviewerInstruction = reviewerInstruction;
       if (loopMaxTurns > 0) next.loopMaxTurns = Math.floor(loopMaxTurns);
       return next;
     })
@@ -654,10 +663,13 @@ export function buildWorkflowSessionMetadata(workflow: WorkflowDefinition): Reco
         subAgentId: node.subAgentId,
         localAgentId: node.localAgentId,
         externalAgentId: node.externalAgentId,
+        instruction: node.instruction,
         workerSubAgentId: node.workerSubAgentId,
         workerLabel: node.workerLabel,
+        workerInstruction: node.workerInstruction,
         reviewerSubAgentId: node.reviewerSubAgentId,
         reviewerLabel: node.reviewerLabel,
+        reviewerInstruction: node.reviewerInstruction,
         loopMaxTurns: node.loopMaxTurns,
       })),
       edges: workflow.edges.map((edge) => ({
