@@ -1876,6 +1876,35 @@ body.mind-resizing * {
   color: #e0e0e0;
 }
 
+.message-internal-handoff {
+  align-self: flex-start;
+  background-color: #232932;
+  border-style: dashed;
+  color: #cfd6dd;
+  display: block;
+  margin-left: 0;
+  margin-right: auto;
+  max-width: min(820px, 100%);
+}
+
+.message-handoff-label {
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #9ca8b4;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 8px;
+  margin: -2px 0 10px;
+  padding-bottom: 8px;
+}
+
+.message-handoff-label strong {
+  color: #d8e0e8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .message-tokens {
   color: #888;
   font-size: 11px;

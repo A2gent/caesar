@@ -98,6 +98,38 @@ function childSessionWorkflowLabel(child: Session): string {
   return nodeLabel || workflowName || 'Child session';
 }
 
+function stringMetadata(message: Message, key: string): string {
+  const value = message.metadata?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function promptLine(content: string, label: string): string {
+  const prefix = `${label}:`;
+  const line = content.split(/\r?\n/).find((item) => item.trim().startsWith(prefix));
+  return line ? line.trim().slice(prefix.length).trim() : '';
+}
+
+function internalHandoffLabel(message: Message): string {
+  const kind = stringMetadata(message, 'handoff_kind');
+  if (kind === 'workflow_node' || message.content.startsWith('You are executing one node in a multi-agent workflow.')) {
+    const workflowName = stringMetadata(message, 'workflow_name') || promptLine(message.content, 'Workflow');
+    const nodeLabel = stringMetadata(message, 'workflow_node_label') || promptLine(message.content, 'Node');
+    return [workflowName, nodeLabel].filter(Boolean).join(' / ') || 'Workflow handoff';
+  }
+  if (kind === 'subagent_delegation') {
+    const subAgentName = stringMetadata(message, 'sub_agent_name');
+    return subAgentName ? `Delegated to ${subAgentName}` : 'Sub-agent delegation';
+  }
+  return '';
+}
+
+function isInternalHandoffMessage(message: Message): boolean {
+  return message.role === 'user' && (
+    message.metadata?.internal_handoff === true
+    || internalHandoffLabel(message) !== ''
+  );
+}
+
 const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot, session, childSessions = [] }) => {
   const userAvatarUrl = buildGravatarUrl(getStoredA2ARegistryOwnerEmail(), 40);
   const assistantEmoji = useMemo(() => {
@@ -116,6 +148,9 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
   }, [session?.a2a_source_agent_id, session?.a2a_target_agent_id, session?.metadata]);
 
   const withSpeakerVisual = (message: Message, key: string, content: React.ReactNode): React.ReactNode => {
+    if (isInternalHandoffMessage(message)) {
+      return <React.Fragment key={key}>{content}</React.Fragment>;
+    }
     if (message.role === 'user' && userAvatarUrl !== '') {
       return (
         <div key={key} className="message-row message-row-user">
@@ -1028,13 +1063,21 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       const totalTokens = (message.input_tokens ?? 0) + (message.output_tokens ?? 0);
       const clipUrl = messageAudioClipUrl(message);
       const hasImages = messageImages(message).length > 0;
+      const handoffLabel = internalHandoffLabel(message);
+      const isInternalHandoff = handoffLabel !== '';
 
       pushEntry(withSpeakerVisual(
         message,
         `message-${index}`,
         <div
-          className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}${isProviderFailure ? ' message-provider-failure' : ''}`}
+          className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}${isProviderFailure ? ' message-provider-failure' : ''}${isInternalHandoff ? ' message-internal-handoff' : ''}`}
         >
+          {isInternalHandoff ? (
+            <div className="message-handoff-label">
+              <span>Internal handoff</span>
+              <strong>{handoffLabel}</strong>
+            </div>
+          ) : null}
           {(message.content || clipUrl || hasImages) && (
             <div className="message-content">
               {message.content ? renderMessageContent(message) : null}
