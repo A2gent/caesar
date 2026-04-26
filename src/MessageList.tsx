@@ -81,6 +81,23 @@ type TimelineEntry = {
   node: React.ReactNode;
 };
 
+type ParallelStepResult = {
+  step?: number;
+  tool?: string;
+  success?: boolean;
+  output?: string;
+  error?: string;
+  duration_ms?: number;
+  metadata?: Record<string, unknown>;
+};
+
+type ParallelStepView = {
+  index: number;
+  toolName: string;
+  input: Record<string, unknown>;
+  result?: ToolResult;
+};
+
 function timestampMs(value: string | undefined): number {
   if (!value) {
     return 0;
@@ -102,6 +119,21 @@ function childSessionWorkflowLabel(child: Session): string {
 function stringMetadata(message: Message, key: string): string {
   const value = message.metadata?.[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function numberMetadata(message: Message, key: string): number | undefined {
+  const value = message.metadata?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function formatDurationMs(durationMs: number | undefined | null): string {
+  if (durationMs === null || durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 0) {
+    return '';
+  }
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs)} ms`;
+  }
+  return `${(durationMs / 1000).toFixed(durationMs < 10000 ? 2 : 1)} s`;
 }
 
 function promptLine(content: string, label: string): string {
@@ -611,6 +643,79 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     }
   };
 
+  const parseParallelSteps = (toolCall: ToolCall, result: ToolResult | undefined): ParallelStepView[] => {
+    const rawSteps = Array.isArray(toolCall.input?.steps) ? toolCall.input.steps : [];
+    let resultSteps: ParallelStepResult[] = [];
+    if (result?.content) {
+      try {
+        const parsed = JSON.parse(result.content) as unknown;
+        if (Array.isArray(parsed)) {
+          resultSteps = parsed.filter((item): item is ParallelStepResult => item !== null && typeof item === 'object');
+        }
+      } catch {
+        resultSteps = [];
+      }
+    }
+
+    return rawSteps
+      .map((rawStep, index): ParallelStepView | null => {
+        if (!rawStep || typeof rawStep !== 'object') {
+          return null;
+        }
+        const step = rawStep as Record<string, unknown>;
+        const toolName = typeof step.tool === 'string' ? step.tool.trim() : '';
+        if (toolName === '') {
+          return null;
+        }
+        let input: Record<string, unknown> = {};
+        const rawArgs = step.args;
+        if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) {
+          input = rawArgs as Record<string, unknown>;
+        } else {
+          input = Object.fromEntries(
+            Object.entries(step).filter(([key]) => key !== 'tool' && key !== 'args'),
+          );
+        }
+        const stepResult = resultSteps.find((item) => item.step === index + 1) || resultSteps[index];
+        const childResult: ToolResult | undefined = stepResult ? {
+          tool_call_id: `${toolCall.id}:${index + 1}`,
+          name: toolName,
+          content: stepResult.success === false
+            ? (stepResult.error || stepResult.output || '')
+            : (stepResult.output || stepResult.error || ''),
+          is_error: stepResult.success === false,
+          metadata: stepResult.metadata,
+          duration_ms: stepResult.duration_ms,
+        } : undefined;
+        return {
+          index,
+          toolName,
+          input,
+          result: childResult,
+        };
+      })
+      .filter((step): step is ParallelStepView => step !== null);
+  };
+
+  const renderDurationChip = (durationMs: number | undefined | null, label = 'Duration') => {
+    const formatted = formatDurationMs(durationMs);
+    if (!formatted) {
+      return null;
+    }
+    return (
+      <span className="tool-duration" title={`${label}: ${Math.round(durationMs || 0)} ms`}>
+        {formatted}
+      </span>
+    );
+  };
+
+  const renderLlmDurationChip = (message: Message) => {
+    if (message.role !== 'assistant') {
+      return null;
+    }
+    return renderDurationChip(numberMetadata(message, 'llm_duration_ms'), 'LLM response');
+  };
+
   const renderSubAgentDelegation = (toolCall: ToolCall, result: ToolResult | undefined, timestamp: string, key: string) => {
     let taskDescription = '';
     let subAgentName = '';
@@ -683,6 +788,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                   Open session
                 </Link>
               ) : null}
+              {renderDurationChip(result?.duration_ms)}
               <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
             </span>
           </summary>
@@ -781,6 +887,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                   Open session
                 </Link>
               ) : null}
+              {renderDurationChip(result?.duration_ms)}
               <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
             </span>
           </summary>
@@ -817,6 +924,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
   };
 
   const renderToolExecutionCard = (toolCall: ToolCall, result: ToolResult | undefined, timestamp: string, key: string) => {
+    const isParallelTool = toolCall.name === 'parallel';
     const provider = integrationProviderForToolName(toolCall.name);
     const filePath = isSupportedFileTool(toolCall.name) ? extractToolFilePath(toolCall.input) : null;
     const editInput = toolCall.name === 'edit' ? parseEditToolInput(toolCall.input) : null;
@@ -827,9 +935,10 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const hasTokens = (toolCall.input_tokens ?? 0) > 0 || (toolCall.output_tokens ?? 0) > 0;
     const totalTokens = (toolCall.input_tokens ?? 0) + (toolCall.output_tokens ?? 0);
     const toolAudioClipUrl = toolResultAudioClipUrl(result);
+    const parallelSteps = isParallelTool ? parseParallelSteps(toolCall, result) : [];
     return (
       <div key={key} className="tool-execution-stack tool-execution-stack-offset">
-        <details className={`message message-tool tool-execution-card tool-card-collapsed${result?.is_error ? ' tool-execution-card-error' : ''}`}>
+        <details open={isParallelTool} className={`message message-tool tool-execution-card tool-card-collapsed${isParallelTool ? ' tool-parallel-card' : ''}${result?.is_error ? ' tool-execution-card-error' : ''}`}>
           <summary className="tool-card-summary">
             <span className="tool-summary-name">
               {provider ? (
@@ -876,28 +985,74 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                   {totalTokens} tok
                 </span>
               ) : null}
+              {renderDurationChip(result?.duration_ms)}
               <CopyButton text={toolCall.input ? JSON.stringify(toolCall.input, null, 2) : ''} />
               <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
             </span>
           </summary>
           <div className="tool-card-body">
-            <div className="tool-execution-block">
-              <div className="tool-execution-label">Input</div>
-              {editInput
-                ? renderEditInput(editInput)
-                : <pre className="tool-input">{JSON.stringify(toolCall.input, null, 2)}</pre>}
-            </div>
-            <div className="tool-execution-block">
-              <div className={`tool-execution-label ${result?.is_error ? 'result-icon-error' : 'result-icon'}`}>
-                {result?.is_error ? 'Error' : 'Result'}
+            {isParallelTool ? (
+              <div className="parallel-tool-tree" aria-label="Parallel tool calls">
+                {parallelSteps.map((step) => {
+                  const childDetails = extractToolDetails(step.toolName, step.input);
+                  return (
+                    <details key={`${toolCall.id}-parallel-${step.index}`} className={`tool-nested-card${step.result?.is_error ? ' tool-nested-card-error' : ''}`}>
+                      <summary className="tool-nested-summary">
+                        <span className="parallel-branch" aria-hidden="true">↳</span>
+                        <span className="tool-name tool-name-with-icon">
+                          <span className="tool-icon" aria-hidden="true">{toolIconForName(step.toolName)}</span>
+                          <span>{step.toolName}</span>
+                        </span>
+                        {childDetails ? (
+                          <>
+                            <span className="tool-inline-separator">·</span>
+                            <span className="tool-details">{childDetails}</span>
+                          </>
+                        ) : null}
+                        <span className="tool-nested-meta">
+                          {renderDurationChip(step.result?.duration_ms)}
+                        </span>
+                      </summary>
+                      <div className="tool-nested-body">
+                        <div className="tool-execution-block">
+                          <div className="tool-execution-label">Input</div>
+                          <pre className="tool-input">{JSON.stringify(step.input, null, 2)}</pre>
+                        </div>
+                        <div className="tool-execution-block">
+                          <div className={`tool-execution-label ${step.result?.is_error ? 'result-icon-error' : 'result-icon'}`}>
+                            {step.result?.is_error ? 'Error' : 'Result'}
+                          </div>
+                          <pre className="tool-result-content">{step.result?.content || 'Waiting for result...'}</pre>
+                        </div>
+                      </div>
+                    </details>
+                  );
+                })}
+                {parallelSteps.length === 0 ? (
+                  <pre className="tool-result-content">{result?.content || 'Waiting for result...'}</pre>
+                ) : null}
               </div>
-              <pre className="tool-result-content">{result?.content || 'Waiting for result...'}</pre>
-              {toolAudioClipUrl ? (
-                <div className="message-audio-wrap">
-                  <audio className="message-audio-player" controls preload="metadata" src={toolAudioClipUrl} />
+            ) : (
+              <>
+                <div className="tool-execution-block">
+                  <div className="tool-execution-label">Input</div>
+                  {editInput
+                    ? renderEditInput(editInput)
+                    : <pre className="tool-input">{JSON.stringify(toolCall.input, null, 2)}</pre>}
                 </div>
-              ) : null}
-            </div>
+                <div className="tool-execution-block">
+                  <div className={`tool-execution-label ${result?.is_error ? 'result-icon-error' : 'result-icon'}`}>
+                    {result?.is_error ? 'Error' : 'Result'}
+                  </div>
+                  <pre className="tool-result-content">{result?.content || 'Waiting for result...'}</pre>
+                  {toolAudioClipUrl ? (
+                    <div className="message-audio-wrap">
+                      <audio className="message-audio-player" controls preload="metadata" src={toolAudioClipUrl} />
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            )}
             {imageUrl && !keepPreviewVisible ? (
               <div className="tool-execution-block">
                 <div className="tool-execution-label">Preview</div>
@@ -938,8 +1093,11 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 <span>{sourceToolName || 'Tool result'}</span>
               </span>
             </span>
-            <CopyButton text={result.content} />
-            <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
+            <span className="message-meta-right">
+              {renderDurationChip(result.duration_ms)}
+              <CopyButton text={result.content} />
+              <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span>
+            </span>
           </summary>
           <div className="tool-card-body">
             <div className="tool-execution-block">
@@ -1010,6 +1168,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                     {totalTokens} tok
                   </span>
                 ) : null}
+                {renderLlmDurationChip(message)}
                 <CopyButton text={message.content || ''} />
                 <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
@@ -1060,6 +1219,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                     {totalTokens} tok
                   </span>
                 ) : null}
+                {renderLlmDurationChip(message)}
                 <CopyButton text={message.content || ''} />
                 <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
@@ -1117,6 +1277,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 {totalTokens} tok
               </span>
             ) : null}
+            {renderLlmDurationChip(message)}
             <CopyButton text={message.content || ''} />
             <span
               className="message-time"

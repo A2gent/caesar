@@ -1169,6 +1169,14 @@ export async function getSession(sessionId: string): Promise<Session> {
   return response.json();
 }
 
+export async function getSessionSummary(sessionId: string): Promise<Session> {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}?include_messages=false`);
+  if (!response.ok) {
+    throw new Error(`Failed to get session summary: ${response.statusText}`);
+  }
+  return response.json();
+}
+
 export interface TaskProgressResponse {
   content: string;
   total_tasks: number;

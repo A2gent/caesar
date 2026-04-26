@@ -8,6 +8,7 @@ import { TaskProgressPanel } from './TaskProgressPanel';
 import { withAgentEmoji } from './agentVisuals';
 import {
   getSession,
+  getSessionSummary,
   cancelSessionRun,
   listSessions,
   listProviders,
@@ -616,6 +617,7 @@ function ChatView() {
   const [isCreatingLinkedSession, setIsCreatingLinkedSession] = useState(false);
   const [providerTrace, setProviderTrace] = useState<string>('');
   const [sessionIndex, setSessionIndex] = useState<Session[]>([]);
+  const sessionRef = useRef<Session | null>(null);
 
   const SESSION_POLL_INTERVAL_MS = 2000; // Poll every 2 seconds for active sessions
   
@@ -639,6 +641,10 @@ function ChatView() {
     const synthetic = failures.map(providerFailureToMessage);
     return [...base, ...synthetic].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }, [messages, providerFailures]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   useEffect(() => {
     if (activeSessionId) {
@@ -735,7 +741,7 @@ function ChatView() {
     void refreshSessionIndex();
     const timer = window.setInterval(() => {
       void refreshSessionIndex();
-    }, 2500);
+    }, 10000);
 
     return () => {
       cancelled = true;
@@ -762,10 +768,26 @@ function ChatView() {
 
     const sessionId = session.id;
     const interval = window.setInterval(() => {
-      void getSession(sessionId)
-        .then((fresh) => {
-          setSession(prev => (prev && prev.id === sessionId ? fresh : prev));
-          setMessages(fresh.messages || []);
+      void getSessionSummary(sessionId)
+        .then((summary) => {
+          const current = sessionRef.current;
+          if (!current || current.id !== sessionId) {
+            return;
+          }
+
+          if (summary.updated_at !== current.updated_at) {
+            void getSession(sessionId)
+              .then((fresh) => {
+                setSession(prev => (prev && prev.id === sessionId ? fresh : prev));
+                setMessages(fresh.messages || []);
+              })
+              .catch((refreshError) => {
+                console.error('Failed to refresh session transcript:', refreshError);
+              });
+            return;
+          }
+
+          setSession(prev => (prev && prev.id === sessionId ? { ...prev, ...summary, messages: prev.messages } : prev));
         })
         .catch((pollError) => {
           console.error('Failed to poll session:', pollError);
@@ -775,7 +797,7 @@ function ChatView() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [session, activeRequestSessionId, SESSION_POLL_INTERVAL_MS]);
+  }, [session?.id, session?.status, activeRequestSessionId, SESSION_POLL_INTERVAL_MS]);
 
   // Load pending question when session status is input_required
   useEffect(() => {
