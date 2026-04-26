@@ -303,7 +303,7 @@ function parseYamlGraph(
     const label = typeof nodeObj.label === 'string' ? nodeObj.label.trim() : '';
     const kindRaw = typeof nodeObj.kind === 'string' ? nodeObj.kind.trim().toLowerCase() : '';
     const ref = typeof nodeObj.ref === 'string' ? nodeObj.ref.trim() : '';
-    const instruction = typeof nodeObj.instruction === 'string' ? nodeObj.instruction.trim() : '';
+    const instruction = typeof nodeObj.instruction === 'string' ? nodeObj.instruction : '';
     const x = typeof nodeObj.x === 'number' && Number.isFinite(nodeObj.x) ? nodeObj.x : undefined;
     const y = typeof nodeObj.y === 'number' && Number.isFinite(nodeObj.y) ? nodeObj.y : undefined;
     const loopObj = nodeObj.loop && typeof nodeObj.loop === 'object' && !Array.isArray(nodeObj.loop)
@@ -311,10 +311,10 @@ function parseYamlGraph(
       : {};
     const workerSubAgentId = typeof loopObj.workerSubAgentId === 'string' ? loopObj.workerSubAgentId.trim() : '';
     const workerLabel = typeof loopObj.workerLabel === 'string' ? loopObj.workerLabel.trim() : '';
-    const workerInstruction = typeof loopObj.workerInstruction === 'string' ? loopObj.workerInstruction.trim() : '';
+    const workerInstruction = typeof loopObj.workerInstruction === 'string' ? loopObj.workerInstruction : '';
     const reviewerSubAgentId = typeof loopObj.reviewerSubAgentId === 'string' ? loopObj.reviewerSubAgentId.trim() : '';
     const reviewerLabel = typeof loopObj.reviewerLabel === 'string' ? loopObj.reviewerLabel.trim() : '';
-    const reviewerInstruction = typeof loopObj.reviewerInstruction === 'string' ? loopObj.reviewerInstruction.trim() : '';
+    const reviewerInstruction = typeof loopObj.reviewerInstruction === 'string' ? loopObj.reviewerInstruction : '';
     const loopMaxTurns = typeof loopObj.maxTurns === 'number' && Number.isFinite(loopObj.maxTurns) ? Math.floor(loopObj.maxTurns) : undefined;
     const kind = kindRaw === ''
       ? null

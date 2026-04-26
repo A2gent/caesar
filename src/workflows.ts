@@ -207,14 +207,14 @@ function normalizeWorkflow(raw: unknown): WorkflowDefinition | null {
       const localAgentBaseUrl = asString(node.localAgentBaseUrl).trim();
       const externalAgentId = asString(node.externalAgentId).trim();
       const externalAgentName = asString(node.externalAgentName).trim();
-      const instruction = asString(node.instruction).trim();
+      const instruction = asString(node.instruction);
       const loopObj = asObject(node.loop) || {};
       const workerSubAgentId = asString(node.workerSubAgentId).trim() || asString(loopObj.workerSubAgentId).trim();
       const workerLabel = asString(node.workerLabel).trim() || asString(loopObj.workerLabel).trim();
-      const workerInstruction = asString(node.workerInstruction).trim() || asString(loopObj.workerInstruction).trim();
+      const workerInstruction = asString(node.workerInstruction) || asString(loopObj.workerInstruction);
       const reviewerSubAgentId = asString(node.reviewerSubAgentId).trim() || asString(loopObj.reviewerSubAgentId).trim();
       const reviewerLabel = asString(node.reviewerLabel).trim() || asString(loopObj.reviewerLabel).trim();
-      const reviewerInstruction = asString(node.reviewerInstruction).trim() || asString(loopObj.reviewerInstruction).trim();
+      const reviewerInstruction = asString(node.reviewerInstruction) || asString(loopObj.reviewerInstruction);
       const loopMaxTurns = asNumber(node.loopMaxTurns, asNumber(loopObj.maxTurns, 0));
       if (subAgentId !== '') next.subAgentId = subAgentId;
       if (localAgentId !== '') next.localAgentId = localAgentId;
