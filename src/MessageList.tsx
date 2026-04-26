@@ -55,6 +55,7 @@ interface MessageListProps {
   projectId?: string | null;
   systemPromptSnapshot?: SystemPromptSnapshot | null;
   session?: Session | null;
+  childSessions?: Session[];
 }
 
 interface EditToolInput {
@@ -73,7 +74,31 @@ interface DiffRow {
 
 const DIFF_CONTEXT_LINES = 3;
 
-const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot, session }) => {
+type TimelineEntry = {
+  time: number;
+  order: number;
+  node: React.ReactNode;
+};
+
+function timestampMs(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function childSessionWorkflowLabel(child: Session): string {
+  const metadata = (child.metadata || {}) as Record<string, unknown>;
+  const nodeLabel = typeof metadata.workflow_node_label === 'string' ? metadata.workflow_node_label.trim() : '';
+  const workflowName = typeof metadata.workflow_name === 'string' ? metadata.workflow_name.trim() : '';
+  if (nodeLabel && workflowName) {
+    return `${workflowName} / ${nodeLabel}`;
+  }
+  return nodeLabel || workflowName || 'Child session';
+}
+
+const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot, session, childSessions = [] }) => {
   const userAvatarUrl = buildGravatarUrl(getStoredA2ARegistryOwnerEmail(), 40);
   const assistantEmoji = useMemo(() => {
     const metadata = (session?.metadata ?? null) as Record<string, unknown> | null;
@@ -891,7 +916,16 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
   };
 
   const renderedMessages = useMemo(() => {
-    const nodes: React.ReactNode[] = [];
+    const entries: TimelineEntry[] = [];
+    let order = 0;
+    const pushEntry = (node: React.ReactNode, timestamp: string | undefined) => {
+      entries.push({
+        time: timestampMs(timestamp),
+        order,
+        node,
+      });
+      order += 1;
+    };
 
     for (let index = 0; index < messages.length; index += 1) {
       const message = messages[index];
@@ -904,7 +938,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         if (message.content?.trim()) {
           const hasTokens = (message.input_tokens ?? 0) > 0 || (message.output_tokens ?? 0) > 0;
           const totalTokens = (message.input_tokens ?? 0) + (message.output_tokens ?? 0);
-          nodes.push(withSpeakerVisual(
+          pushEntry(withSpeakerVisual(
             message,
             `assistant-${index}`,
             <div
@@ -924,7 +958,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
             </div>,
-          ));
+          ), message.timestamp);
         }
 
         // Then render tool execution cards
@@ -939,11 +973,11 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         const resultByCallID = new Map(mergedResults.map((result) => [result.tool_call_id, result]));
         for (const toolCall of toolCalls) {
           if (toolCall.name === 'delegate_to_subagent') {
-            nodes.push(renderSubAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`));
+            pushEntry(renderSubAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`), timestamp);
           } else if (toolCall.name === 'delegate_to_external_agent') {
-            nodes.push(renderExternalAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`));
+            pushEntry(renderExternalAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`), timestamp);
           } else {
-            nodes.push(renderToolExecutionCard(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`));
+            pushEntry(renderToolExecutionCard(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`), timestamp);
           }
         }
         continue;
@@ -952,12 +986,12 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       if (message.role === 'tool') {
         if (toolResults.length > 0) {
           for (const result of toolResults) {
-            nodes.push(renderStandaloneToolResultCard(result, message.timestamp, `tool-result-${index}-${result.tool_call_id}`));
+            pushEntry(renderStandaloneToolResultCard(result, message.timestamp, `tool-result-${index}-${result.tool_call_id}`), message.timestamp);
           }
         } else if (message.content.trim() !== '') {
           const hasTokens = (message.input_tokens ?? 0) > 0 || (message.output_tokens ?? 0) > 0;
           const totalTokens = (message.input_tokens ?? 0) + (message.output_tokens ?? 0);
-          nodes.push(
+          pushEntry(
             <div
               key={index}
               className={`message message-${message.role}${isCompactionMessage(message) ? ' message-compaction' : ''}`}
@@ -974,6 +1008,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                 <span className="message-time" title={new Date(message.timestamp).toLocaleString()}>🕐</span>
               </div>
             </div>,
+            message.timestamp,
           );
         }
         continue;
@@ -994,7 +1029,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       const clipUrl = messageAudioClipUrl(message);
       const hasImages = messageImages(message).length > 0;
 
-      nodes.push(withSpeakerVisual(
+      pushEntry(withSpeakerVisual(
         message,
         `message-${index}`,
         <div
@@ -1027,11 +1062,51 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
             </span>
           </div>
         </div>,
-      ));
+      ), message.timestamp);
     }
 
-    return nodes;
-  }, [messages, userAvatarUrl, assistantEmoji]);
+    for (const child of childSessions) {
+      pushEntry(
+        <Link
+          key={`child-session-${child.id}`}
+          to={`/chat/${child.id}`}
+          className="inline-child-session"
+          title={`Open child session ${child.id}`}
+        >
+          <span className={`inline-child-session-dot status-${child.status}`} aria-hidden="true" />
+          <span className="inline-child-session-main">
+            <span className="inline-child-session-title">
+              {child.title || `Session ${child.id.slice(0, 8)}`}
+            </span>
+            <span className="inline-child-session-subtitle">
+              {childSessionWorkflowLabel(child)}
+            </span>
+          </span>
+          <span className="inline-child-session-status">{child.status}</span>
+        </Link>,
+        child.created_at || child.updated_at,
+      );
+    }
+
+    if (isLoading) {
+      pushEntry(
+        <div key="message-loading" className="message message-loading">
+          <span className="message-loading-spinner" aria-hidden="true" />
+          <span>Agent is thinking...</span>
+        </div>,
+        new Date().toISOString(),
+      );
+    }
+
+    return entries
+      .sort((a, b) => {
+        if (a.time !== b.time) {
+          return a.time - b.time;
+        }
+        return a.order - b.order;
+      })
+      .map((entry) => entry.node);
+  }, [messages, userAvatarUrl, assistantEmoji, childSessions, isLoading]);
 
   // Set up scroll event listener on the scrollable container to track user scroll position
   useEffect(() => {
@@ -1077,13 +1152,6 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       <SystemPromptMessage systemPromptSnapshot={systemPromptSnapshot} />
       
       {renderedMessages}
-
-      {isLoading && (
-        <div className="message message-loading">
-          <span className="message-loading-spinner" aria-hidden="true" />
-          <span>Agent is thinking...</span>
-        </div>
-      )}
 
       <div ref={endRef} />
     </div>

@@ -371,16 +371,6 @@ function formatWorkflowNodeStatus(status: string): string {
   }
 }
 
-function childSessionWorkflowLabel(child: Session): string {
-  const metadata = (child.metadata || {}) as Record<string, unknown>;
-  const nodeLabel = typeof metadata.workflow_node_label === 'string' ? metadata.workflow_node_label.trim() : '';
-  const workflowName = typeof metadata.workflow_name === 'string' ? metadata.workflow_name.trim() : '';
-  if (nodeLabel && workflowName) {
-    return `${workflowName} / ${nodeLabel}`;
-  }
-  return nodeLabel || workflowName || 'Child session';
-}
-
 function formatProviderFailure(item: ProviderFailure): string {
   const provider = (item.provider || '').trim();
   const model = (item.model || '').trim();
@@ -1140,7 +1130,7 @@ function ChatView() {
     }
     return sessionIndex
       .filter((item) => item.parent_id === session.id)
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+      .sort((a, b) => new Date(a.created_at || a.updated_at).getTime() - new Date(b.created_at || b.updated_at).getTime());
   }, [session, sessionIndex]);
 
   const composerPlaceholder = useMemo(() => {
@@ -1498,34 +1488,11 @@ function ChatView() {
               messages={messagesWithProviderFailures} 
               isLoading={isLoading} 
               sessionId={session?.id || null}
-              projectId={session?.project_id || null}
-              systemPromptSnapshot={systemPromptSnapshot}
-              session={session}
-            />
-            {childSessions.length > 0 ? (
-              <div className="inline-child-sessions" aria-label="Child sessions">
-                {childSessions.map((child) => (
-                  <button
-                    key={child.id}
-                    type="button"
-                    className="inline-child-session"
-                    onClick={() => navigate(`/chat/${child.id}`)}
-                    title={`Open child session ${child.id}`}
-                  >
-                    <span className={`inline-child-session-dot status-${child.status}`} aria-hidden="true" />
-                    <span className="inline-child-session-main">
-                      <span className="inline-child-session-title">
-                        {child.title || `Session ${child.id.slice(0, 8)}`}
-                      </span>
-                      <span className="inline-child-session-subtitle">
-                        {childSessionWorkflowLabel(child)}
-                      </span>
-                    </span>
-                    <span className="inline-child-session-status">{child.status}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            projectId={session?.project_id || null}
+            systemPromptSnapshot={systemPromptSnapshot}
+            session={session}
+            childSessions={childSessions}
+          />
           </>
         ) : (
           <EmptyState>

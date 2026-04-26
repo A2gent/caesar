@@ -132,6 +132,8 @@ function workflowToGraphYaml(workflow: WorkflowDefinition): string {
       id: node.id,
       label: node.label,
       kind: node.kind,
+      x: Math.round(node.x),
+      y: Math.round(node.y),
       ref: node.kind === 'subagent'
         ? node.subAgentId
         : node.kind === 'local'
@@ -154,48 +156,13 @@ function workflowToGraphYaml(workflow: WorkflowDefinition): string {
   });
 }
 
-function defaultGraphTemplate(): string {
-  return [
-    '# YAML graph definition',
-    '# Stop condition options: manual | max_turns | consensus | judge | timebox',
-    'nodes:',
-    '  - id: user',
-    '    label: User',
-    '    kind: user',
-    '  - id: worker_a',
-    '    label: Research A',
-    '    kind: subagent',
-    '    ref: subagent-id-1',
-    '  - id: worker_b',
-    '    label: Research B',
-    '    kind: subagent',
-    '    ref: subagent-id-2',
-    '  - id: synth',
-    '    label: Synthesis',
-    '    kind: main',
-    'edges:',
-    '  - from: user',
-    '    to: worker_a',
-    '  - from: user',
-    '    to: worker_b',
-    '  - from: worker_a',
-    '    to: synth',
-    '  - from: worker_b',
-    '    to: synth',
-    'entryNodeId: user',
-    'policy:',
-    '  stopCondition: manual',
-    '  # judgeNodeId: synth',
-    '  maxTurns: 12',
-    '  timeboxMinutes: 20',
-  ].join('\n');
-}
-
 type YamlNodeSeed = {
   id: string;
   label: string;
   kind: WorkflowNodeKind | null;
   ref: string;
+  x?: number;
+  y?: number;
 };
 
 type YamlEdgeSeed = {
@@ -313,6 +280,8 @@ function parseYamlGraph(
     const label = typeof nodeObj.label === 'string' ? nodeObj.label.trim() : '';
     const kindRaw = typeof nodeObj.kind === 'string' ? nodeObj.kind.trim().toLowerCase() : '';
     const ref = typeof nodeObj.ref === 'string' ? nodeObj.ref.trim() : '';
+    const x = typeof nodeObj.x === 'number' && Number.isFinite(nodeObj.x) ? nodeObj.x : undefined;
+    const y = typeof nodeObj.y === 'number' && Number.isFinite(nodeObj.y) ? nodeObj.y : undefined;
     const kind = kindRaw === ''
       ? null
       : (kindRaw === 'user' || kindRaw === 'main' || kindRaw === 'subagent' || kindRaw === 'local' || kindRaw === 'external')
@@ -332,7 +301,7 @@ function parseYamlGraph(
       return;
     }
     const resolvedLabel = label !== '' ? label : (ref !== '' ? ref : id);
-    yamlNodes.push({ id, label: resolvedLabel, kind, ref });
+    yamlNodes.push({ id, label: resolvedLabel, kind, ref, x, y });
   });
 
   rawEdges.forEach((entry, index) => {
@@ -399,7 +368,10 @@ function parseYamlGraph(
       if (node.ref !== '') return 'subagent';
       return 'main';
     })();
-    const pos = positionById.get(node.id) || { x: 70, y: 60 };
+    const pos = {
+      x: typeof node.x === 'number' ? node.x : (positionById.get(node.id)?.x || 70),
+      y: typeof node.y === 'number' ? node.y : (positionById.get(node.id)?.y || 60),
+    };
     const result: WorkflowNode = {
       id: node.id,
       label: node.label,
@@ -769,6 +741,31 @@ function parseGraphDsl(
   return { nodes, edges, errors, warnings };
 }
 
+function uniqueWorkflowNodeId(nodes: WorkflowNode[], preferred: string): string {
+  const base = preferred.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+/, '').replace(/-+$/, '') || 'node';
+  const used = new Set(nodes.map((node) => node.id));
+  let candidate = base;
+  let index = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+function workflowNodeRef(node: WorkflowNode): string {
+  if (node.kind === 'subagent') return node.subAgentId || '';
+  if (node.kind === 'local') return node.localAgentId || '';
+  if (node.kind === 'external') return node.externalAgentId || '';
+  return '';
+}
+
+function edgeDisplayLabel(edge: WorkflowEdge, nodeMap: Map<string, WorkflowNode>): string {
+  const from = nodeMap.get(edge.from)?.label || edge.from;
+  const to = nodeMap.get(edge.to)?.label || edge.to;
+  return `${from} -> ${to}`;
+}
+
 function WorkflowEditView() {
   const navigate = useNavigate();
   const { workflowId } = useParams<{ workflowId: string }>();
@@ -782,6 +779,8 @@ function WorkflowEditView() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedSourceNodeId, setSelectedSourceNodeId] = useState<string | null>(null);
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [yamlExpanded, setYamlExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -790,7 +789,7 @@ function WorkflowEditView() {
         const created = createWorkflowTemplate('Custom workflow');
         if (cancelled) return;
         setDraft(created);
-        setGraphDefinition(defaultGraphTemplate());
+        setGraphDefinition(workflowToGraphYaml(created));
         setError(null);
         return;
       }
@@ -858,7 +857,7 @@ function WorkflowEditView() {
     }
     if (effectiveStopCondition === 'judge') {
       if (!judgeNodeIdFromYaml) {
-        next.push('Graph YAML must define policy.judgeNodeId when stop condition is "judge".');
+        next.push('Choose a judge node when stop condition is "judge".');
       } else if (!parsedGraph.nodes.some((node) => node.id === judgeNodeIdFromYaml)) {
         next.push(`policy.judgeNodeId "${judgeNodeIdFromYaml}" does not match any node id.`);
       }
@@ -867,14 +866,48 @@ function WorkflowEditView() {
   }, [draft, effectiveStopCondition, judgeNodeIdFromYaml, parsedGraph.nodes]);
 
   const canEdit = !!draft;
+  const canBuild = canEdit && parsedGraph.errors.length === 0;
   const canSave = canEdit && parsedGraph.errors.length === 0 && judgeValidationErrors.length === 0;
 
-  const handleVisualNodeClick = (node: WorkflowNode) => {
+  const currentGraphWorkflow = (): WorkflowDefinition | null => {
     if (!draft || parsedGraph.errors.length > 0) {
+      return null;
+    }
+    const entryNode = parsedGraph.nodes.find((node) => node.id === (parsedGraph.entryNodeId || draft.entryNodeId))
+      || parsedGraph.nodes.find((node) => node.kind === 'user')
+      || parsedGraph.nodes[0];
+    return {
+      ...draft,
+      builtIn: false,
+      nodes: parsedGraph.nodes.map((node) => ({ ...node })),
+      edges: parsedGraph.edges.map((edge) => ({ ...edge })),
+      entryNodeId: entryNode?.id || '',
+      policy: {
+        ...draft.policy,
+        ...parsedGraph.policy,
+        stopCondition: effectiveStopCondition,
+        judgeNodeId: judgeNodeIdFromYaml || undefined,
+      },
+    };
+  };
+
+  const commitGraphWorkflow = (workflow: WorkflowDefinition, message?: string) => {
+    setDraft((current) => (current ? { ...current, policy: { ...workflow.policy }, entryNodeId: workflow.entryNodeId } : current));
+    setGraphDefinition(workflowToGraphYaml(workflow));
+    if (message) {
+      setSuccess(message);
+    }
+    setError(null);
+  };
+
+  const handleVisualNodeClick = (node: WorkflowNode) => {
+    const base = currentGraphWorkflow();
+    if (!base) {
       return;
     }
     if (!selectedSourceNodeId) {
       setSelectedSourceNodeId(node.id);
+      setActiveNodeId(node.id);
       setSuccess(`Source selected: ${node.label}. Click another node to connect.`);
       setError(null);
       return;
@@ -892,9 +925,9 @@ function WorkflowEditView() {
     }
 
     const nextEdges: WorkflowEdge[] = [
-      ...parsedGraph.edges.map((edge) => ({ ...edge })),
+      ...base.edges.map((edge) => ({ ...edge })),
       {
-        id: `edge-${parsedGraph.edges.length + 1}`,
+        id: `edge-${base.edges.length + 1}`,
         from: selectedSourceNodeId,
         to: node.id,
         mode: 'sequential',
@@ -910,41 +943,135 @@ function WorkflowEditView() {
       }
     }
 
-    const entryNode = parsedGraph.nodes.find((item) => item.kind === 'user') || parsedGraph.nodes[0];
-    const nextWorkflow: WorkflowDefinition = {
-      ...draft,
-      builtIn: false,
-      nodes: parsedGraph.nodes.map((item) => ({ ...item })),
-      edges: nextEdges,
-      entryNodeId: entryNode?.id || draft.entryNodeId,
-      policy: { ...draft.policy },
-    };
-
-    setGraphDefinition(workflowToGraphYaml(nextWorkflow));
+    commitGraphWorkflow({ ...base, edges: nextEdges }, 'Connection added from visual map.');
     setSelectedSourceNodeId(null);
-    setSuccess('Connection added from visual map.');
-    setError(null);
   };
 
   const visualNodes = useMemo(() => {
-    const layout = computeWorkflowGraphLayout(
-      parsedGraph.nodes,
-      parsedGraph.edges,
-      WORKFLOW_EDIT_CANVAS_WIDTH,
-      WORKFLOW_EDIT_CANVAS_HEIGHT,
-    );
     return parsedGraph.nodes.map((node) => ({
       ...node,
-      x: layout.get(node.id)?.x ?? node.x,
-      y: layout.get(node.id)?.y ?? node.y,
+      x: node.x,
+      y: node.y,
     }));
-  }, [parsedGraph.nodes, parsedGraph.edges]);
+  }, [parsedGraph.nodes]);
 
   const visualNodeMap = useMemo(() => {
     const map = new Map<string, WorkflowNode>();
     visualNodes.forEach((node) => map.set(node.id, node));
     return map;
   }, [visualNodes]);
+
+  const activeNode = useMemo(
+    () => visualNodes.find((node) => node.id === activeNodeId) || visualNodes[0] || null,
+    [activeNodeId, visualNodes],
+  );
+
+  const addNode = (kind: WorkflowNodeKind, label: string, ref = '') => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    const nodeId = uniqueWorkflowNodeId(base.nodes, stableNodeIdFromKey(label).replace(/^node-/, '') || kind);
+    const index = base.nodes.length;
+    const node: WorkflowNode = {
+      id: nodeId,
+      label,
+      kind,
+      x: 80 + (index % 4) * 180,
+      y: 80 + Math.floor(index / 4) * 120,
+    };
+    if (kind === 'subagent') {
+      node.subAgentId = ref;
+      const match = subAgents.find((agent) => agent.id === ref);
+      if (match) node.label = match.name;
+    }
+    if (kind === 'local') {
+      node.localAgentId = ref;
+      const match = localAgents.find((agent) => agent.id === ref);
+      if (match) {
+        node.label = match.name;
+        node.localAgentName = match.name;
+        node.localAgentBaseUrl = match.api_url || undefined;
+      }
+    }
+    if (kind === 'external') {
+      node.externalAgentId = ref;
+      const match = favoriteExternalAgents.find((agent) => agent.id === ref);
+      if (match) {
+        node.label = match.name || label;
+        node.externalAgentName = match.name;
+      }
+    }
+    setActiveNodeId(node.id);
+    commitGraphWorkflow({ ...base, nodes: [...base.nodes, node] }, 'Node added.');
+  };
+
+  const updateNode = (nodeId: string, patch: Partial<WorkflowNode>) => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    commitGraphWorkflow({
+      ...base,
+      nodes: base.nodes.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)),
+    });
+  };
+
+  const changeNodeKind = (nodeId: string, kind: WorkflowNodeKind) => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    commitGraphWorkflow({
+      ...base,
+      nodes: base.nodes.map((node) => {
+        if (node.id !== nodeId) return node;
+        return {
+          id: node.id,
+          label: node.label,
+          kind,
+          x: node.x,
+          y: node.y,
+        };
+      }),
+    });
+  };
+
+  const deleteNode = (nodeId: string) => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    const nextNodes = base.nodes.filter((node) => node.id !== nodeId);
+    const nextEdges = base.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
+    const nextEntryNodeId = base.entryNodeId === nodeId ? (nextNodes[0]?.id || '') : base.entryNodeId;
+    const nextPolicy = base.policy.judgeNodeId === nodeId ? { ...base.policy, judgeNodeId: undefined } : base.policy;
+    setActiveNodeId(nextNodes[0]?.id || null);
+    setSelectedSourceNodeId((current) => (current === nodeId ? null : current));
+    commitGraphWorkflow({ ...base, nodes: nextNodes, edges: nextEdges, entryNodeId: nextEntryNodeId, policy: nextPolicy }, 'Node removed.');
+  };
+
+  const updatePolicy = (patch: Partial<WorkflowDefinition['policy']>) => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    commitGraphWorkflow({ ...base, policy: { ...base.policy, ...patch } });
+  };
+
+  const updateEdge = (edgeId: string, patch: Partial<WorkflowEdge>) => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    commitGraphWorkflow({
+      ...base,
+      edges: base.edges.map((edge) => (edge.id === edgeId ? { ...edge, ...patch } : edge)),
+    });
+  };
+
+  const deleteEdge = (edgeId: string) => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    commitGraphWorkflow({ ...base, edges: base.edges.filter((edge) => edge.id !== edgeId) }, 'Connection removed.');
+  };
+
+  const handleNodeMove = (nodeId: string, x: number, y: number) => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    setGraphDefinition(workflowToGraphYaml({
+      ...base,
+      nodes: base.nodes.map((node) => (node.id === nodeId ? { ...node, x, y } : node)),
+    }));
+  };
 
   const handleSave = async () => {
     if (!draft) return;
@@ -957,7 +1084,7 @@ function WorkflowEditView() {
       return;
     }
     if (parsedGraph.nodes.length === 0) {
-      setError('Add at least one valid edge in YAML.');
+      setError('Add at least one node to the workflow.');
       return;
     }
 
@@ -1043,23 +1170,6 @@ function WorkflowEditView() {
                     disabled={!canEdit}
                   />
                 </label>
-                <label className="settings-field">
-                  <span>Stop condition</span>
-                  <select
-                    value={draft.policy.stopCondition}
-                    onChange={(event) => setDraft((current) => (current ? {
-                      ...current,
-                      policy: { ...current.policy, stopCondition: event.target.value as WorkflowStopCondition },
-                    } : current))}
-                    disabled={!canEdit}
-                  >
-                    <option value="manual">Manual stop</option>
-                    <option value="max_turns">Max turns</option>
-                    <option value="consensus">Consensus reached</option>
-                    <option value="judge">Judge decides</option>
-                    <option value="timebox">Timebox</option>
-                  </select>
-                </label>
                 <label className="settings-field workflows-description-field">
                   <span>Description</span>
                   <textarea
@@ -1071,99 +1181,271 @@ function WorkflowEditView() {
                 </label>
               </div>
 
-              <div className="workflows-policy-row">
-                <label className="settings-field">
-                  <span>Max turns</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={200}
-                    value={draft.policy.maxTurns}
-                    onChange={(event) => {
-                      const parsed = Number.parseInt(event.target.value, 10);
-                      setDraft((current) => (current ? {
-                        ...current,
-                        policy: {
-                          ...current.policy,
-                          maxTurns: Number.isFinite(parsed) && parsed > 0 ? parsed : 1,
-                        },
-                      } : current));
-                    }}
-                    disabled={!canEdit}
-                  />
-                </label>
-                <label className="settings-field">
-                  <span>Timebox (minutes)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={720}
-                    value={draft.policy.timeboxMinutes || 20}
-                    onChange={(event) => {
-                      const parsed = Number.parseInt(event.target.value, 10);
-                      setDraft((current) => (current ? {
-                        ...current,
-                        policy: {
-                          ...current.policy,
-                          timeboxMinutes: Number.isFinite(parsed) && parsed > 0 ? parsed : 20,
-                        },
-                      } : current));
-                    }}
-                    disabled={!canEdit}
-                  />
-                </label>
-              </div>
-
               <section className="workflows-block">
                 <div className="workflows-block-header">
-                  <h3>Graph Definition (YAML)</h3>
+                  <h3>Visual Builder</h3>
                 </div>
                 <div className="workflows-graph-split">
-                  <div className="workflows-graph-pane">
-                    {draft ? (
-                      <p className="settings-help">
-                        <a
-                          href={`/projects/${encodeURIComponent(SYSTEM_SOUL_PROJECT_ID)}?openFile=${encodeURIComponent(getWorkflowFilePath(draft.id))}`}
-                        >
-                          Open YAML file in Soul project
-                        </a>
-                        {` (${getWorkflowFilePath(draft.id)})`}
-                      </p>
-                    ) : null}
-                    <p className="settings-help">
-                      <a
-                        href="https://github.com/A2gent/brute/blob/main/README.md#workflow-definition-yaml-standard"
-                        target="_blank"
-                        rel="noreferrer"
+                  <div className="workflows-graph-pane workflows-builder-sidebar">
+                    <div className="workflows-toolbox">
+                      <button type="button" className="settings-add-btn" onClick={() => addNode('user', 'User')} disabled={!canBuild}>User</button>
+                      <button type="button" className="settings-add-btn" onClick={() => addNode('main', 'Main agent')} disabled={!canBuild}>Main Agent</button>
+                    </div>
+
+                    <label className="settings-field">
+                      <span>Add sub-agent</span>
+                      <select
+                        value=""
+                        onChange={(event) => {
+                          const id = event.target.value;
+                          if (!id) return;
+                          const agent = subAgents.find((item) => item.id === id);
+                          addNode('subagent', agent?.name || 'Sub-agent', id);
+                        }}
+                        disabled={!canBuild || subAgents.length === 0}
                       >
-                        Workflow YAML format reference
-                      </a>
-                    </p>
-                    <p className="settings-help">
-                      Define <code>nodes</code> with <code>id</code>. <code>label</code>, <code>kind</code>, and <code>ref</code> are optional. Define stop policy in <code>policy</code>.
-                    </p>
-                    <p className="settings-help">
-                      Loops are supported (for example, <code>developer -&gt; critic -&gt; developer</code>). Use <code>policy.maxTurns</code> and/or <code>policy.timeboxMinutes</code> to cap iterations. For <code>stopCondition: judge</code>, the judge node should emit <code>VERDICT: APPROVED</code> to stop early.
-                    </p>
-                    <textarea
-                      className="mind-session-textarea"
-                      rows={14}
-                      value={graphDefinition}
-                      onChange={(event) => setGraphDefinition(event.target.value)}
-                      disabled={!canEdit}
-                      spellCheck={false}
-                      placeholder={[
-                        'nodes:',
-                        '  - id: user',
-                        '    label: User',
-                        '  - id: worker',
-                        '    label: Research A',
-                        '    ref: subagent-id-1',
-                        'edges:',
-                        '  - from: user',
-                        '    to: worker',
-                      ].join('\n')}
-                    />
+                        <option value="">Choose sub-agent...</option>
+                        {subAgents.map((agent) => (
+                          <option key={agent.id} value={agent.id}>{agent.name}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="settings-field">
+                      <span>Add local agent</span>
+                      <select
+                        value=""
+                        onChange={(event) => {
+                          const id = event.target.value;
+                          if (!id) return;
+                          const agent = localAgents.find((item) => item.id === id);
+                          addNode('local', agent?.name || 'Local agent', id);
+                        }}
+                        disabled={!canBuild || localAgents.length === 0}
+                      >
+                        <option value="">Choose local agent...</option>
+                        {localAgents.map((agent) => (
+                          <option key={agent.id} value={agent.id}>{agent.name}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="settings-field">
+                      <span>Add external agent</span>
+                      <select
+                        value=""
+                        onChange={(event) => {
+                          const id = event.target.value;
+                          if (!id) return;
+                          const agent = favoriteExternalAgents.find((item) => item.id === id);
+                          addNode('external', agent?.name || 'External agent', id);
+                        }}
+                        disabled={!canBuild || favoriteExternalAgents.length === 0}
+                      >
+                        <option value="">Choose favorite...</option>
+                        {favoriteExternalAgents.map((agent) => (
+                          <option key={agent.id} value={agent.id}>{agent.name || agent.id}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="workflows-config-panel">
+                      <h4>Workflow Settings</h4>
+                      <label className="settings-field">
+                        <span>Stop condition</span>
+                        <select
+                          value={effectiveStopCondition}
+                          onChange={(event) => updatePolicy({ stopCondition: event.target.value as WorkflowStopCondition })}
+                          disabled={!canBuild}
+                        >
+                          <option value="manual">Manual stop</option>
+                          <option value="max_turns">Max turns</option>
+                          <option value="consensus">Consensus reached</option>
+                          <option value="judge">Judge decides</option>
+                          <option value="timebox">Timebox</option>
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>Max turns</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={200}
+                          value={parsedGraph.policy?.maxTurns || draft.policy.maxTurns}
+                          onChange={(event) => {
+                            const parsed = Number.parseInt(event.target.value, 10);
+                            updatePolicy({ maxTurns: Number.isFinite(parsed) && parsed > 0 ? parsed : 1 });
+                          }}
+                          disabled={!canBuild}
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>Timebox minutes</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={720}
+                          value={parsedGraph.policy?.timeboxMinutes || draft.policy.timeboxMinutes || 20}
+                          onChange={(event) => {
+                            const parsed = Number.parseInt(event.target.value, 10);
+                            updatePolicy({ timeboxMinutes: Number.isFinite(parsed) && parsed > 0 ? parsed : 20 });
+                          }}
+                          disabled={!canBuild}
+                        />
+                      </label>
+                      <label className="settings-field">
+                        <span>Judge node</span>
+                        <select
+                          value={judgeNodeIdFromYaml}
+                          onChange={(event) => updatePolicy({ judgeNodeId: event.target.value || undefined })}
+                          disabled={!canBuild}
+                        >
+                          <option value="">No judge</option>
+                          {visualNodes.map((node) => (
+                            <option key={node.id} value={node.id}>{node.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="workflows-config-panel">
+                      <h4>Selected Node</h4>
+                      <label className="settings-field">
+                        <span>Node</span>
+                        <select
+                          value={activeNode?.id || ''}
+                          onChange={(event) => setActiveNodeId(event.target.value || null)}
+                          disabled={!canBuild || visualNodes.length === 0}
+                        >
+                          {visualNodes.map((node) => (
+                            <option key={node.id} value={node.id}>{node.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {activeNode ? (
+                        <>
+                          <label className="settings-field">
+                            <span>Label</span>
+                            <input
+                              type="text"
+                              value={activeNode.label}
+                              onChange={(event) => updateNode(activeNode.id, { label: event.target.value })}
+                              disabled={!canBuild}
+                            />
+                          </label>
+                          <label className="settings-field">
+                            <span>Type</span>
+                            <select
+                              value={activeNode.kind}
+                              onChange={(event) => changeNodeKind(activeNode.id, event.target.value as WorkflowNodeKind)}
+                              disabled={!canBuild}
+                            >
+                              <option value="user">User</option>
+                              <option value="main">Main agent</option>
+                              <option value="subagent">Sub-agent</option>
+                              <option value="local">Local agent</option>
+                              <option value="external">External agent</option>
+                            </select>
+                          </label>
+                          {activeNode.kind === 'subagent' ? (
+                            <label className="settings-field">
+                              <span>Sub-agent</span>
+                              <select
+                                value={activeNode.subAgentId || ''}
+                                onChange={(event) => {
+                                  const agent = subAgents.find((item) => item.id === event.target.value);
+                                  updateNode(activeNode.id, { subAgentId: event.target.value, label: agent?.name || activeNode.label });
+                                }}
+                                disabled={!canBuild}
+                              >
+                                <option value="">Choose sub-agent...</option>
+                                {subAgents.map((agent) => (
+                                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          {activeNode.kind === 'local' ? (
+                            <label className="settings-field">
+                              <span>Local agent</span>
+                              <select
+                                value={activeNode.localAgentId || ''}
+                                onChange={(event) => {
+                                  const agent = localAgents.find((item) => item.id === event.target.value);
+                                  updateNode(activeNode.id, {
+                                    localAgentId: event.target.value,
+                                    localAgentName: agent?.name,
+                                    localAgentBaseUrl: agent?.api_url || undefined,
+                                    label: agent?.name || activeNode.label,
+                                  });
+                                }}
+                                disabled={!canBuild}
+                              >
+                                <option value="">Choose local agent...</option>
+                                {localAgents.map((agent) => (
+                                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          {activeNode.kind === 'external' ? (
+                            <label className="settings-field">
+                              <span>External agent</span>
+                              <select
+                                value={activeNode.externalAgentId || ''}
+                                onChange={(event) => {
+                                  const agent = favoriteExternalAgents.find((item) => item.id === event.target.value);
+                                  updateNode(activeNode.id, {
+                                    externalAgentId: event.target.value,
+                                    externalAgentName: agent?.name,
+                                    label: agent?.name || activeNode.label,
+                                  });
+                                }}
+                                disabled={!canBuild}
+                              >
+                                <option value="">Choose favorite...</option>
+                                {favoriteExternalAgents.map((agent) => (
+                                  <option key={agent.id} value={agent.id}>{agent.name || agent.id}</option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          <label className="settings-field">
+                            <span>Node ID</span>
+                            <input type="text" value={activeNode.id} disabled />
+                          </label>
+                          <label className="settings-field">
+                            <span>Reference</span>
+                            <input type="text" value={workflowNodeRef(activeNode) || 'None'} disabled />
+                          </label>
+                          <div className="workflows-toolbox">
+                            <button type="button" className="settings-remove-btn" onClick={() => deleteNode(activeNode.id)} disabled={!canBuild || visualNodes.length <= 1}>Delete Node</button>
+                            <button type="button" className="settings-add-btn" onClick={() => commitGraphWorkflow({ ...(currentGraphWorkflow() || draft), entryNodeId: activeNode.id })} disabled={!canBuild}>Set Entry</button>
+                            <button type="button" className="settings-add-btn" onClick={() => updatePolicy({ stopCondition: 'judge', judgeNodeId: activeNode.id })} disabled={!canBuild}>Set Judge</button>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="settings-help">Select a node on the map.</p>
+                      )}
+                    </div>
+
+                    <div className="workflows-config-panel">
+                      <h4>Connections</h4>
+                      <div className="workflows-edge-list compact">
+                        {parsedGraph.edges.map((edge) => (
+                          <div className="workflows-edge-row compact" key={edge.id}>
+                            <span title={edgeDisplayLabel(edge, visualNodeMap)}>{edgeDisplayLabel(edge, visualNodeMap)}</span>
+                            <select value={edge.mode} onChange={(event) => updateEdge(edge.id, { mode: event.target.value as WorkflowEdge['mode'] })} disabled={!canBuild}>
+                              <option value="sequential">Sequential</option>
+                              <option value="parallel">Parallel</option>
+                            </select>
+                            <button type="button" className="settings-remove-btn" onClick={() => deleteEdge(edge.id)} disabled={!canBuild}>Remove</button>
+                          </div>
+                        ))}
+                        {parsedGraph.edges.length === 0 ? <p className="settings-help">Click a source node, then a target node to connect them.</p> : null}
+                      </div>
+                    </div>
+
                     {parsedGraph.errors.length > 0 ? (
                       <div className="error-banner" style={{ marginTop: 10 }}>
                         {parsedGraph.errors.join(' ')}
@@ -1193,7 +1475,7 @@ function WorkflowEditView() {
                       </button>
                     </div>
                     <p className="settings-help">
-                      Click source node, then target node to create a connection.
+                      Drag nodes to arrange the workflow. Click one node, then another node to connect them.
                     </p>
                     <WorkflowGraphCanvas
                       nodes={visualNodes}
@@ -1202,6 +1484,7 @@ function WorkflowEditView() {
                       canvasWidth={WORKFLOW_EDIT_CANVAS_WIDTH}
                       canvasHeight={WORKFLOW_EDIT_CANVAS_HEIGHT}
                       onNodeClick={canEdit ? handleVisualNodeClick : undefined}
+                      onNodeMove={canBuild ? handleNodeMove : undefined}
                       selectedNodeId={selectedSourceNodeId}
                       judgeNodeId={effectiveStopCondition === 'judge' ? judgeNodeIdFromYaml : null}
                       nodeDisplayLabel={(node) => {
@@ -1219,6 +1502,39 @@ function WorkflowEditView() {
                     />
                   </div>
                 </div>
+              </section>
+
+              <section className="workflows-block">
+                <div className="workflows-block-header">
+                  <h3>YAML</h3>
+                  <button type="button" className="settings-remove-btn" onClick={() => setYamlExpanded((value) => !value)}>
+                    {yamlExpanded ? 'Hide YAML' : 'Show YAML'}
+                  </button>
+                </div>
+                <p className="settings-help">
+                  The visual builder writes this workflow file: <a href={`/projects/${encodeURIComponent(SYSTEM_SOUL_PROJECT_ID)}?openFile=${encodeURIComponent(getWorkflowFilePath(draft.id))}`}>{getWorkflowFilePath(draft.id)}</a>. You can copy this YAML to share the workflow.
+                </p>
+                {yamlExpanded ? (
+                  <>
+                    <p className="settings-help">
+                      <a
+                        href="https://github.com/A2gent/brute/blob/main/README.md#workflow-definition-yaml-standard"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Workflow YAML format reference
+                      </a>
+                    </p>
+                    <textarea
+                      className="mind-session-textarea"
+                      rows={16}
+                      value={graphDefinition}
+                      onChange={(event) => setGraphDefinition(event.target.value)}
+                      disabled={!canEdit}
+                      spellCheck={false}
+                    />
+                  </>
+                ) : null}
               </section>
             </>
           ) : (

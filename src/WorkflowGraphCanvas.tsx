@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import type { PointerEvent } from 'react';
 import type { WorkflowEdge, WorkflowNode } from './workflows';
 import {
   WORKFLOW_CANVAS_HEIGHT,
@@ -14,6 +15,7 @@ interface WorkflowGraphCanvasProps {
   canvasWidth?: number;
   canvasHeight?: number;
   onNodeClick?: (node: WorkflowNode) => void;
+  onNodeMove?: (nodeId: string, x: number, y: number) => void;
   selectedNodeId?: string | null;
   judgeNodeId?: string | null;
 }
@@ -53,10 +55,20 @@ export default function WorkflowGraphCanvas({
   canvasWidth = WORKFLOW_CANVAS_WIDTH,
   canvasHeight = WORKFLOW_CANVAS_HEIGHT,
   onNodeClick,
+  onNodeMove,
   selectedNodeId = null,
   judgeNodeId = null,
 }: WorkflowGraphCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const dragRef = useRef<{
+    nodeId: string;
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, WorkflowNode>();
@@ -114,6 +126,55 @@ export default function WorkflowGraphCanvas({
     });
   }, [canvasHeight, canvasWidth, edges, nodeMap]);
 
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>, node: WorkflowNode) => {
+    if (!onNodeMove) {
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      nodeId: node.id,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: node.x,
+      startY: node.y,
+      moved: false,
+    };
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || !onNodeMove || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      drag.moved = true;
+    }
+    const nextX = Math.max(8, Math.min(canvasWidth - 140, drag.startX + dx));
+    const nextY = Math.max(8, Math.min(canvasHeight - 72, drag.startY + dy));
+    onNodeMove(drag.nodeId, Math.round(nextX), Math.round(nextY));
+  };
+
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement>, node: WorkflowNode) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (drag?.pointerId === event.pointerId) {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture may already be released by the browser.
+      }
+      if (drag.moved) {
+        return;
+      }
+    }
+    if (onNodeClick) {
+      onNodeClick(node);
+    }
+  };
+
   return (
     <div className="workflow-canvas" role="img" aria-label="Workflow map preview">
       <canvas
@@ -126,7 +187,10 @@ export default function WorkflowGraphCanvas({
           key={node.id}
           className={`workflow-canvas-node kind-${node.kind}${selectedNodeId === node.id ? ' selected' : ''}${onNodeClick ? ' clickable' : ''}${judgeNodeId === node.id ? ' judge' : ''}`}
           style={{ left: `${node.x}px`, top: `${node.y}px` }}
-          onClick={onNodeClick ? () => onNodeClick(node) : undefined}
+          onPointerDown={(event) => handlePointerDown(event, node)}
+          onPointerMove={handlePointerMove}
+          onPointerUp={(event) => handlePointerUp(event, node)}
+          onClick={onNodeMove ? undefined : (onNodeClick ? () => onNodeClick(node) : undefined)}
         >
           <strong>{nodeDisplayLabel ? nodeDisplayLabel(node) : node.label}</strong>
           <small>{nodeKindLabel(node.kind)}</small>

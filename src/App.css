@@ -220,13 +220,16 @@ body.mind-resizing * {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  width: auto;
+  max-width: 880px;
+  margin: 8px 0 8px 52px;
   border: 1px solid #313b4c;
   background: #171d28;
   color: #d9e4f6;
   border-radius: 8px;
   padding: 9px 11px;
   text-align: left;
+  text-decoration: none;
   font: inherit;
   cursor: pointer;
   transition: border-color 0.15s ease, background-color 0.15s ease;
@@ -11401,6 +11404,34 @@ button.session-provider-chip:hover {
   min-height: 760px;
 }
 
+.workflows-builder-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workflows-toolbox {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.workflows-config-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workflows-config-panel h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 .yaml-editor-wrap {
   position: relative;
   border: 1px solid var(--border);
@@ -11549,6 +11580,20 @@ button.session-provider-chip:hover {
   align-items: end;
 }
 
+.workflows-edge-row.compact {
+  grid-template-columns: minmax(0, 1fr) 120px auto;
+  padding: 8px;
+  align-items: center;
+}
+
+.workflows-edge-row.compact span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  font-size: 0.88rem;
+}
+
 .workflow-canvas {
   position: relative;
   border: 1px solid var(--border);
@@ -11578,6 +11623,8 @@ button.session-provider-chip:hover {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  touch-action: none;
+  user-select: none;
 }
 
 .workflow-canvas-node.clickable {
