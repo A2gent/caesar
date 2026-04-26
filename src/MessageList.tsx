@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type Session, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
+import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type Session, type SubAgent, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
 import { IntegrationProviderIcon, integrationProviderForToolName, integrationProviderLabel } from './integrationMeta';
 import { renderMarkdownToHtml } from './markdown';
 import { buildOpenInMyMindUrl, extractToolFilePath, isSupportedFileTool } from './myMindNavigation';
@@ -56,6 +56,7 @@ interface MessageListProps {
   systemPromptSnapshot?: SystemPromptSnapshot | null;
   session?: Session | null;
   childSessions?: Session[];
+  subAgents?: SubAgent[];
 }
 
 interface EditToolInput {
@@ -130,7 +131,7 @@ function isInternalHandoffMessage(message: Message): boolean {
   );
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot, session, childSessions = [] }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot, session, childSessions = [], subAgents = [] }) => {
   const userAvatarUrl = buildGravatarUrl(getStoredA2ARegistryOwnerEmail(), 40);
   const assistantEmoji = useMemo(() => {
     const metadata = (session?.metadata ?? null) as Record<string, unknown> | null;
@@ -146,6 +147,26 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     }
     return getAgentEmoji('main');
   }, [session?.a2a_source_agent_id, session?.a2a_target_agent_id, session?.metadata]);
+
+  const subAgentIdSet = useMemo(() => new Set(subAgents.map((agent) => agent.id)), [subAgents]);
+
+  const childSessionEmoji = useCallback((child: Session): string => {
+    const metadata = (child.metadata || {}) as Record<string, unknown>;
+    const subAgentID = typeof metadata.sub_agent_id === 'string' ? metadata.sub_agent_id.trim() : '';
+    if (subAgentID !== '') {
+      if (subAgentIdSet.size === 0 || subAgentIdSet.has(subAgentID)) {
+        return getAgentEmoji('subagent', subAgentID);
+      }
+      return getAgentEmoji('subagent');
+    }
+    if (child.a2a_source_agent_id && child.a2a_source_agent_id.trim() !== '') {
+      return getAgentEmoji('local', child.a2a_source_agent_id);
+    }
+    if (child.a2a_target_agent_id && child.a2a_target_agent_id.trim() !== '') {
+      return getAgentEmoji('local', child.a2a_target_agent_id);
+    }
+    return getAgentEmoji('subagent');
+  }, [subAgentIdSet]);
 
   const withSpeakerVisual = (message: Message, key: string, content: React.ReactNode): React.ReactNode => {
     if (isInternalHandoffMessage(message)) {
@@ -1116,6 +1137,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
           className="inline-child-session"
           title={`Open child session ${child.id}`}
         >
+          <span className="inline-child-session-emoji" aria-hidden="true">{childSessionEmoji(child)}</span>
           <span className={`inline-child-session-dot status-${child.status}`} aria-hidden="true" />
           <span className="inline-child-session-main">
             <span className="inline-child-session-title">
@@ -1149,7 +1171,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         return a.order - b.order;
       })
       .map((entry) => entry.node);
-  }, [messages, userAvatarUrl, assistantEmoji, childSessions, isLoading]);
+  }, [messages, userAvatarUrl, assistantEmoji, childSessions, childSessionEmoji, isLoading]);
 
   // Set up scroll event listener on the scrollable container to track user scroll position
   useEffect(() => {

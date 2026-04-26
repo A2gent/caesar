@@ -217,7 +217,7 @@ body.mind-resizing * {
 
 .inline-child-session {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   width: auto;
@@ -240,6 +240,10 @@ body.mind-resizing * {
   background: #1d2635;
 }
 
+.inline-child-session-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
 .inline-child-session-dot {
   width: 9px;
   height: 9px;

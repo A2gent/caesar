@@ -76,6 +76,10 @@ type WorkflowDefinitionNodeView = {
   subAgentId?: string;
   localAgentId?: string;
   externalAgentId?: string;
+  workerLabel?: string;
+  workerSubAgentId?: string;
+  reviewerLabel?: string;
+  reviewerSubAgentId?: string;
 };
 
 function parseWorkflowDefinitionNodes(metadata: Record<string, unknown>): WorkflowDefinitionNodeView[] {
@@ -103,6 +107,10 @@ function parseWorkflowDefinitionNodes(metadata: Record<string, unknown>): Workfl
     const subAgentId = typeof node.subAgentId === 'string' ? node.subAgentId : undefined;
     const localAgentId = typeof node.localAgentId === 'string' ? node.localAgentId : undefined;
     const externalAgentId = typeof node.externalAgentId === 'string' ? node.externalAgentId : undefined;
+    const workerLabel = typeof node.workerLabel === 'string' ? node.workerLabel.trim() : undefined;
+    const workerSubAgentId = typeof node.workerSubAgentId === 'string' ? node.workerSubAgentId : undefined;
+    const reviewerLabel = typeof node.reviewerLabel === 'string' ? node.reviewerLabel.trim() : undefined;
+    const reviewerSubAgentId = typeof node.reviewerSubAgentId === 'string' ? node.reviewerSubAgentId : undefined;
     nodes.push({
       id,
       label: label || id,
@@ -110,6 +118,10 @@ function parseWorkflowDefinitionNodes(metadata: Record<string, unknown>): Workfl
       subAgentId,
       localAgentId,
       externalAgentId,
+      workerLabel,
+      workerSubAgentId,
+      reviewerLabel,
+      reviewerSubAgentId,
     });
   }
   return nodes;
@@ -132,8 +144,31 @@ function parseWorkflowState(session: Session | null): WorkflowStateView | null {
   const definitionNodes = parseWorkflowDefinitionNodes(metadata);
   const definitionOrder = new Map<string, number>();
   const definitionByID = new Map<string, WorkflowDefinitionNodeView>();
-  definitionNodes.forEach((node, index) => {
-    definitionOrder.set(node.id, index);
+  let currentOrder = 0;
+  definitionNodes.forEach((node) => {
+    if (node.kind === 'review_loop') {
+      const workerId = `${node.id}__worker`;
+      const criticId = `${node.id}__critic`;
+
+      definitionOrder.set(workerId, currentOrder++);
+      definitionByID.set(workerId, {
+        id: workerId,
+        label: node.workerLabel || 'Worker',
+        kind: 'subagent',
+        subAgentId: node.workerSubAgentId,
+      });
+
+      definitionOrder.set(criticId, currentOrder++);
+      definitionByID.set(criticId, {
+        id: criticId,
+        label: node.reviewerLabel || 'Critic',
+        kind: 'subagent',
+        subAgentId: node.reviewerSubAgentId,
+      });
+      return;
+    }
+
+    definitionOrder.set(node.id, currentOrder++);
     definitionByID.set(node.id, node);
   });
   const nodeEntries = Object.entries(nodesRaw as Record<string, unknown>);
@@ -1494,6 +1529,7 @@ function ChatView() {
             systemPromptSnapshot={systemPromptSnapshot}
             session={session}
             childSessions={childSessions}
+            subAgents={subAgents}
           />
           </>
         ) : (
