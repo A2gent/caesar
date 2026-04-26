@@ -8,7 +8,7 @@ import {
 } from './api';
 import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
 
-export type WorkflowNodeKind = 'user' | 'main' | 'subagent' | 'local' | 'external';
+export type WorkflowNodeKind = 'user' | 'main' | 'subagent' | 'local' | 'external' | 'review_loop';
 export type WorkflowEdgeMode = 'sequential' | 'parallel';
 export type WorkflowStopCondition = 'manual' | 'max_turns' | 'consensus' | 'judge' | 'timebox';
 
@@ -24,6 +24,11 @@ export interface WorkflowNode {
   localAgentBaseUrl?: string;
   externalAgentId?: string;
   externalAgentName?: string;
+  workerSubAgentId?: string;
+  workerLabel?: string;
+  reviewerSubAgentId?: string;
+  reviewerLabel?: string;
+  loopMaxTurns?: number;
 }
 
 export interface WorkflowEdge {
@@ -106,33 +111,12 @@ function builtInWorkflows(): WorkflowDefinition[] {
       createdAt,
       updatedAt,
     },
-    {
-      id: 'builtin:user-main-critic',
-      name: 'User -> Agent <-> Critic',
-      description: 'Main agent produces changes, then a critic sub-agent reviews and routes feedback back for revision.',
-      builtIn: true,
-      nodes: [
-        { id: 'n-user', label: 'User', kind: 'user', x: 60, y: 140 },
-        { id: 'n-main', label: 'Builder', kind: 'main', x: 290, y: 80 },
-        { id: 'n-critic', label: 'Critic', kind: 'subagent', x: 290, y: 220 },
-      ],
-      edges: [
-        { id: 'e-user-main', from: 'n-user', to: 'n-main', mode: 'sequential' },
-        { id: 'e-main-critic', from: 'n-main', to: 'n-critic', mode: 'sequential' },
-        { id: 'e-critic-main', from: 'n-critic', to: 'n-main', mode: 'sequential' },
-      ],
-      entryNodeId: 'n-user',
-      policy: { ...basePolicy(), stopCondition: 'judge', judgeNodeId: 'n-critic' },
-      createdAt,
-      updatedAt,
-    },
   ];
 }
 
 function sortWorkflows(items: WorkflowDefinition[]): WorkflowDefinition[] {
   const builtInOrder: Record<string, number> = {
     'builtin:user-main': 0,
-    'builtin:user-main-critic': 1,
   };
 
   return [...items].sort((a, b) => {
@@ -182,7 +166,7 @@ function parseEdgeMode(raw: unknown): WorkflowEdgeMode {
 
 function parseNodeKind(raw: unknown): WorkflowNodeKind {
   const value = asString(raw).trim();
-  if (value === 'user' || value === 'main' || value === 'subagent' || value === 'local' || value === 'external') {
+  if (value === 'user' || value === 'main' || value === 'subagent' || value === 'local' || value === 'external' || value === 'review_loop') {
     return value;
   }
   return 'main';
@@ -220,12 +204,23 @@ function normalizeWorkflow(raw: unknown): WorkflowDefinition | null {
       const localAgentBaseUrl = asString(node.localAgentBaseUrl).trim();
       const externalAgentId = asString(node.externalAgentId).trim();
       const externalAgentName = asString(node.externalAgentName).trim();
+      const loopObj = asObject(node.loop) || {};
+      const workerSubAgentId = asString(node.workerSubAgentId).trim() || asString(loopObj.workerSubAgentId).trim();
+      const workerLabel = asString(node.workerLabel).trim() || asString(loopObj.workerLabel).trim();
+      const reviewerSubAgentId = asString(node.reviewerSubAgentId).trim() || asString(loopObj.reviewerSubAgentId).trim();
+      const reviewerLabel = asString(node.reviewerLabel).trim() || asString(loopObj.reviewerLabel).trim();
+      const loopMaxTurns = asNumber(node.loopMaxTurns, asNumber(loopObj.maxTurns, 0));
       if (subAgentId !== '') next.subAgentId = subAgentId;
       if (localAgentId !== '') next.localAgentId = localAgentId;
       if (localAgentName !== '') next.localAgentName = localAgentName;
       if (localAgentBaseUrl !== '') next.localAgentBaseUrl = localAgentBaseUrl;
       if (externalAgentId !== '') next.externalAgentId = externalAgentId;
       if (externalAgentName !== '') next.externalAgentName = externalAgentName;
+      if (workerSubAgentId !== '') next.workerSubAgentId = workerSubAgentId;
+      if (workerLabel !== '') next.workerLabel = workerLabel;
+      if (reviewerSubAgentId !== '') next.reviewerSubAgentId = reviewerSubAgentId;
+      if (reviewerLabel !== '') next.reviewerLabel = reviewerLabel;
+      if (loopMaxTurns > 0) next.loopMaxTurns = Math.floor(loopMaxTurns);
       return next;
     })
     .filter((node): node is WorkflowNode => !!node);
@@ -659,6 +654,11 @@ export function buildWorkflowSessionMetadata(workflow: WorkflowDefinition): Reco
         subAgentId: node.subAgentId,
         localAgentId: node.localAgentId,
         externalAgentId: node.externalAgentId,
+        workerSubAgentId: node.workerSubAgentId,
+        workerLabel: node.workerLabel,
+        reviewerSubAgentId: node.reviewerSubAgentId,
+        reviewerLabel: node.reviewerLabel,
+        loopMaxTurns: node.loopMaxTurns,
       })),
       edges: workflow.edges.map((edge) => ({
         from: edge.from,

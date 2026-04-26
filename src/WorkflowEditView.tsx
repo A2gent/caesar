@@ -70,6 +70,8 @@ function kindLabel(kind: WorkflowNodeKind): string {
       return 'Local agent';
     case 'external':
       return 'External agent';
+    case 'review_loop':
+      return 'Review loop';
     default:
       return kind;
   }
@@ -141,10 +143,20 @@ function workflowToGraphYaml(workflow: WorkflowDefinition): string {
           : node.kind === 'external'
             ? node.externalAgentId
             : undefined,
+      loop: node.kind === 'review_loop'
+        ? {
+          workerSubAgentId: node.workerSubAgentId,
+          workerLabel: node.workerLabel,
+          reviewerSubAgentId: node.reviewerSubAgentId,
+          reviewerLabel: node.reviewerLabel,
+          maxTurns: node.loopMaxTurns,
+        }
+        : undefined,
     })),
     edges: workflow.edges.map((edge) => ({
       from: edge.from,
       to: edge.to,
+      mode: edge.mode,
     })),
     entryNodeId: workflow.entryNodeId,
     policy: {
@@ -163,6 +175,11 @@ type YamlNodeSeed = {
   ref: string;
   x?: number;
   y?: number;
+  workerSubAgentId?: string;
+  workerLabel?: string;
+  reviewerSubAgentId?: string;
+  reviewerLabel?: string;
+  loopMaxTurns?: number;
 };
 
 type YamlEdgeSeed = {
@@ -282,9 +299,17 @@ function parseYamlGraph(
     const ref = typeof nodeObj.ref === 'string' ? nodeObj.ref.trim() : '';
     const x = typeof nodeObj.x === 'number' && Number.isFinite(nodeObj.x) ? nodeObj.x : undefined;
     const y = typeof nodeObj.y === 'number' && Number.isFinite(nodeObj.y) ? nodeObj.y : undefined;
+    const loopObj = nodeObj.loop && typeof nodeObj.loop === 'object' && !Array.isArray(nodeObj.loop)
+      ? nodeObj.loop as Record<string, unknown>
+      : {};
+    const workerSubAgentId = typeof loopObj.workerSubAgentId === 'string' ? loopObj.workerSubAgentId.trim() : '';
+    const workerLabel = typeof loopObj.workerLabel === 'string' ? loopObj.workerLabel.trim() : '';
+    const reviewerSubAgentId = typeof loopObj.reviewerSubAgentId === 'string' ? loopObj.reviewerSubAgentId.trim() : '';
+    const reviewerLabel = typeof loopObj.reviewerLabel === 'string' ? loopObj.reviewerLabel.trim() : '';
+    const loopMaxTurns = typeof loopObj.maxTurns === 'number' && Number.isFinite(loopObj.maxTurns) ? Math.floor(loopObj.maxTurns) : undefined;
     const kind = kindRaw === ''
       ? null
-      : (kindRaw === 'user' || kindRaw === 'main' || kindRaw === 'subagent' || kindRaw === 'local' || kindRaw === 'external')
+      : (kindRaw === 'user' || kindRaw === 'main' || kindRaw === 'subagent' || kindRaw === 'local' || kindRaw === 'external' || kindRaw === 'review_loop')
         ? kindRaw as WorkflowNodeKind
         : null;
     if (id === '') {
@@ -297,11 +322,11 @@ function parseYamlGraph(
     }
     usedNodeIds.add(id);
     if (kindRaw !== '' && !kind) {
-      errors.push(`nodes[${index}].kind must be one of user|main|subagent|local|external.`);
+      errors.push(`nodes[${index}].kind must be one of user|main|subagent|local|external|review_loop.`);
       return;
     }
     const resolvedLabel = label !== '' ? label : (ref !== '' ? ref : id);
-    yamlNodes.push({ id, label: resolvedLabel, kind, ref, x, y });
+    yamlNodes.push({ id, label: resolvedLabel, kind, ref, x, y, workerSubAgentId, workerLabel, reviewerSubAgentId, reviewerLabel, loopMaxTurns });
   });
 
   rawEdges.forEach((entry, index) => {
@@ -379,6 +404,24 @@ function parseYamlGraph(
       x: pos.x,
       y: pos.y,
     };
+
+    if (inferredKind === 'review_loop') {
+      result.workerSubAgentId = node.workerSubAgentId;
+      result.workerLabel = node.workerLabel || 'Worker';
+      result.reviewerSubAgentId = node.reviewerSubAgentId;
+      result.reviewerLabel = node.reviewerLabel || 'Critic';
+      if (node.loopMaxTurns && node.loopMaxTurns > 0) result.loopMaxTurns = node.loopMaxTurns;
+      if (!result.workerSubAgentId) {
+        errors.push(`Review loop "${node.label}" needs loop.workerSubAgentId.`);
+      } else if (!subAgents.some((agent) => agent.id === result.workerSubAgentId)) {
+        errors.push(`Review loop worker "${result.workerSubAgentId}" was not matched to an existing sub-agent.`);
+      }
+      if (!result.reviewerSubAgentId) {
+        errors.push(`Review loop "${node.label}" needs loop.reviewerSubAgentId.`);
+      } else if (!subAgents.some((agent) => agent.id === result.reviewerSubAgentId)) {
+        errors.push(`Review loop reviewer "${result.reviewerSubAgentId}" was not matched to an existing sub-agent.`);
+      }
+    }
 
     if (inferredKind === 'subagent') {
       const search = (node.ref || node.label).toLowerCase();
@@ -757,6 +800,7 @@ function workflowNodeRef(node: WorkflowNode): string {
   if (node.kind === 'subagent') return node.subAgentId || '';
   if (node.kind === 'local') return node.localAgentId || '';
   if (node.kind === 'external') return node.externalAgentId || '';
+  if (node.kind === 'review_loop') return `${node.workerLabel || node.workerSubAgentId || 'Worker'} / ${node.reviewerLabel || node.reviewerSubAgentId || 'Critic'}`;
   return '';
 }
 
@@ -764,6 +808,19 @@ function edgeDisplayLabel(edge: WorkflowEdge, nodeMap: Map<string, WorkflowNode>
   const from = nodeMap.get(edge.from)?.label || edge.from;
   const to = nodeMap.get(edge.to)?.label || edge.to;
   return `${from} -> ${to}`;
+}
+
+function nodeLooksLike(node: WorkflowNode, expected: string): boolean {
+  const text = `${node.id} ${node.label} ${workflowNodeRef(node)}`.toLowerCase();
+  return text.includes(expected);
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tagName = target.tagName.toLowerCase();
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
 }
 
 function WorkflowEditView() {
@@ -778,9 +835,17 @@ function WorkflowEditView() {
   const [favoriteExternalAgents, setFavoriteExternalAgents] = useState<FavoriteA2AAgent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [selectedSourceNodeId, setSelectedSourceNodeId] = useState<string | null>(null);
+  const [connectionNodeIds, setConnectionNodeIds] = useState<string[]>([]);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [yamlExpanded, setYamlExpanded] = useState(false);
+  const [workflowSettingsExpanded, setWorkflowSettingsExpanded] = useState(false);
+  const [addNodeModalOpen, setAddNodeModalOpen] = useState(false);
+  const [addLoopModalOpen, setAddLoopModalOpen] = useState(false);
+  const [nodeKindToAdd, setNodeKindToAdd] = useState<WorkflowNodeKind>('subagent');
+  const [nodeRefToAdd, setNodeRefToAdd] = useState('');
+  const [loopWorkerId, setLoopWorkerId] = useState('');
+  const [loopReviewerId, setLoopReviewerId] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -849,6 +914,7 @@ function WorkflowEditView() {
   );
 
   const effectiveStopCondition = (parsedGraph.policy?.stopCondition || draft?.policy.stopCondition || 'manual') as WorkflowStopCondition;
+  const visualStopCondition = effectiveStopCondition === 'judge' ? 'manual' : effectiveStopCondition;
   const judgeNodeIdFromYaml = (parsedGraph.policy?.judgeNodeId || '').trim();
   const judgeValidationErrors = useMemo(() => {
     const next: string[] = [];
@@ -900,51 +966,64 @@ function WorkflowEditView() {
     setError(null);
   };
 
-  const handleVisualNodeClick = (node: WorkflowNode) => {
-    const base = currentGraphWorkflow();
-    if (!base) {
-      return;
-    }
-    if (!selectedSourceNodeId) {
-      setSelectedSourceNodeId(node.id);
-      setActiveNodeId(node.id);
-      setSuccess(`Source selected: ${node.label}. Click another node to connect.`);
+  const handleVisualNodeClick = (node: WorkflowNode, modifiers?: { shiftKey: boolean }) => {
+    if (modifiers?.shiftKey) {
+      setActiveNodeId(null);
+      toggleConnectionNodeSelection(node.id);
       setError(null);
       return;
     }
-    if (selectedSourceNodeId === node.id) {
-      setSelectedSourceNodeId(null);
+
+    setSelectedEdgeId(null);
+    setActiveNodeId(node.id);
+    setError(null);
+  };
+
+  const createConnectionFromSelection = () => {
+    const base = currentGraphWorkflow();
+    if (!base || connectionNodeIds.length !== 2) {
       return;
     }
 
-    const duplicate = parsedGraph.edges.some((edge) => edge.from === selectedSourceNodeId && edge.to === node.id);
+    const [fromNodeId, toNodeId] = connectionNodeIds;
+    if (fromNodeId === toNodeId) {
+      setError('Choose two different nodes to connect.');
+      setSuccess(null);
+      return;
+    }
+
+    const duplicate = parsedGraph.edges.some((edge) => edge.from === fromNodeId && edge.to === toNodeId);
     if (duplicate) {
-      setSelectedSourceNodeId(null);
       setError('That connection already exists.');
+      setSuccess(null);
       return;
     }
 
+    const nextEdge: WorkflowEdge = {
+      id: `edge-${base.edges.length + 1}`,
+      from: fromNodeId,
+      to: toNodeId,
+      mode: 'sequential',
+    };
     const nextEdges: WorkflowEdge[] = [
       ...base.edges.map((edge) => ({ ...edge })),
-      {
-        id: `edge-${base.edges.length + 1}`,
-        from: selectedSourceNodeId,
-        to: node.id,
-        mode: 'sequential',
-      },
+      nextEdge,
     ];
 
-    const outgoingCount = nextEdges.filter((edge) => edge.from === selectedSourceNodeId).length;
+    const outgoingCount = nextEdges.filter((edge) => edge.from === fromNodeId).length;
     if (outgoingCount > 1) {
       for (let i = 0; i < nextEdges.length; i += 1) {
-        if (nextEdges[i].from === selectedSourceNodeId) {
+        if (nextEdges[i].from === fromNodeId) {
           nextEdges[i] = { ...nextEdges[i], mode: 'parallel' };
         }
       }
     }
 
-    commitGraphWorkflow({ ...base, edges: nextEdges }, 'Connection added from visual map.');
-    setSelectedSourceNodeId(null);
+    const fromLabel = visualNodeMap.get(fromNodeId)?.label || fromNodeId;
+    const toLabel = visualNodeMap.get(toNodeId)?.label || toNodeId;
+    commitGraphWorkflow({ ...base, edges: nextEdges }, `Connection added: ${fromLabel} -> ${toLabel}.`);
+    setConnectionNodeIds([]);
+    setSelectedEdgeId(nextEdge.id);
   };
 
   const visualNodes = useMemo(() => {
@@ -962,9 +1041,44 @@ function WorkflowEditView() {
   }, [visualNodes]);
 
   const activeNode = useMemo(
-    () => visualNodes.find((node) => node.id === activeNodeId) || visualNodes[0] || null,
+    () => visualNodes.find((node) => node.id === activeNodeId) || null,
     [activeNodeId, visualNodes],
   );
+
+  const selectedEdge = useMemo(
+    () => parsedGraph.edges.find((edge) => edge.id === selectedEdgeId) || null,
+    [parsedGraph.edges, selectedEdgeId],
+  );
+
+  const nodeKindToAddNeedsRef = nodeKindToAdd === 'subagent' || nodeKindToAdd === 'local' || nodeKindToAdd === 'external';
+  const addNodeReferenceLabel = nodeKindToAdd === 'subagent'
+    ? 'Sub-agent'
+    : nodeKindToAdd === 'local'
+      ? 'Local agent'
+      : 'External agent';
+  const addNodeReferenceOptions = nodeKindToAdd === 'subagent'
+    ? subAgents.map((agent) => ({ id: agent.id, label: agent.name }))
+    : nodeKindToAdd === 'local'
+      ? localAgents.map((agent) => ({ id: agent.id, label: agent.name }))
+      : nodeKindToAdd === 'external'
+        ? favoriteExternalAgents.map((agent) => ({ id: agent.id, label: agent.name || agent.id }))
+        : [];
+  const canAddNodeFromModal = canBuild && (!nodeKindToAddNeedsRef || nodeRefToAdd !== '');
+  const connectionSelectionLabel = connectionNodeIds
+    .map((nodeId) => visualNodeMap.get(nodeId)?.label || nodeId)
+    .join(' -> ');
+  const hasMapSelection = connectionNodeIds.length > 0 || !!selectedEdgeId || !!activeNodeId;
+  const canConnectSelection = canBuild && connectionNodeIds.length === 2;
+
+  const toggleConnectionNodeSelection = (nodeId: string) => {
+    setSelectedEdgeId(null);
+    setConnectionNodeIds((current) => {
+      if (current.includes(nodeId)) {
+        return current.filter((id) => id !== nodeId);
+      }
+      return [...current.slice(-1), nodeId];
+    });
+  };
 
   const addNode = (kind: WorkflowNodeKind, label: string, ref = '') => {
     const base = currentGraphWorkflow();
@@ -1000,8 +1114,50 @@ function WorkflowEditView() {
         node.externalAgentName = match.name;
       }
     }
+    if (kind === 'review_loop') {
+      node.label = label || 'Review loop';
+      node.loopMaxTurns = 6;
+    }
     setActiveNodeId(node.id);
+    setSelectedEdgeId(null);
     commitGraphWorkflow({ ...base, nodes: [...base.nodes, node] }, 'Node added.');
+  };
+
+  const addNodeFromModal = () => {
+    if (nodeKindToAdd === 'user' || nodeKindToAdd === 'main') {
+      addNode(nodeKindToAdd, nodeKindToAdd === 'user' ? 'User' : 'Main agent');
+      setAddNodeModalOpen(false);
+      return;
+    }
+
+    if (nodeKindToAdd === 'subagent') {
+      const agent = subAgents.find((item) => item.id === nodeRefToAdd);
+      if (!agent) {
+        setError('Choose a sub-agent.');
+        setSuccess(null);
+        return;
+      }
+      addNode('subagent', agent.name || 'Sub-agent', agent.id);
+    } else if (nodeKindToAdd === 'local') {
+      const agent = localAgents.find((item) => item.id === nodeRefToAdd);
+      if (!agent) {
+        setError('Choose a local agent.');
+        setSuccess(null);
+        return;
+      }
+      addNode('local', agent.name || 'Local agent', agent.id);
+    } else if (nodeKindToAdd === 'external') {
+      const agent = favoriteExternalAgents.find((item) => item.id === nodeRefToAdd);
+      if (!agent) {
+        setError('Choose an external agent.');
+        setSuccess(null);
+        return;
+      }
+      addNode('external', agent.name || 'External agent', agent.id);
+    }
+
+    setNodeRefToAdd('');
+    setAddNodeModalOpen(false);
   };
 
   const updateNode = (nodeId: string, patch: Partial<WorkflowNode>) => {
@@ -1038,8 +1194,13 @@ function WorkflowEditView() {
     const nextEdges = base.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId);
     const nextEntryNodeId = base.entryNodeId === nodeId ? (nextNodes[0]?.id || '') : base.entryNodeId;
     const nextPolicy = base.policy.judgeNodeId === nodeId ? { ...base.policy, judgeNodeId: undefined } : base.policy;
-    setActiveNodeId(nextNodes[0]?.id || null);
-    setSelectedSourceNodeId((current) => (current === nodeId ? null : current));
+    setActiveNodeId(null);
+    setConnectionNodeIds((current) => current.filter((id) => id !== nodeId));
+    setSelectedEdgeId((current) => {
+      if (!current) return current;
+      const edgeStillExists = nextEdges.some((edge) => edge.id === current);
+      return edgeStillExists ? current : null;
+    });
     commitGraphWorkflow({ ...base, nodes: nextNodes, edges: nextEdges, entryNodeId: nextEntryNodeId, policy: nextPolicy }, 'Node removed.');
   };
 
@@ -1052,17 +1213,119 @@ function WorkflowEditView() {
   const updateEdge = (edgeId: string, patch: Partial<WorkflowEdge>) => {
     const base = currentGraphWorkflow();
     if (!base) return;
+    const currentEdge = base.edges.find((edge) => edge.id === edgeId);
+    if (!currentEdge) return;
+    const nextEdge = { ...currentEdge, ...patch };
+    if (nextEdge.from === nextEdge.to) {
+      setError('Connection cannot point to the same node.');
+      setSuccess(null);
+      return;
+    }
+    const duplicate = base.edges.some((edge) => edge.id !== edgeId && edge.from === nextEdge.from && edge.to === nextEdge.to);
+    if (duplicate) {
+      setError('That connection already exists.');
+      setSuccess(null);
+      return;
+    }
     commitGraphWorkflow({
       ...base,
-      edges: base.edges.map((edge) => (edge.id === edgeId ? { ...edge, ...patch } : edge)),
+      edges: base.edges.map((edge) => (edge.id === edgeId ? nextEdge : edge)),
     });
   };
 
   const deleteEdge = (edgeId: string) => {
     const base = currentGraphWorkflow();
     if (!base) return;
+    if (selectedEdgeId === edgeId) {
+      setActiveNodeId(null);
+    }
+    setSelectedEdgeId((current) => (current === edgeId ? null : current));
     commitGraphWorkflow({ ...base, edges: base.edges.filter((edge) => edge.id !== edgeId) }, 'Connection removed.');
   };
+
+  const reverseEdge = (edge: WorkflowEdge) => {
+    updateEdge(edge.id, { from: edge.to, to: edge.from });
+  };
+
+  const addReverseEdge = (edge: WorkflowEdge) => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    const duplicate = base.edges.some((candidate) => candidate.from === edge.to && candidate.to === edge.from);
+    if (duplicate) {
+      setError('Reverse connection already exists.');
+      setSuccess(null);
+      return;
+    }
+    const reverse: WorkflowEdge = {
+      id: `edge-${base.edges.length + 1}`,
+      from: edge.to,
+      to: edge.from,
+      mode: edge.mode,
+    };
+    commitGraphWorkflow({ ...base, edges: [...base.edges, reverse] }, 'Reverse connection added.');
+    setSelectedEdgeId(reverse.id);
+    setActiveNodeId(null);
+  };
+
+  const handleVisualEdgeClick = (edge: WorkflowEdge) => {
+    setSelectedEdgeId(edge.id);
+    setActiveNodeId(null);
+    setConnectionNodeIds([]);
+    setError(null);
+  };
+
+  const addReviewLoopNode = () => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+    const worker = subAgents.find((item) => item.id === loopWorkerId);
+    const reviewer = subAgents.find((item) => item.id === loopReviewerId);
+    if (!worker || !reviewer) {
+      setError('Choose both worker and critic sub-agents.');
+      setSuccess(null);
+      return;
+    }
+    if (worker.id === reviewer.id) {
+      setError('Worker and critic must be different sub-agents.');
+      setSuccess(null);
+      return;
+    }
+    const nodeId = uniqueWorkflowNodeId(base.nodes, 'review-loop');
+    const node: WorkflowNode = {
+      id: nodeId,
+      label: 'Review loop',
+      kind: 'review_loop',
+      x: 80 + (base.nodes.length % 4) * 180,
+      y: 80 + Math.floor(base.nodes.length / 4) * 120,
+      workerSubAgentId: worker.id,
+      workerLabel: worker.name || 'Worker',
+      reviewerSubAgentId: reviewer.id,
+      reviewerLabel: reviewer.name || 'Critic',
+      loopMaxTurns: 6,
+    };
+    setActiveNodeId(node.id);
+    setSelectedEdgeId(null);
+    setLoopWorkerId('');
+    setLoopReviewerId('');
+    setAddLoopModalOpen(false);
+    commitGraphWorkflow({ ...base, nodes: [...base.nodes, node] }, 'Review loop added.');
+  };
+
+  useEffect(() => {
+    if (!selectedEdgeId || !canBuild) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.key !== 'Delete' && event.key !== 'Backspace') || isEditableTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      deleteEdge(selectedEdgeId);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canBuild, selectedEdgeId]);
 
   const handleNodeMove = (nodeId: string, x: number, y: number) => {
     const base = currentGraphWorkflow();
@@ -1071,6 +1334,70 @@ function WorkflowEditView() {
       ...base,
       nodes: base.nodes.map((node) => (node.id === nodeId ? { ...node, x, y } : node)),
     }));
+  };
+
+  const applyReviewLoopPattern = () => {
+    const base = currentGraphWorkflow();
+    if (!base) return;
+
+    const userNode = base.nodes.find((node) => node.kind === 'user') || base.nodes[0];
+    const mainNode = base.nodes.find((node) => node.kind === 'main');
+    const criticNode = base.nodes.find((node) => nodeLooksLike(node, 'critic'))
+      || base.nodes.find((node) => node.kind === 'subagent');
+    const researcherNode = base.nodes.find((node) => nodeLooksLike(node, 'research'))
+      || base.nodes.find((node) => node.kind === 'subagent' && node.id !== criticNode?.id);
+
+    if (!userNode || !mainNode || !researcherNode || !criticNode || researcherNode.id === criticNode.id) {
+      setError('Review loop needs one user node, one main node, one researcher sub-agent, and one critic sub-agent.');
+      setSuccess(null);
+      return;
+    }
+
+    const loopNodeId = uniqueWorkflowNodeId(base.nodes, 'review-loop');
+    const loopNode: WorkflowNode = {
+      id: loopNodeId,
+      label: 'Review loop',
+      kind: 'review_loop',
+      x: 500,
+      y: 220,
+      workerSubAgentId: researcherNode.subAgentId,
+      workerLabel: researcherNode.label,
+      reviewerSubAgentId: criticNode.subAgentId,
+      reviewerLabel: criticNode.label,
+      loopMaxTurns: Math.max(4, base.policy.maxTurns || 6),
+    };
+    if (!loopNode.workerSubAgentId || !loopNode.reviewerSubAgentId) {
+      setError('Review loop pattern needs researcher and critic to be sub-agents.');
+      setSuccess(null);
+      return;
+    }
+
+    const nextNodes = base.nodes
+      .filter((node) => node.id !== researcherNode.id && node.id !== criticNode.id)
+      .map((node) => {
+      if (node.id === userNode.id) return { ...node, x: 80, y: 240 };
+      if (node.id === mainNode.id) return { ...node, x: 280, y: 240 };
+      return node;
+    });
+    const nextEdges: WorkflowEdge[] = [
+      { id: 'edge-user-main', from: userNode.id, to: mainNode.id, mode: 'sequential' },
+      { id: 'edge-main-review-loop', from: mainNode.id, to: loopNodeId, mode: 'sequential' },
+    ];
+
+    setActiveNodeId(loopNodeId);
+    setConnectionNodeIds([]);
+    setSelectedEdgeId(null);
+    commitGraphWorkflow({
+      ...base,
+      nodes: [...nextNodes, loopNode],
+      edges: nextEdges,
+      entryNodeId: userNode.id,
+      policy: {
+        ...base.policy,
+        stopCondition: 'manual',
+        judgeNodeId: undefined,
+      },
+    }, 'Review loop applied as a compound node.');
   };
 
   const handleSave = async () => {
@@ -1125,8 +1452,15 @@ function WorkflowEditView() {
 
   return (
     <div className="page-shell">
-      <div className="page-header">
+      <div className="page-header workflows-edit-header">
         <h1>{isNew ? 'New Workflow' : 'Edit Workflow'}</h1>
+        <div className="workflows-actions">
+          <button type="button" className="settings-remove-btn" onClick={() => navigate('/workflows')}>Back</button>
+          {draft?.builtIn ? (
+            <button type="button" className="settings-add-btn" onClick={handleCreateEditableCopy}>Create Copy</button>
+          ) : null}
+          <button type="button" className="settings-save-btn" onClick={() => void handleSave()} disabled={!canSave}>Save</button>
+        </div>
       </div>
 
       <div className="page-content settings-sections">
@@ -1147,13 +1481,6 @@ function WorkflowEditView() {
         <div className="settings-panel workflows-editor-panel">
           <div className="settings-panel-title-row">
             <h2>{draft?.name || 'Workflow'}</h2>
-            <div className="workflows-actions">
-              <button type="button" className="settings-remove-btn" onClick={() => navigate('/workflows')}>Back</button>
-              {draft?.builtIn ? (
-                <button type="button" className="settings-add-btn" onClick={handleCreateEditableCopy}>Create Copy</button>
-              ) : null}
-              <button type="button" className="settings-save-btn" onClick={() => void handleSave()} disabled={!canSave}>Save</button>
-            </div>
           </div>
 
           {draft ? (
@@ -1181,158 +1508,109 @@ function WorkflowEditView() {
                 </label>
               </div>
 
+              <div className="workflows-config-panel workflows-settings-panel">
+                <button
+                  type="button"
+                  className="workflows-settings-toggle"
+                  onClick={() => setWorkflowSettingsExpanded((current) => !current)}
+                  aria-expanded={workflowSettingsExpanded}
+                >
+                  <span className="workflows-settings-toggle-icon" aria-hidden="true">
+                    {workflowSettingsExpanded ? '⌄' : '›'}
+                  </span>
+                  <span>Workflow Settings</span>
+                </button>
+                {workflowSettingsExpanded ? (
+                  <div className="workflows-settings-body">
+                    <label className="settings-field">
+                      <span>Stop condition</span>
+                      <select
+                        value={visualStopCondition}
+                        onChange={(event) => updatePolicy({ stopCondition: event.target.value as WorkflowStopCondition, judgeNodeId: undefined })}
+                        disabled={!canBuild}
+                      >
+                        <option value="manual">Manual stop</option>
+                        <option value="max_turns">Max turns</option>
+                        <option value="consensus">Consensus reached</option>
+                        <option value="timebox">Timebox</option>
+                      </select>
+                    </label>
+                    <label className="settings-field">
+                      <span>Max turns</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={parsedGraph.policy?.maxTurns || draft.policy.maxTurns}
+                        onChange={(event) => {
+                          const parsed = Number.parseInt(event.target.value, 10);
+                          updatePolicy({ maxTurns: Number.isFinite(parsed) && parsed > 0 ? parsed : 1 });
+                        }}
+                        disabled={!canBuild}
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>Timebox minutes</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={720}
+                        value={parsedGraph.policy?.timeboxMinutes || draft.policy.timeboxMinutes || 20}
+                        onChange={(event) => {
+                          const parsed = Number.parseInt(event.target.value, 10);
+                          updatePolicy({ timeboxMinutes: Number.isFinite(parsed) && parsed > 0 ? parsed : 20 });
+                        }}
+                        disabled={!canBuild}
+                      />
+                    </label>
+                    <div className="workflows-settings-actions">
+                      <button type="button" className="settings-add-btn" onClick={applyReviewLoopPattern} disabled={!canBuild}>
+                        Arrange Researcher/Critic Loop
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
               <section className="workflows-block">
                 <div className="workflows-block-header">
                   <h3>Visual Builder</h3>
+                  <div className="workflows-create-actions">
+                    <button
+                      type="button"
+                      className="settings-add-btn"
+                      onClick={() => {
+                        setNodeRefToAdd('');
+                        setAddNodeModalOpen(true);
+                      }}
+                      disabled={!canBuild}
+                    >
+                      Add Node
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-add-btn"
+                      onClick={() => setAddLoopModalOpen(true)}
+                      disabled={!canBuild}
+                    >
+                      Add Review Loop
+                    </button>
+                  </div>
                 </div>
                 <div className="workflows-graph-split">
                   <div className="workflows-graph-pane workflows-builder-sidebar">
-                    <div className="workflows-toolbox">
-                      <button type="button" className="settings-add-btn" onClick={() => addNode('user', 'User')} disabled={!canBuild}>User</button>
-                      <button type="button" className="settings-add-btn" onClick={() => addNode('main', 'Main agent')} disabled={!canBuild}>Main Agent</button>
-                    </div>
-
-                    <label className="settings-field">
-                      <span>Add sub-agent</span>
-                      <select
-                        value=""
-                        onChange={(event) => {
-                          const id = event.target.value;
-                          if (!id) return;
-                          const agent = subAgents.find((item) => item.id === id);
-                          addNode('subagent', agent?.name || 'Sub-agent', id);
-                        }}
-                        disabled={!canBuild || subAgents.length === 0}
-                      >
-                        <option value="">Choose sub-agent...</option>
-                        {subAgents.map((agent) => (
-                          <option key={agent.id} value={agent.id}>{agent.name}</option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="settings-field">
-                      <span>Add local agent</span>
-                      <select
-                        value=""
-                        onChange={(event) => {
-                          const id = event.target.value;
-                          if (!id) return;
-                          const agent = localAgents.find((item) => item.id === id);
-                          addNode('local', agent?.name || 'Local agent', id);
-                        }}
-                        disabled={!canBuild || localAgents.length === 0}
-                      >
-                        <option value="">Choose local agent...</option>
-                        {localAgents.map((agent) => (
-                          <option key={agent.id} value={agent.id}>{agent.name}</option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="settings-field">
-                      <span>Add external agent</span>
-                      <select
-                        value=""
-                        onChange={(event) => {
-                          const id = event.target.value;
-                          if (!id) return;
-                          const agent = favoriteExternalAgents.find((item) => item.id === id);
-                          addNode('external', agent?.name || 'External agent', id);
-                        }}
-                        disabled={!canBuild || favoriteExternalAgents.length === 0}
-                      >
-                        <option value="">Choose favorite...</option>
-                        {favoriteExternalAgents.map((agent) => (
-                          <option key={agent.id} value={agent.id}>{agent.name || agent.id}</option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <div className="workflows-config-panel">
-                      <h4>Workflow Settings</h4>
-                      <label className="settings-field">
-                        <span>Stop condition</span>
-                        <select
-                          value={effectiveStopCondition}
-                          onChange={(event) => updatePolicy({ stopCondition: event.target.value as WorkflowStopCondition })}
-                          disabled={!canBuild}
-                        >
-                          <option value="manual">Manual stop</option>
-                          <option value="max_turns">Max turns</option>
-                          <option value="consensus">Consensus reached</option>
-                          <option value="judge">Judge decides</option>
-                          <option value="timebox">Timebox</option>
-                        </select>
-                      </label>
-                      <label className="settings-field">
-                        <span>Max turns</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={200}
-                          value={parsedGraph.policy?.maxTurns || draft.policy.maxTurns}
-                          onChange={(event) => {
-                            const parsed = Number.parseInt(event.target.value, 10);
-                            updatePolicy({ maxTurns: Number.isFinite(parsed) && parsed > 0 ? parsed : 1 });
-                          }}
-                          disabled={!canBuild}
-                        />
-                      </label>
-                      <label className="settings-field">
-                        <span>Timebox minutes</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={720}
-                          value={parsedGraph.policy?.timeboxMinutes || draft.policy.timeboxMinutes || 20}
-                          onChange={(event) => {
-                            const parsed = Number.parseInt(event.target.value, 10);
-                            updatePolicy({ timeboxMinutes: Number.isFinite(parsed) && parsed > 0 ? parsed : 20 });
-                          }}
-                          disabled={!canBuild}
-                        />
-                      </label>
-                      <label className="settings-field">
-                        <span>Judge node</span>
-                        <select
-                          value={judgeNodeIdFromYaml}
-                          onChange={(event) => updatePolicy({ judgeNodeId: event.target.value || undefined })}
-                          disabled={!canBuild}
-                        >
-                          <option value="">No judge</option>
-                          {visualNodes.map((node) => (
-                            <option key={node.id} value={node.id}>{node.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
+                    {activeNode && !selectedEdge ? (
                     <div className="workflows-config-panel">
                       <h4>Selected Node</h4>
                       <label className="settings-field">
-                        <span>Node</span>
-                        <select
-                          value={activeNode?.id || ''}
-                          onChange={(event) => setActiveNodeId(event.target.value || null)}
-                          disabled={!canBuild || visualNodes.length === 0}
-                        >
-                          {visualNodes.map((node) => (
-                            <option key={node.id} value={node.id}>{node.label}</option>
-                          ))}
-                        </select>
+                        <span>Label</span>
+                        <input
+                          type="text"
+                          value={activeNode.label}
+                          onChange={(event) => updateNode(activeNode.id, { label: event.target.value })}
+                          disabled={!canBuild}
+                        />
                       </label>
-                      {activeNode ? (
-                        <>
-                          <label className="settings-field">
-                            <span>Label</span>
-                            <input
-                              type="text"
-                              value={activeNode.label}
-                              onChange={(event) => updateNode(activeNode.id, { label: event.target.value })}
-                              disabled={!canBuild}
-                            />
-                          </label>
                           <label className="settings-field">
                             <span>Type</span>
                             <select
@@ -1410,6 +1688,56 @@ function WorkflowEditView() {
                               </select>
                             </label>
                           ) : null}
+                          {activeNode.kind === 'review_loop' ? (
+                            <>
+                              <label className="settings-field">
+                                <span>Worker</span>
+                                <select
+                                  value={activeNode.workerSubAgentId || ''}
+                                  onChange={(event) => {
+                                    const agent = subAgents.find((item) => item.id === event.target.value);
+                                    updateNode(activeNode.id, { workerSubAgentId: event.target.value, workerLabel: agent?.name || 'Worker' });
+                                  }}
+                                  disabled={!canBuild}
+                                >
+                                  <option value="">Choose worker...</option>
+                                  {subAgents.map((agent) => (
+                                    <option key={agent.id} value={agent.id}>{agent.name}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="settings-field">
+                                <span>Critic</span>
+                                <select
+                                  value={activeNode.reviewerSubAgentId || ''}
+                                  onChange={(event) => {
+                                    const agent = subAgents.find((item) => item.id === event.target.value);
+                                    updateNode(activeNode.id, { reviewerSubAgentId: event.target.value, reviewerLabel: agent?.name || 'Critic' });
+                                  }}
+                                  disabled={!canBuild}
+                                >
+                                  <option value="">Choose critic...</option>
+                                  {subAgents.map((agent) => (
+                                    <option key={agent.id} value={agent.id}>{agent.name}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="settings-field">
+                                <span>Loop max turns</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={50}
+                                  value={activeNode.loopMaxTurns || 6}
+                                  onChange={(event) => {
+                                    const parsed = Number.parseInt(event.target.value, 10);
+                                    updateNode(activeNode.id, { loopMaxTurns: Number.isFinite(parsed) && parsed > 0 ? parsed : 1 });
+                                  }}
+                                  disabled={!canBuild}
+                                />
+                              </label>
+                            </>
+                          ) : null}
                           <label className="settings-field">
                             <span>Node ID</span>
                             <input type="text" value={activeNode.id} disabled />
@@ -1421,28 +1749,95 @@ function WorkflowEditView() {
                           <div className="workflows-toolbox">
                             <button type="button" className="settings-remove-btn" onClick={() => deleteNode(activeNode.id)} disabled={!canBuild || visualNodes.length <= 1}>Delete Node</button>
                             <button type="button" className="settings-add-btn" onClick={() => commitGraphWorkflow({ ...(currentGraphWorkflow() || draft), entryNodeId: activeNode.id })} disabled={!canBuild}>Set Entry</button>
-                            <button type="button" className="settings-add-btn" onClick={() => updatePolicy({ stopCondition: 'judge', judgeNodeId: activeNode.id })} disabled={!canBuild}>Set Judge</button>
+                            <button
+                              type="button"
+                              className="settings-add-btn"
+                              onClick={() => toggleConnectionNodeSelection(activeNode.id)}
+                              disabled={!canBuild}
+                            >
+                              {connectionNodeIds.includes(activeNode.id) ? 'Unselect for Connection' : 'Select for Connection'}
+                            </button>
                           </div>
-                        </>
-                      ) : (
-                        <p className="settings-help">Select a node on the map.</p>
-                      )}
                     </div>
+                    ) : null}
+
+                    {selectedEdge ? (
+                    <div className="workflows-config-panel">
+                      <h4>Selected Connection</h4>
+                      <label className="settings-field">
+                        <span>From</span>
+                        <select
+                          value={selectedEdge.from}
+                          onChange={(event) => updateEdge(selectedEdge.id, { from: event.target.value })}
+                          disabled={!canBuild}
+                        >
+                          {visualNodes.map((node) => (
+                            <option key={node.id} value={node.id}>{node.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>To</span>
+                        <select
+                          value={selectedEdge.to}
+                          onChange={(event) => updateEdge(selectedEdge.id, { to: event.target.value })}
+                          disabled={!canBuild}
+                        >
+                          {visualNodes.map((node) => (
+                            <option key={node.id} value={node.id}>{node.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="settings-field">
+                        <span>Mode</span>
+                        <select
+                          value={selectedEdge.mode}
+                          onChange={(event) => updateEdge(selectedEdge.id, { mode: event.target.value as WorkflowEdge['mode'] })}
+                          disabled={!canBuild}
+                        >
+                          <option value="sequential">Sequential</option>
+                          <option value="parallel">Parallel</option>
+                        </select>
+                      </label>
+                      <div className="workflows-edge-actions">
+                        <button type="button" className="settings-add-btn" onClick={() => reverseEdge(selectedEdge)} disabled={!canBuild}>Reverse</button>
+                        <button type="button" className="settings-add-btn" onClick={() => addReverseEdge(selectedEdge)} disabled={!canBuild}>Make Two-Way</button>
+                        <button type="button" className="settings-remove-btn" onClick={() => deleteEdge(selectedEdge.id)} disabled={!canBuild}>Remove</button>
+                      </div>
+                    </div>
+                    ) : null}
 
                     <div className="workflows-config-panel">
-                      <h4>Connections</h4>
+                      <h4>All Connections</h4>
                       <div className="workflows-edge-list compact">
                         {parsedGraph.edges.map((edge) => (
-                          <div className="workflows-edge-row compact" key={edge.id}>
-                            <span title={edgeDisplayLabel(edge, visualNodeMap)}>{edgeDisplayLabel(edge, visualNodeMap)}</span>
-                            <select value={edge.mode} onChange={(event) => updateEdge(edge.id, { mode: event.target.value as WorkflowEdge['mode'] })} disabled={!canBuild}>
-                              <option value="sequential">Sequential</option>
-                              <option value="parallel">Parallel</option>
-                            </select>
-                            <button type="button" className="settings-remove-btn" onClick={() => deleteEdge(edge.id)} disabled={!canBuild}>Remove</button>
+                          <div
+                            className={`workflows-edge-row compact clickable${selectedEdgeId === edge.id ? ' selected' : ''}`}
+                            key={edge.id}
+                            onClick={() => handleVisualEdgeClick(edge)}
+                          >
+                            <span
+                              className={`workflows-edge-mode-icon mode-${edge.mode}`}
+                              title={edge.mode === 'parallel' ? 'Parallel' : 'Sequential'}
+                              aria-label={edge.mode === 'parallel' ? 'Parallel connection' : 'Sequential connection'}
+                            >
+                              {edge.mode === 'parallel' ? '⇉' : '→'}
+                            </span>
+                            <span className="workflows-edge-label" title={edgeDisplayLabel(edge, visualNodeMap)}>{edgeDisplayLabel(edge, visualNodeMap)}</span>
+                            <button
+                              type="button"
+                              className="settings-remove-btn"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                deleteEdge(edge.id);
+                              }}
+                              disabled={!canBuild}
+                            >
+                              Remove
+                            </button>
                           </div>
                         ))}
-                        {parsedGraph.edges.length === 0 ? <p className="settings-help">Click a source node, then a target node to connect them.</p> : null}
+                        {parsedGraph.edges.length === 0 ? <p className="settings-help">Shift-click two nodes on the map, then connect them.</p> : null}
                       </div>
                     </div>
 
@@ -1465,18 +1860,41 @@ function WorkflowEditView() {
                   <div className="workflows-graph-pane workflows-map-pane">
                     <div className="workflows-block-header">
                       <h3>Visual Map</h3>
-                      <button
-                        type="button"
-                        className="settings-remove-btn"
-                        onClick={() => setSelectedSourceNodeId(null)}
-                        disabled={!selectedSourceNodeId}
-                      >
-                        Clear Selection
-                      </button>
+                      {canConnectSelection || hasMapSelection ? (
+                        <div className="workflows-map-actions">
+                          {canConnectSelection ? (
+                            <button
+                              type="button"
+                              className="settings-add-btn"
+                              onClick={createConnectionFromSelection}
+                            >
+                              Connect Selected
+                            </button>
+                          ) : null}
+                          {hasMapSelection ? (
+                            <button
+                              type="button"
+                              className="settings-remove-btn"
+                              onClick={() => {
+                                setConnectionNodeIds([]);
+                                setSelectedEdgeId(null);
+                                setActiveNodeId(null);
+                              }}
+                            >
+                              Clear Selection
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                     <p className="settings-help">
-                      Drag nodes to arrange the workflow. Click one node, then another node to connect them.
+                      Drag nodes to arrange the workflow. Shift-click two nodes, then use Connect Selected to create an edge from the first node to the second.
                     </p>
+                    {connectionNodeIds.length > 0 ? (
+                      <p className="settings-help workflows-connection-selection">
+                        Selected for connection: {connectionSelectionLabel}
+                      </p>
+                    ) : null}
                     <WorkflowGraphCanvas
                       nodes={visualNodes}
                       edges={parsedGraph.edges.filter((edge) => visualNodeMap.has(edge.from) && visualNodeMap.has(edge.to))}
@@ -1485,8 +1903,11 @@ function WorkflowEditView() {
                       canvasHeight={WORKFLOW_EDIT_CANVAS_HEIGHT}
                       onNodeClick={canEdit ? handleVisualNodeClick : undefined}
                       onNodeMove={canBuild ? handleNodeMove : undefined}
-                      selectedNodeId={selectedSourceNodeId}
-                      judgeNodeId={effectiveStopCondition === 'judge' ? judgeNodeIdFromYaml : null}
+                      onEdgeClick={canBuild ? handleVisualEdgeClick : undefined}
+                      selectedNodeId={!selectedEdgeId ? activeNodeId : null}
+                      selectedNodeIds={!selectedEdgeId ? connectionNodeIds : []}
+                      selectedEdgeId={selectedEdgeId}
+                      judgeNodeId={null}
                       nodeDisplayLabel={(node) => {
                         if (node.kind === 'main') {
                           return withAgentEmoji(node.label, 'main');
@@ -1496,6 +1917,9 @@ function WorkflowEditView() {
                         }
                         if (node.kind === 'local') {
                           return withAgentEmoji(node.label, 'local', node.localAgentId);
+                        }
+                        if (node.kind === 'review_loop') {
+                          return `↻ ${node.label}`;
                         }
                         return node.label;
                       }}
@@ -1542,6 +1966,132 @@ function WorkflowEditView() {
           )}
         </div>
       </div>
+      {addNodeModalOpen ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Add workflow node">
+          <div className="modal-content workflows-create-modal">
+            <div className="modal-header">
+              <h3>Add Node</h3>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setAddNodeModalOpen(false)}
+                aria-label="Close add node dialog"
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body workflows-create-modal-body">
+              <label className="settings-field">
+                <span>Type</span>
+                <select
+                  value={nodeKindToAdd}
+                  onChange={(event) => {
+                    setNodeKindToAdd(event.target.value as WorkflowNodeKind);
+                    setNodeRefToAdd('');
+                  }}
+                  disabled={!canBuild}
+                >
+                  <option value="user">User</option>
+                  <option value="main">Main agent</option>
+                  <option value="subagent">Sub-agent</option>
+                  <option value="local">Local agent</option>
+                  <option value="external">External agent</option>
+                </select>
+              </label>
+
+              {nodeKindToAddNeedsRef ? (
+                <label className="settings-field">
+                  <span>{addNodeReferenceLabel}</span>
+                  <select
+                    value={nodeRefToAdd}
+                    onChange={(event) => setNodeRefToAdd(event.target.value)}
+                    disabled={!canBuild || addNodeReferenceOptions.length === 0}
+                  >
+                    <option value="">Choose {addNodeReferenceLabel.toLowerCase()}...</option>
+                    {addNodeReferenceOptions.map((item) => (
+                      <option key={item.id} value={item.id}>{item.label}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              {nodeKindToAddNeedsRef && addNodeReferenceOptions.length === 0 ? (
+                <p className="settings-help">No {addNodeReferenceLabel.toLowerCase()}s are available.</p>
+              ) : null}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="settings-remove-btn" onClick={() => setAddNodeModalOpen(false)}>Cancel</button>
+              <button type="button" className="settings-add-btn" onClick={addNodeFromModal} disabled={!canAddNodeFromModal}>
+                Add Node
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {addLoopModalOpen ? (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Add review loop">
+          <div className="modal-content workflows-create-modal">
+            <div className="modal-header">
+              <h3>Add Review Loop</h3>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setAddLoopModalOpen(false)}
+                aria-label="Close add review loop dialog"
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body workflows-create-modal-body">
+              <label className="settings-field">
+                <span>Worker</span>
+                <select
+                  value={loopWorkerId}
+                  onChange={(event) => {
+                    const workerId = event.target.value;
+                    setLoopWorkerId(workerId);
+                    if (workerId && loopReviewerId === workerId) {
+                      setLoopReviewerId('');
+                    }
+                  }}
+                  disabled={!canBuild || subAgents.length < 2}
+                >
+                  <option value="">Choose worker...</option>
+                  {subAgents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>{agent.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="settings-field">
+                <span>Critic</span>
+                <select
+                  value={loopReviewerId}
+                  onChange={(event) => setLoopReviewerId(event.target.value)}
+                  disabled={!canBuild || subAgents.length < 2}
+                >
+                  <option value="">Choose critic...</option>
+                  {subAgents.filter((agent) => agent.id !== loopWorkerId).map((agent) => (
+                    <option key={agent.id} value={agent.id}>{agent.name}</option>
+                  ))}
+                </select>
+              </label>
+              {subAgents.length < 2 ? <p className="settings-help">Review loops need at least two sub-agents.</p> : null}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="settings-remove-btn" onClick={() => setAddLoopModalOpen(false)}>Cancel</button>
+              <button
+                type="button"
+                className="settings-add-btn"
+                onClick={addReviewLoopNode}
+                disabled={!canBuild || !loopWorkerId || !loopReviewerId || loopWorkerId === loopReviewerId}
+              >
+                Add Loop
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

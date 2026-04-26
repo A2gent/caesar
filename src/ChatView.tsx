@@ -340,6 +340,8 @@ function formatWorkflowNodeLabel(node: WorkflowNodeStateView): string {
       return withAgentEmoji(label, 'local', node.localAgentId);
     case 'external':
       return `🌐 ${label}`;
+    case 'review_loop':
+      return `↻ ${label}`;
     case 'user':
       return `👤 ${label}`;
     default:

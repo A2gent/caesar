@@ -27,6 +27,8 @@ function kindLabel(kind: WorkflowNode['kind']): string {
       return 'Local agent';
     case 'external':
       return 'External agent';
+    case 'review_loop':
+      return 'Review loop';
     default:
       return kind;
   }
@@ -199,6 +201,9 @@ function WorkflowsView() {
                     }
                     if (node.kind === 'local') {
                       return withAgentEmoji(node.label, 'local', node.localAgentId);
+                    }
+                    if (node.kind === 'review_loop') {
+                      return `↻ ${node.label}`;
                     }
                     return node.label;
                   }}
