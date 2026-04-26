@@ -88,6 +88,16 @@ function timestampMs(value: string | undefined): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function formatOperationDuration(durationMs?: number): string {
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs < 0) {
+    return '';
+  }
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs)} ms`;
+  }
+  return `${(durationMs / 1000).toFixed(2)} s`;
+}
+
 function childSessionWorkflowLabel(child: Session): string {
   const metadata = (child.metadata || {}) as Record<string, unknown>;
   const nodeLabel = typeof metadata.workflow_node_label === 'string' ? metadata.workflow_node_label.trim() : '';

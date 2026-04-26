@@ -372,6 +372,7 @@ export interface ToolResult {
   is_error: boolean;
   metadata?: Record<string, unknown>;
   name?: string;
+  duration_ms?: number;
 }
 
 export interface QuestionOption {
