@@ -913,7 +913,7 @@ function ProjectView() {
   const [projectSearchResults, setProjectSearchResults] = useState<ProjectSearchResponse | null>(null);
   const [isSearchingProject, setIsSearchingProject] = useState(false);
   const [projectSearchError, setProjectSearchError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ProjectViewTab>('explorer');
+  const [activeTab, setActiveTab] = useState<ProjectViewTab>('sessions');
   const [rootFolder, setRootFolder] = useState('');
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [gitChangedFiles, setGitChangedFiles] = useState<ProjectGitChangedFile[]>([]);
@@ -3601,14 +3601,14 @@ function ProjectView() {
       <div className="page-content project-view-content">
         <div className="project-view-tabs" role="tablist" aria-label="Project workflow views">
           <div className="project-view-tabs-main">
+            <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`project-view-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
+              Sessions ({sessions.length})
+            </button>
             <button type="button" role="tab" aria-selected={activeTab === 'explorer'} className={`project-view-tab ${activeTab === 'explorer' ? 'active' : ''}`} onClick={() => setActiveTab('explorer')}>
               Explorer
             </button>
             <button type="button" role="tab" aria-selected={activeTab === 'tasks'} className={`project-view-tab ${activeTab === 'tasks' ? 'active' : ''}`} onClick={() => setActiveTab('tasks')}>
               Tasks
-            </button>
-            <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`project-view-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
-              Sessions ({sessions.length})
             </button>
             {isKnowledgeBaseProject ? (
               <button type="button" role="tab" aria-selected={activeTab === 'meetings'} className={`project-view-tab ${activeTab === 'meetings' ? 'active' : ''}`} onClick={() => setActiveTab('meetings')}>

@@ -10,13 +10,16 @@ const TOOL_ICONS_BY_NAME: Record<string, string> = {
   find_files: '🔎',
   grep: '🔍',
   filter: '🧹',
+  random_number: '🎲',
   take_screenshot_tool: '📸',
   take_camera_photo_tool: '📷',
+  current_time: '🕰️',
   recurring_jobs_tool: '🕒',
   session_task_progress: '📋',
   task: '🧠',
   google_calendar_query: '🗓️',
   brave_search_query: '🌐',
+  edge_tts: '🔊',
   elevenlabs_tts: '🎙️',
   macos_say_tts: '🔊',
   piper_tts: '🔊',
@@ -101,6 +104,12 @@ export const TOOL_CATEGORIES: CategoryInfo[] = [
     icon: '🌐',
     description: 'Access external services, MCP servers, and network agents',
   },
+  {
+    id: 'other',
+    label: 'Other',
+    icon: '🧰',
+    description: 'Built-in tools that do not fit the standard categories yet',
+  },
 ];
 
 // Mapping of tool names to their categories
@@ -118,6 +127,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   take_screenshot_tool: 'multimedia',
   take_camera_photo_tool: 'multimedia',
   whisper_stt: 'multimedia',
+  edge_tts: 'multimedia',
   piper_tts: 'multimedia',
   macos_say_tts: 'multimedia',
   elevenlabs_tts: 'multimedia',
@@ -127,7 +137,9 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   // System
   bash: 'system',
   code_execution: 'system',
+  current_time: 'system',
   pipeline: 'system',
+  random_number: 'system',
   // Task Management
   recurring_jobs_tool: 'task-management',
   session_task_progress: 'task-management',

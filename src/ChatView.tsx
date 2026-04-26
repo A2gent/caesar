@@ -8,6 +8,7 @@ import { TaskProgressPanel } from './TaskProgressPanel';
 import { withAgentEmoji } from './agentVisuals';
 import {
   getSession,
+  getSessionSummary,
   cancelSessionRun,
   listSessions,
   listProviders,
@@ -76,6 +77,10 @@ type WorkflowDefinitionNodeView = {
   subAgentId?: string;
   localAgentId?: string;
   externalAgentId?: string;
+  workerLabel?: string;
+  workerSubAgentId?: string;
+  reviewerLabel?: string;
+  reviewerSubAgentId?: string;
 };
 
 function parseWorkflowDefinitionNodes(metadata: Record<string, unknown>): WorkflowDefinitionNodeView[] {
@@ -103,6 +108,10 @@ function parseWorkflowDefinitionNodes(metadata: Record<string, unknown>): Workfl
     const subAgentId = typeof node.subAgentId === 'string' ? node.subAgentId : undefined;
     const localAgentId = typeof node.localAgentId === 'string' ? node.localAgentId : undefined;
     const externalAgentId = typeof node.externalAgentId === 'string' ? node.externalAgentId : undefined;
+    const workerLabel = typeof node.workerLabel === 'string' ? node.workerLabel.trim() : undefined;
+    const workerSubAgentId = typeof node.workerSubAgentId === 'string' ? node.workerSubAgentId : undefined;
+    const reviewerLabel = typeof node.reviewerLabel === 'string' ? node.reviewerLabel.trim() : undefined;
+    const reviewerSubAgentId = typeof node.reviewerSubAgentId === 'string' ? node.reviewerSubAgentId : undefined;
     nodes.push({
       id,
       label: label || id,
@@ -110,6 +119,10 @@ function parseWorkflowDefinitionNodes(metadata: Record<string, unknown>): Workfl
       subAgentId,
       localAgentId,
       externalAgentId,
+      workerLabel,
+      workerSubAgentId,
+      reviewerLabel,
+      reviewerSubAgentId,
     });
   }
   return nodes;
@@ -132,8 +145,31 @@ function parseWorkflowState(session: Session | null): WorkflowStateView | null {
   const definitionNodes = parseWorkflowDefinitionNodes(metadata);
   const definitionOrder = new Map<string, number>();
   const definitionByID = new Map<string, WorkflowDefinitionNodeView>();
-  definitionNodes.forEach((node, index) => {
-    definitionOrder.set(node.id, index);
+  let currentOrder = 0;
+  definitionNodes.forEach((node) => {
+    if (node.kind === 'review_loop') {
+      const workerId = `${node.id}__worker`;
+      const criticId = `${node.id}__critic`;
+
+      definitionOrder.set(workerId, currentOrder++);
+      definitionByID.set(workerId, {
+        id: workerId,
+        label: node.workerLabel || 'Worker',
+        kind: 'subagent',
+        subAgentId: node.workerSubAgentId,
+      });
+
+      definitionOrder.set(criticId, currentOrder++);
+      definitionByID.set(criticId, {
+        id: criticId,
+        label: node.reviewerLabel || 'Critic',
+        kind: 'subagent',
+        subAgentId: node.reviewerSubAgentId,
+      });
+      return;
+    }
+
+    definitionOrder.set(node.id, currentOrder++);
     definitionByID.set(node.id, node);
   });
   const nodeEntries = Object.entries(nodesRaw as Record<string, unknown>);
@@ -340,6 +376,8 @@ function formatWorkflowNodeLabel(node: WorkflowNodeStateView): string {
       return withAgentEmoji(label, 'local', node.localAgentId);
     case 'external':
       return `🌐 ${label}`;
+    case 'review_loop':
+      return `↻ ${label}`;
     case 'user':
       return `👤 ${label}`;
     default:
@@ -348,6 +386,11 @@ function formatWorkflowNodeLabel(node: WorkflowNodeStateView): string {
 }
 
 function isWorkflowNodeRunning(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'running' || normalized === 'in_progress' || normalized === 'active';
+}
+
+function isCancelableSessionStatus(status: string): boolean {
   const normalized = status.trim().toLowerCase();
   return normalized === 'running' || normalized === 'in_progress' || normalized === 'active';
 }
@@ -574,6 +617,7 @@ function ChatView() {
   const [isCreatingLinkedSession, setIsCreatingLinkedSession] = useState(false);
   const [providerTrace, setProviderTrace] = useState<string>('');
   const [sessionIndex, setSessionIndex] = useState<Session[]>([]);
+  const sessionRef = useRef<Session | null>(null);
 
   const SESSION_POLL_INTERVAL_MS = 2000; // Poll every 2 seconds for active sessions
   
@@ -597,6 +641,10 @@ function ChatView() {
     const synthetic = failures.map(providerFailureToMessage);
     return [...base, ...synthetic].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }, [messages, providerFailures]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   useEffect(() => {
     if (activeSessionId) {
@@ -693,7 +741,7 @@ function ChatView() {
     void refreshSessionIndex();
     const timer = window.setInterval(() => {
       void refreshSessionIndex();
-    }, 2500);
+    }, 10000);
 
     return () => {
       cancelled = true;
@@ -720,10 +768,26 @@ function ChatView() {
 
     const sessionId = session.id;
     const interval = window.setInterval(() => {
-      void getSession(sessionId)
-        .then((fresh) => {
-          setSession(prev => (prev && prev.id === sessionId ? fresh : prev));
-          setMessages(fresh.messages || []);
+      void getSessionSummary(sessionId)
+        .then((summary) => {
+          const current = sessionRef.current;
+          if (!current || current.id !== sessionId) {
+            return;
+          }
+
+          if (summary.updated_at !== current.updated_at) {
+            void getSession(sessionId)
+              .then((fresh) => {
+                setSession(prev => (prev && prev.id === sessionId ? fresh : prev));
+                setMessages(fresh.messages || []);
+              })
+              .catch((refreshError) => {
+                console.error('Failed to refresh session transcript:', refreshError);
+              });
+            return;
+          }
+
+          setSession(prev => (prev && prev.id === sessionId ? { ...prev, ...summary, messages: prev.messages } : prev));
         })
         .catch((pollError) => {
           console.error('Failed to poll session:', pollError);
@@ -733,7 +797,7 @@ function ChatView() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [session, activeRequestSessionId, SESSION_POLL_INTERVAL_MS]);
+  }, [session?.id, session?.status, activeRequestSessionId, SESSION_POLL_INTERVAL_MS]);
 
   // Load pending question when session status is input_required
   useEffect(() => {
@@ -1074,6 +1138,7 @@ function ChatView() {
   };
 
   const isActiveRequest = Boolean(session && activeRequestSessionId === session.id);
+  const showStopButton = Boolean(session && (isActiveRequest || isCancelableSessionStatus(session.status)));
   const inputDisabled = isLoading && !session;
   const linkedPromptForSelectedType = session ? linkedSessionDefaultPrompt(linkedSessionType, session) : '';
 
@@ -1124,7 +1189,7 @@ function ChatView() {
     }
     return sessionIndex
       .filter((item) => item.parent_id === session.id)
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+      .sort((a, b) => new Date(a.created_at || a.updated_at).getTime() - new Date(b.created_at || b.updated_at).getTime());
   }, [session, sessionIndex]);
 
   const composerPlaceholder = useMemo(() => {
@@ -1431,33 +1496,16 @@ function ChatView() {
                   </div>
                 </div>
               ) : null}
-              {(session.parent_id || childSessions.length > 0) ? (
+              {session.parent_id ? (
                 <div className="session-relations-panel">
-                  {session.parent_id ? (
-                    <button
-                      type="button"
-                      className="session-relation-link parent"
-                      onClick={() => navigate(`/chat/${session.parent_id}`)}
-                      title={`Open parent session ${session.parent_id}`}
-                    >
-                      ← Parent: {parentSessionSummary?.title || `Session ${session.parent_id.slice(0, 8)}`}
-                    </button>
-                  ) : null}
-                  {childSessions.length > 0 ? (
-                    <div className="session-children-list">
-                      {childSessions.map((child) => (
-                        <button
-                          key={child.id}
-                          type="button"
-                          className="session-relation-link child"
-                          onClick={() => navigate(`/chat/${child.id}`)}
-                          title={`Open child session ${child.id}`}
-                        >
-                          ↳ {child.title || `Session ${child.id.slice(0, 8)}`} ({child.status})
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="session-relation-link parent"
+                    onClick={() => navigate(`/chat/${session.parent_id}`)}
+                    title={`Open parent session ${session.parent_id}`}
+                  >
+                    ← Parent: {parentSessionSummary?.title || `Session ${session.parent_id.slice(0, 8)}`}
+                  </button>
                 </div>
               ) : null}
               {session.status === 'failed' && sessionFailureReason ? (
@@ -1493,15 +1541,19 @@ function ChatView() {
       )}
       
       <div className="chat-history">
-        {messages.length > 0 || systemPromptSnapshot ? (
-          <MessageList 
-            messages={messagesWithProviderFailures} 
-            isLoading={isLoading} 
-            sessionId={session?.id || null}
+        {messages.length > 0 || systemPromptSnapshot || childSessions.length > 0 ? (
+          <>
+            <MessageList 
+              messages={messagesWithProviderFailures} 
+              isLoading={isLoading} 
+              sessionId={session?.id || null}
             projectId={session?.project_id || null}
             systemPromptSnapshot={systemPromptSnapshot}
             session={session}
+            childSessions={childSessions}
+            subAgents={subAgents}
           />
+          </>
         ) : (
           <EmptyState>
             <EmptyStateTitle>Start a conversation</EmptyStateTitle>
@@ -1523,8 +1575,8 @@ function ChatView() {
         disabled={inputDisabled}
         showVoiceButton={false}
         onStop={() => void handleCancelSession()}
-        showStopButton={Boolean(session && (isActiveRequest || session.status === 'running' || session.status === 'input_required'))}
-        canStop={Boolean(session)}
+        showStopButton={showStopButton}
+        canStop={showStopButton}
         value={composerValue}
         onValueChange={setComposerValue}
         slashCommands={sessionSlashCommands}

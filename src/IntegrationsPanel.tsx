@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type {
   Integration,
   IntegrationMode,
+  LeonardoModelOption,
   IntegrationProvider,
   IntegrationRequest,
   IntegrationTestResponse,
 } from './api';
+import { listLeonardoModels } from './api';
 import { IntegrationProviderIcon } from './integrationMeta';
 
 interface IntegrationsPanelProps {
@@ -174,6 +176,21 @@ const PROVIDERS: ProviderSpec[] = [
     ],
   },
   {
+    provider: 'leonardo',
+    label: 'Leonardo AI',
+    description: 'Generate images asynchronously via Leonardo AI. Configure the webhook endpoint in Square Console for the same agent.',
+    flow: 'output',
+    modes: ['notify_only'],
+    fields: [
+      { key: 'api_key', label: 'API key', placeholder: 'Bearer token / production API key', secret: true },
+      { key: 'model_id', label: 'Default model ID (optional)', placeholder: '6bef9f1b-29cb-40c7-b9df-32b51c1f67d3', required: false },
+      { key: 'preset_style', label: 'Default preset style (optional)', placeholder: 'DYNAMIC', required: false },
+      { key: 'width', label: 'Default width (optional)', placeholder: '1024', required: false },
+      { key: 'height', label: 'Default height (optional)', placeholder: '768', required: false },
+      { key: 'num_images', label: 'Default number of images (optional)', placeholder: '1', required: false },
+    ],
+  },
+  {
     provider: 'google_calendar',
     label: 'Google Calendar',
     description: 'Read calendars and events via OAuth tokens.',
@@ -309,8 +326,12 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
   const [config, setConfig] = useState<Record<string, string>>(defaultConfigForProvider('telegram'));
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [leonardoModels, setLeonardoModels] = useState<LeonardoModelOption[]>([]);
+  const [leonardoModelsLoading, setLeonardoModelsLoading] = useState(false);
+  const [leonardoModelsError, setLeonardoModelsError] = useState<string | null>(null);
 
   const spec = useMemo(() => providerById(provider), [provider]);
+  const leonardoApiKey = useMemo(() => (provider === 'leonardo' ? (config.api_key || '').trim() : ''), [provider, config.api_key]);
 
   const connectedByProvider = useMemo(() => {
     const counts = new Map<IntegrationProvider, number>();
@@ -352,6 +373,9 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
     setConfig(defaultConfigForProvider('telegram'));
     setError(null);
     setSuccess(null);
+    setLeonardoModels([]);
+    setLeonardoModelsLoading(false);
+    setLeonardoModelsError(null);
   };
 
   const openCreateComposer = () => {
@@ -452,6 +476,51 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
   const handleModeChange = (nextMode: IntegrationMode) => {
     setMode(nextMode);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLeonardoModels() {
+      if (provider !== 'leonardo') {
+        setLeonardoModels([]);
+        setLeonardoModelsLoading(false);
+        setLeonardoModelsError(null);
+        return;
+      }
+      if (leonardoApiKey === '') {
+        setLeonardoModels([]);
+        setLeonardoModelsLoading(false);
+        setLeonardoModelsError('Enter a Leonardo API key to load available models.');
+        return;
+      }
+
+      setLeonardoModelsLoading(true);
+      setLeonardoModelsError(null);
+      try {
+        const models = await listLeonardoModels(leonardoApiKey);
+        if (cancelled) {
+          return;
+        }
+        setLeonardoModels(models);
+        setLeonardoModelsError(models.length === 0 ? 'No public Leonardo models were returned for this API key.' : null);
+      } catch (loadError) {
+        if (cancelled) {
+          return;
+        }
+        setLeonardoModels([]);
+        setLeonardoModelsError(loadError instanceof Error ? loadError.message : 'Failed to load Leonardo models.');
+      } finally {
+        if (!cancelled) {
+          setLeonardoModelsLoading(false);
+        }
+      }
+    }
+
+    void loadLeonardoModels();
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, leonardoApiKey]);
 
   return (
     <div className="integrations-panel">
@@ -604,7 +673,20 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
               {spec.fields.map((field) => (
                 <label className="settings-field" key={field.key}>
                   <span>{field.label}</span>
-                  {field.kind === 'select' ? (
+                  {provider === 'leonardo' && field.key === 'model_id' ? (
+                    <select
+                      value={config[field.key] || ''}
+                      onChange={(e) => setConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                      disabled={leonardoModelsLoading || leonardoApiKey === ''}
+                    >
+                      <option value="">Automatic</option>
+                      {leonardoModels.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : field.kind === 'select' ? (
                     <select
                       value={config[field.key] || field.options?.[0]?.value || ''}
                       onChange={(e) => setConfig((prev) => ({ ...prev, [field.key]: e.target.value }))}
@@ -638,6 +720,30 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
                       <p className="settings-help integration-helper-text">
                         Set Default chat ID to mirror newly created Web App sessions into Telegram automatically. If topic creation fails, the message is posted in the main chat.
                       </p>
+                    </div>
+                  )}
+                  {provider === 'leonardo' && field.key === 'api_key' && (
+                    <div className="integration-helper-block">
+                      <p className="settings-help integration-helper-text">
+                        Leonardo image generation is asynchronous. Create a Leonardo webhook endpoint for this agent in Square Console, then paste that callback URL and secret into your Leonardo Production API key settings.
+                      </p>
+                      <p className="settings-help integration-helper-text">
+                        Once configured, the agent can call <code>leonardo_generate_image</code>, wait for the callback, and automatically resume the same session when the images are ready.
+                      </p>
+                    </div>
+                  )}
+                  {provider === 'leonardo' && field.key === 'model_id' && (
+                    <div className="integration-helper-block">
+                      <p className="settings-help integration-helper-text">
+                        {leonardoModelsLoading
+                          ? 'Loading Leonardo platform models...'
+                          : leonardoModelsError || 'Choose Automatic to let Leonardo pick, or select a specific platform model by name.'}
+                      </p>
+                      {leonardoModels.length > 0 && (
+                        <p className="settings-help integration-helper-text">
+                          Loaded {leonardoModels.length} model{leonardoModels.length === 1 ? '' : 's'} from Leonardo.
+                        </p>
+                      )}
                     </div>
                   )}
                 </label>

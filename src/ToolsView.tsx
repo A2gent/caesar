@@ -952,7 +952,7 @@ function ToolsView() {
                                     </div>
                                     <div className="settings-help" style={{ marginTop: '8px' }}>
                                       Opens a new Chrome window with the agent profile as a separate "person".
-                                      Chrome must be fully closed first so it can restart with remote debugging enabled.
+                                      Your regular Chrome can stay open while the agent profile runs side by side.
                                       You can switch back to this AgentProfile later from the Chrome profile picker.
                                       Log in to websites in the agent profile window - the agent will use these sessions.
                                     </div>

@@ -371,6 +371,8 @@ export interface ToolResult {
   content: string;
   is_error: boolean;
   metadata?: Record<string, unknown>;
+  name?: string;
+  duration_ms?: number;
 }
 
 export interface QuestionOption {
@@ -696,6 +698,7 @@ export type IntegrationProvider =
   | 'webhook'
   | 'google_calendar'
   | 'elevenlabs'
+  | 'leonardo'
   | 'perplexity'
   | 'brave_search'
   | 'exa'
@@ -724,6 +727,12 @@ export interface IntegrationRequest {
 export interface IntegrationTestResponse {
   success: boolean;
   message: string;
+}
+
+export interface LeonardoModelOption {
+  id: string;
+  name: string;
+  description?: string;
 }
 
 export type MCPTransport = 'stdio' | 'http';
@@ -1156,6 +1165,14 @@ export async function getSession(sessionId: string): Promise<Session> {
   const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}`);
   if (!response.ok) {
     throw new Error(`Failed to get session: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function getSessionSummary(sessionId: string): Promise<Session> {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}?include_messages=false`);
+  if (!response.ok) {
+    throw new Error(`Failed to get session summary: ${response.statusText}`);
   }
   return response.json();
 }
@@ -2916,6 +2933,21 @@ export async function testIntegration(integrationId: string): Promise<Integratio
     throw new Error(data.message || `Failed to test integration: ${response.statusText}`);
   }
   return data;
+}
+
+export async function listLeonardoModels(apiKey: string): Promise<LeonardoModelOption[]> {
+  const response = await fetch(`${getApiBaseUrl()}/integrations/leonardo/models`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load Leonardo models');
+  }
+  const data = await response.json() as { models?: LeonardoModelOption[] };
+  return Array.isArray(data.models) ? data.models : [];
 }
 
 export async function discoverTelegramChats(botToken: string): Promise<TelegramChatDiscoveryResponse> {
