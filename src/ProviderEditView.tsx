@@ -115,34 +115,39 @@ function ProviderEditView() {
       return [];
     }
     const options = new Set<string>();
-    [provider.model, provider.default_model]
+    const savedOptions = [provider.model, provider.default_model]
       .map((value) => value.trim())
-      .filter((value) => value !== '')
-      .forEach((value) => options.add(value));
+      .filter((value) => value !== '');
+
+    savedOptions.forEach((value) => options.add(value));
+
+    const addQueriedModels = (models: string[]) => {
+      models.forEach((name) => options.add(name));
+    };
 
     try {
       if (provider.type === 'lmstudio') {
-        (await listLMStudioModels(provider.base_url)).forEach((name) => options.add(name));
+        addQueriedModels(await listLMStudioModels(provider.base_url));
       } else if (provider.type === 'kimi') {
-        (await listKimiModels(provider.base_url)).forEach((name) => options.add(name));
+        addQueriedModels(await listKimiModels(provider.base_url));
       } else if (provider.type === 'google') {
-        (await listGoogleModels(provider.base_url)).forEach((name) => options.add(name));
+        addQueriedModels(await listGoogleModels(provider.base_url));
       } else if (provider.type === 'openai') {
-        (await listOpenAIModels(provider.base_url)).forEach((name) => options.add(name));
+        addQueriedModels(await listOpenAIModels(provider.base_url));
       } else if (provider.type === 'openai_codex') {
-        (await listOpenAICodexModels(provider.base_url)).forEach((name) => options.add(name));
+        addQueriedModels(await listOpenAICodexModels(provider.base_url));
       } else if (provider.type === 'openrouter') {
-        (await listOpenRouterModels(provider.base_url)).forEach((name) => options.add(name));
+        addQueriedModels(await listOpenRouterModels(provider.base_url));
       } else if (provider.type === 'opencode_zen') {
-        (await listOpenCodeZenModels(provider.base_url)).forEach((name) => options.add(name));
+        addQueriedModels(await listOpenCodeZenModels(provider.base_url));
       } else if (provider.type === 'anthropic') {
-        (await listAnthropicModels()).forEach((name) => options.add(name));
+        addQueriedModels(await listAnthropicModels());
       }
     } catch {
       // Keep saved/default options when model querying fails.
     }
 
-    return Array.from(options).sort((a, b) => a.localeCompare(b));
+    return Array.from(options);
   };
 
   const loadProviders = async () => {
