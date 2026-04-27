@@ -5,6 +5,7 @@ import MessageList from './MessageList';
 import QuestionPrompt from './QuestionPrompt';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from './EmptyState';
 import { TaskProgressPanel } from './TaskProgressPanel';
+import InlineSessionGitSummary from './components/InlineSessionGitSummary';
 import { withAgentEmoji } from './agentVisuals';
 import {
   getSession,
@@ -1530,6 +1531,14 @@ function ChatView() {
                     {formatProviderFailure(latestProviderFailure)}
                   </div>
                 </div>
+              ) : null}
+              {session.project_id ? (
+                <InlineSessionGitSummary
+                  projectId={session.project_id}
+                  sessionStatus={session.status}
+                  isWorkflowSession={Boolean(workflowState)}
+                  onOpenFile={(path) => navigate(`/projects/${session.project_id}?openFile=${encodeURIComponent(path)}`)}
+                />
               ) : null}
               </div>
             </>

@@ -1431,6 +1431,146 @@ body.mind-resizing * {
   gap: 6px;
 }
 
+.session-inline-git-card {
+  margin-top: 0.5rem;
+  border: 1px solid var(--app-border-1);
+  border-radius: 8px;
+  background: var(--app-bg-2);
+}
+
+.session-inline-git-summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  background: transparent;
+  border: none;
+  color: var(--app-text-1);
+  cursor: pointer;
+}
+
+.session-inline-git-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--app-text-muted);
+}
+
+.session-inline-git-body {
+  border-top: 1px solid var(--app-border-1);
+  padding: 0.55rem 0.65rem;
+}
+
+.session-inline-git-note,
+.session-inline-git-empty,
+.session-inline-git-error,
+.session-inline-git-success {
+  font-size: 0.76rem;
+  margin-bottom: 0.45rem;
+  color: var(--app-text-muted);
+}
+
+.session-inline-git-error {
+  color: #ff8b8b;
+}
+
+.session-inline-git-success {
+  color: #6ad98f;
+}
+
+.session-inline-git-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.session-inline-git-file {
+  border: 1px solid var(--app-border-1);
+  border-radius: 6px;
+  background: var(--app-bg-3);
+}
+
+.session-inline-git-file-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.session-inline-git-file-link {
+  appearance: none;
+  background: none;
+  border: none;
+  color: var(--primary);
+  text-align: left;
+  padding: 0;
+  font-size: 0.78rem;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-inline-git-file-link:hover {
+  text-decoration: underline;
+}
+
+.session-inline-git-status {
+  font-size: 0.7rem;
+  color: var(--app-text-muted);
+}
+
+.session-inline-git-expand,
+.session-inline-git-stage,
+.session-inline-git-commit-actions button {
+  appearance: none;
+  border: 1px solid var(--app-border-1);
+  background: var(--app-bg-2);
+  color: var(--app-text-1);
+  border-radius: 6px;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+
+.session-inline-git-diff {
+  border-top: 1px solid var(--app-border-1);
+  padding: 0.4rem 0.5rem;
+  font-size: 0.72rem;
+  overflow: auto;
+}
+
+.session-inline-git-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.session-inline-git-commit-message {
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+  border: 1px solid var(--app-border-1);
+  border-radius: 6px;
+  background: var(--app-bg-1);
+  color: var(--app-text-1);
+  padding: 0.4rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.session-inline-git-commit-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
 .session-workflow-node-id {
   font-size: 11px;
   color: #dbe5fb;
