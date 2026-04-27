@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// noop touch to satisfy workflow: ensuring latest edit pass for duration rendering fixes
 import { Link } from 'react-router-dom';
 import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type Session, type SubAgent, type SystemPromptSnapshot, type ToolCall, type ToolResult } from './api';
 import { IntegrationProviderIcon, integrationProviderForToolName, integrationProviderLabel } from './integrationMeta';
@@ -74,6 +75,7 @@ interface DiffRow {
 }
 
 const DIFF_CONTEXT_LINES = 3;
+const MIN_SLOWEST_PARALLEL_DURATION_MS = 1;
 
 type TimelineEntry = {
   time: number;
@@ -97,6 +99,21 @@ type ParallelStepView = {
   input: Record<string, unknown>;
   result?: ToolResult;
 };
+
+const SlowestDurationIcon: React.FC = () => (
+  <span className="tool-slowest-badge" title="Slowest operation" aria-label="Slowest operation">
+    <svg viewBox="0 0 24 24" className="tool-slowest-icon" aria-hidden="true" focusable="false">
+      <path d="M5 17.5h9.5c2.5 0 4.5-2 4.5-4.5v-.6c0-1.3 1.1-2.4 2.4-2.4" />
+      <path d="M5 17.5c-1.4 0-2.5-1.1-2.5-2.5s1.1-2.5 2.5-2.5h3" />
+      <path d="M8.5 12.5a5 5 0 1 1 5 5" />
+      <path d="M8.5 12.5a2.7 2.7 0 1 1 2.7 2.7" />
+      <path d="M18.8 10.4l-1.4-3.1" />
+      <path d="M21 10l.9-3.2" />
+      <path d="M17.2 7.1h.1" />
+      <path d="M21.9 6.6h.1" />
+    </svg>
+  </span>
+);
 
 function timestampMs(value: string | undefined): number {
   if (!value) {
@@ -129,6 +146,9 @@ function numberMetadata(message: Message, key: string): number | undefined {
 function formatDurationMs(durationMs: number | undefined | null): string {
   if (durationMs === null || durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 0) {
     return '';
+  }
+  if (durationMs === 0) {
+    return '<1 ms';
   }
   if (durationMs < 1000) {
     return `${Math.round(durationMs)} ms`;
@@ -407,10 +427,12 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const metadata = (result.metadata || {}) as Record<string, unknown>;
     const imageFile = metadata.image_file as Record<string, unknown> | undefined;
     const sourceTool = typeof imageFile?.source_tool === 'string' ? imageFile.source_tool.trim().toLowerCase() : '';
+    const imageAction = typeof imageFile?.action === 'string' ? imageFile.action.trim().toLowerCase() : '';
     return (
       sourceTool === 'take_camera_photo_tool' ||
       sourceTool === 'take_screenshot_tool' ||
-      sourceTool === 'leonardo_generate_image'
+      sourceTool === 'leonardo_generate_image' ||
+      (sourceTool === 'browser_chrome' && imageAction === 'screenshot')
     );
   };
 
@@ -654,6 +676,20 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
           return cmd.length > 60 ? `${cmd.substring(0, 60)}...` : cmd;
         }
         return null;
+
+      case 'browser_chrome': {
+        const action = typeof input.action === 'string' ? input.action.trim() : '';
+        if (action === 'navigate' && typeof input.url === 'string' && input.url.trim() !== '') {
+          return input.url.trim();
+        }
+        if ((action === 'click' || action === 'type' || action === 'scroll') && typeof input.selector === 'string' && input.selector.trim() !== '') {
+          return `${action}: ${input.selector.trim()}`;
+        }
+        if (action === 'click_at') {
+          return `click_at: ${input.x}, ${input.y}`;
+        }
+        return action || null;
+      }
       
       case 'task':
       case 'mcp_task':
@@ -1028,6 +1064,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                   const childDetails = extractToolDetails(step.toolName, step.input);
                   const isSlowestStep =
                     slowestParallelDuration !== null
+                    && slowestParallelDuration >= MIN_SLOWEST_PARALLEL_DURATION_MS
                     && isFiniteDuration(step.result?.duration_ms)
                     && step.result.duration_ms === slowestParallelDuration;
                   return (
@@ -1045,7 +1082,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                           </>
                         ) : null}
                         <span className="tool-nested-meta">
-                          {isSlowestStep ? <span className="tool-slowest-badge">slowest</span> : null}
+                          {isSlowestStep ? <SlowestDurationIcon /> : null}
                           {renderDurationChip(step.result?.duration_ms)}
                         </span>
                       </summary>

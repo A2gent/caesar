@@ -607,11 +607,7 @@ body.mind-resizing * {
 /* Sidebar Styles */
 .sidebar {
   width: 100%;
-<<<<<<< HEAD
-  background-color: #000000;
-=======
   background-color: var(--app-sidebar-bg);
->>>>>>> f46cd99a350c9bbcb9caebdb938de5c9e43df694
   color: white;
   font-family: "Inter", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   height: 100%;
@@ -2388,15 +2384,23 @@ body.mind-resizing * {
 .tool-slowest-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   border: 1px solid rgba(255, 193, 7, 0.6);
   border-radius: 999px;
-  padding: 0 6px;
   background: rgba(255, 193, 7, 0.16);
   color: #ffd54f;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+}
+
+.tool-slowest-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .result-icon {
