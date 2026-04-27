@@ -607,7 +607,11 @@ body.mind-resizing * {
 /* Sidebar Styles */
 .sidebar {
   width: 100%;
+<<<<<<< HEAD
+  background-color: #000000;
+=======
   background-color: var(--app-sidebar-bg);
+>>>>>>> f46cd99a350c9bbcb9caebdb938de5c9e43df694
   color: white;
   font-family: "Inter", "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   height: 100%;
