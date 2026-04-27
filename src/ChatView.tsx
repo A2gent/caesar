@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ChatInput, { type SlashCommandSelection, type SlashCommand } from './ChatInput';
 import MessageList from './MessageList';
 import QuestionPrompt from './QuestionPrompt';
@@ -1408,7 +1408,13 @@ function ChatView() {
                 <div className="session-meta-row">
                   {projectName ? (
                     <>
-                      <span className="session-project-name">{projectName}</span>
+                      {session?.project_id ? (
+                        <Link className="session-project-name" to={`/projects/${session.project_id}`}>
+                          {projectName}
+                        </Link>
+                      ) : (
+                        <span className="session-project-name">{projectName}</span>
+                      )}
                       <span className="session-title-separator">/</span>
                     </>
                   ) : null}

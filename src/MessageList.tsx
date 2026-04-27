@@ -138,14 +138,41 @@ function formatDurationMs(durationMs: number | undefined | null): string {
 
 function promptLine(content: string, label: string): string {
   const prefix = `${label}:`;
-  const line = content.split(/\r?\n/).find((item) => item.trim().startsWith(prefix));
-  return line ? line.trim().slice(prefix.length).trim() : '';
+  return content
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.startsWith(prefix))
+    ?.slice(prefix.length)
+    .trim() || '';
 }
 
+const isFiniteDuration = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+const toolResultCompletenessScore = (result: ToolResult): number => {
+  let score = 0;
+  if (isFiniteDuration(result.duration_ms)) score += 4;
+  if ((result.content || '').trim() !== '') score += 2;
+  return score;
+};
+
+const pickBetterToolResult = (prev: ToolResult, next: ToolResult): ToolResult => {
+  const prevHasDuration = isFiniteDuration(prev.duration_ms);
+  const nextHasDuration = isFiniteDuration(next.duration_ms);
+  if (!prevHasDuration && nextHasDuration) return next;
+  if (prevHasDuration && !nextHasDuration) return prev;
+
+  const prevScore = toolResultCompletenessScore(prev);
+  const nextScore = toolResultCompletenessScore(next);
+  if (nextScore > prevScore) return next;
+  return prev;
+};
+
 function internalHandoffLabel(message: Message): string {
-  const kind = stringMetadata(message, 'handoff_kind');
-  if (kind === 'workflow_node' || message.content.startsWith('You are executing one node in a multi-agent workflow.')) {
-    const workflowName = stringMetadata(message, 'workflow_name') || promptLine(message.content, 'Workflow');
+  if (message.role !== 'user') return '';
+  const metadata = message.metadata || {};
+  const kind = typeof metadata.internal_handoff_kind === 'string' ? metadata.internal_handoff_kind : '';
+  if (kind === 'workflow_handoff') {
+    const workflowName = stringMetadata(message, 'workflow_name');
     const nodeLabel = stringMetadata(message, 'workflow_node_label') || promptLine(message.content, 'Node');
     return [workflowName, nodeLabel].filter(Boolean).join(' / ') || 'Workflow handoff';
   }
@@ -936,6 +963,10 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     const totalTokens = (toolCall.input_tokens ?? 0) + (toolCall.output_tokens ?? 0);
     const toolAudioClipUrl = toolResultAudioClipUrl(result);
     const parallelSteps = isParallelTool ? parseParallelSteps(toolCall, result) : [];
+    const parallelDurations = parallelSteps
+      .map((step) => step.result?.duration_ms)
+      .filter(isFiniteDuration);
+    const slowestParallelDuration = parallelDurations.length > 0 ? Math.max(...parallelDurations) : null;
     return (
       <div key={key} className="tool-execution-stack tool-execution-stack-offset">
         <details open={isParallelTool} className={`message message-tool tool-execution-card tool-card-collapsed${isParallelTool ? ' tool-parallel-card' : ''}${result?.is_error ? ' tool-execution-card-error' : ''}`}>
@@ -995,9 +1026,13 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
               <div className="parallel-tool-tree" aria-label="Parallel tool calls">
                 {parallelSteps.map((step) => {
                   const childDetails = extractToolDetails(step.toolName, step.input);
+                  const isSlowestStep =
+                    slowestParallelDuration !== null
+                    && isFiniteDuration(step.result?.duration_ms)
+                    && step.result.duration_ms === slowestParallelDuration;
                   return (
-                    <details key={`${toolCall.id}-parallel-${step.index}`} className={`tool-nested-card${step.result?.is_error ? ' tool-nested-card-error' : ''}`}>
-                      <summary className="tool-nested-summary">
+                    <details key={`${toolCall.id}-parallel-${step.index}`} className={`tool-nested-card${step.result?.is_error ? ' tool-nested-card-error' : ''}${isSlowestStep ? ' tool-nested-card-slowest' : ''}`}>
+                      <summary className={`tool-nested-summary${isSlowestStep ? ' tool-nested-summary-slowest' : ''}`}>
                         <span className="parallel-branch" aria-hidden="true">↳</span>
                         <span className="tool-name tool-name-with-icon">
                           <span className="tool-icon" aria-hidden="true">{toolIconForName(step.toolName)}</span>
@@ -1010,6 +1045,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
                           </>
                         ) : null}
                         <span className="tool-nested-meta">
+                          {isSlowestStep ? <span className="tool-slowest-badge">slowest</span> : null}
                           {renderDurationChip(step.result?.duration_ms)}
                         </span>
                       </summary>
@@ -1185,7 +1221,15 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
           timestamp = next.timestamp;
           index += 1;
         }
-        const resultByCallID = new Map(mergedResults.map((result) => [result.tool_call_id, result]));
+        const resultByCallID = new Map<string, ToolResult>();
+        for (const result of mergedResults) {
+          const prev = resultByCallID.get(result.tool_call_id);
+          if (!prev) {
+            resultByCallID.set(result.tool_call_id, result);
+            continue;
+          }
+          resultByCallID.set(result.tool_call_id, pickBetterToolResult(prev, result));
+        }
         for (const toolCall of toolCalls) {
           if (toolCall.name === 'delegate_to_subagent') {
             pushEntry(renderSubAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, `tool-exec-${index}-${toolCall.id}`), timestamp);

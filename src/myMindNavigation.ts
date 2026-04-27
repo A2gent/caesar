@@ -7,7 +7,7 @@ export function buildOpenInMyMindUrl(path: string, projectId?: string): string {
 export function isSupportedFileTool(toolName: string): boolean {
   const normalized = toolName.trim().toLowerCase();
   return normalized === 'read' || normalized === 'write' || normalized === 'edit' || normalized === 'replace_lines' ||
-         normalized === 'mcp_read' || normalized === 'mcp_write' || normalized === 'mcp_edit';
+         normalized === 'insert_lines' || normalized === 'mcp_read' || normalized === 'mcp_write' || normalized === 'mcp_edit';
 }
 
 export function extractToolFilePath(input: Record<string, unknown>): string | null {

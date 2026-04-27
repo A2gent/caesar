@@ -172,3 +172,50 @@ describe('ChatView workflow review loop rendering', () => {
     expect(screen.queryByText('review-loop__critic')).not.toBeInTheDocument();
   });
 });
+
+
+describe('ChatView session header project link', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    getSessionMock.mockResolvedValue({
+      id: 'session-1',
+      agent_id: 'build',
+      title: 'Linked project session',
+      status: 'completed',
+      project_id: 'project-123',
+      created_at: '2026-04-16T10:00:00Z',
+      updated_at: '2026-04-16T10:00:00Z',
+      messages: [],
+      metadata: {},
+    });
+    listSessionsMock.mockResolvedValue([]);
+    listProvidersMock.mockResolvedValue([]);
+    listSubAgentsMock.mockResolvedValue([]);
+    getProjectMock.mockResolvedValue({
+      id: 'project-123',
+      name: 'Project Alpha',
+      path: '/tmp/project-alpha',
+      created_at: '2026-04-15T10:00:00Z',
+      updated_at: '2026-04-16T10:00:00Z',
+    });
+    sendMessageStreamMock.mockImplementation(async function* emptyStream() {});
+    getPendingQuestionMock.mockResolvedValue(null);
+    answerQuestionMock.mockResolvedValue(undefined);
+    createSessionMock.mockResolvedValue(null);
+    cancelSessionRunMock.mockResolvedValue(undefined);
+  });
+
+  it('renders project name as link to project sessions list', async () => {
+    render(
+      <MemoryRouter initialEntries={['/chat/session-1']}>
+        <Routes>
+          <Route path="/chat/:sessionId" element={<ChatView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const projectLink = await screen.findByRole('link', { name: 'Project Alpha' });
+    expect(projectLink).toHaveAttribute('href', '/projects/project-123');
+  });
+});
