@@ -44,6 +44,7 @@ const navSections: NavSection[] = [
     id: 'agent',
     label: '🤖 Agent',
     items: [
+       { id: 'settings', label: '⚙️ Settings', path: '/settings' },
       { id: 'body', label: '📁 Body', path: '/projects/system-agent' },
       { id: 'soul', label: '🫀 Soul', path: '/projects/system-soul' },
       { id: 'thinking', label: '🤔 Thinking', path: '/thinking' },
@@ -53,7 +54,6 @@ const navSections: NavSection[] = [
       { id: 'mcp', label: '🧩 MCP', path: '/mcp' },
       { id: 'integrations', label: '🔌 Integrations', path: '/integrations' },
       { id: 'providers', label: '🤖 LLM providers', path: '/providers' },
-      { id: 'settings', label: '⚙️ Settings', path: '/settings' },
     ],
   },
   {
