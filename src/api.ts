@@ -415,8 +415,8 @@ export interface StreamToolResult {
 export type ChatStreamEvent =
   | { type: 'status'; status: string }
   | { type: 'assistant_delta'; delta: string }
-  | { type: 'tool_executing'; step: number; tool_calls: StreamToolCall[] }
-  | { type: 'tool_completed'; step: number; messages: Message[]; status: string }
+  | { type: 'tool_executing'; step: number; message?: Message; tool_calls: StreamToolCall[] }
+  | { type: 'tool_completed'; step: number; message?: Message; messages?: Message[]; status: string }
   | { type: 'step_completed'; step: number }
   | { type: 'workflow_update'; workflow: Record<string, unknown> }
   | {
@@ -438,6 +438,74 @@ export type ChatStreamEvent =
     }
   | { type: 'done'; content: string; messages: Message[]; status: string; usage?: { input_tokens: number; output_tokens: number } }
   | { type: 'error'; error: string; status?: string };
+
+function toolResultIDs(message: Message): string[] {
+  return (message.tool_results || []).map((result) => result.tool_call_id).filter(Boolean).sort();
+}
+
+function sameToolResultIDs(a: Message, b: Message): boolean {
+  const left = toolResultIDs(a);
+  const right = toolResultIDs(b);
+  return left.length > 0 && left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+export function mergeStreamMessage(messages: Message[], message: Message | undefined): Message[] {
+  if (!message) {
+    return messages;
+  }
+
+  if (message.role === 'tool' && (message.tool_results?.length || 0) > 0) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'tool' && sameToolResultIDs(messages[index], message)) {
+        const next = [...messages];
+        next[index] = message;
+        return next;
+      }
+    }
+  }
+
+  return [...messages, message];
+}
+
+export function attachToolCallsToCurrentAssistant(
+  messages: Message[],
+  toolCalls: StreamToolCall[],
+  message?: Message,
+): Message[] {
+  if (toolCalls.length === 0 && !message) {
+    return messages;
+  }
+
+  const normalizedToolCalls = toolCalls.map((toolCall) => ({
+    id: toolCall.id,
+    name: toolCall.name,
+    input: toolCall.input || {},
+    thought_signature: toolCall.thought_signature,
+  }));
+  const next = [...messages];
+  const last = next[next.length - 1];
+  const assistantMessage = message && message.role === 'assistant'
+    ? { ...message, tool_calls: message.tool_calls || normalizedToolCalls }
+    : undefined;
+
+  if (last?.role === 'assistant') {
+    next[next.length - 1] = {
+      ...last,
+      ...(assistantMessage || {}),
+      content: assistantMessage?.content || last.content,
+      tool_calls: assistantMessage?.tool_calls || normalizedToolCalls,
+    };
+    return next;
+  }
+
+  next.push(assistantMessage || {
+    role: 'assistant',
+    content: '',
+    tool_calls: normalizedToolCalls,
+    timestamp: new Date().toISOString(),
+  });
+  return next;
+}
 
 export interface CreateSessionRequest {
   agent_id?: string;

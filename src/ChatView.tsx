@@ -19,6 +19,8 @@ import {
   answerQuestion,
   createSession,
   listSubAgents,
+  attachToolCallsToCurrentAssistant,
+  mergeStreamMessage,
   type LLMProviderType,
   type ProviderConfig,
   type SubAgent,
@@ -934,15 +936,16 @@ function ChatView() {
     }
 
     if (event.type === 'tool_executing') {
-      // Tool calls are now being executed - update messages with tool calls
-      // The actual tool call data is in the event, but we'll wait for tool_completed
-      // to get the full updated messages including results
+      setMessages(prev => attachToolCallsToCurrentAssistant(prev, event.tool_calls || [], event.message));
       return;
     }
 
     if (event.type === 'tool_completed') {
-      // Update messages with tool calls and results
-      setMessages(event.messages);
+      if (event.messages) {
+        setMessages(event.messages);
+      } else {
+        setMessages(prev => mergeStreamMessage(prev, event.message));
+      }
       setSession(prev => (prev && prev.id === targetSessionId ? { ...prev, status: event.status } : prev));
       return;
     }
