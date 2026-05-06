@@ -6971,6 +6971,7 @@ input[type="checkbox"]:disabled {
 
 .mind-viewer-mode {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
@@ -6983,6 +6984,20 @@ input[type="checkbox"]:disabled {
   padding: 6px 10px;
   cursor: pointer;
   font-size: 12px;
+}
+
+.mind-source-selection-chip {
+  border: 1px solid #4d5d82;
+  border-radius: 6px;
+  background: #20283a;
+  color: #c9d6f5;
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 1.2;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mind-file-actions-menu {
@@ -7172,6 +7187,54 @@ input[type="checkbox"]:disabled {
   font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.mind-code-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  border: 1px solid #30394a;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #15171c;
+}
+
+.mind-code-editor .cm-editor,
+.mind-code-editor .cm-scroller,
+.mind-code-editor .cm-content {
+  background: #15171c;
+  color: #d9deea;
+}
+
+.mind-code-editor .cm-gutters {
+  background: #101318;
+  border-color: #2b3342;
+  color: #6f7b90;
+}
+
+.mind-code-editor .cm-editor {
+  height: 100%;
+  min-height: 280px;
+}
+
+.mind-code-editor .cm-scroller {
+  overflow: auto;
+}
+
+.mind-code-editor .cm-tooltip,
+.mind-code-editor .cm-tooltip-autocomplete {
+  border-color: #37465d;
+  background: #1c2230;
+  color: #d9deea;
+}
+
+.mind-code-editor .cm-tooltip-autocomplete ul li[aria-selected] {
+  background: #2c3b61;
+  color: #f5f7ff;
+}
+
+.mind-code-editor-disabled {
+  opacity: 0.75;
 }
 
 .mind-markdown-preview {
@@ -10435,6 +10498,42 @@ button.session-provider-chip:hover {
   color: #1a2a44;
   background: #edf3fc;
   border-color: #c7d5ea;
+}
+
+[data-theme='light'] .project-files-section .mind-source-selection-chip {
+  color: #1b3767;
+  background: #e8f0fb;
+  border-color: #c4d2e6;
+}
+
+[data-theme='light'] .project-files-section .mind-code-editor {
+  background: #f8fbff;
+  border-color: #d5dfef;
+}
+
+[data-theme='light'] .project-files-section .mind-code-editor .cm-editor,
+[data-theme='light'] .project-files-section .mind-code-editor .cm-scroller,
+[data-theme='light'] .project-files-section .mind-code-editor .cm-content {
+  background: #f8fbff;
+  color: #132238;
+}
+
+[data-theme='light'] .project-files-section .mind-code-editor .cm-gutters {
+  background: #eef3fb;
+  border-color: #d5dfef;
+  color: #62708a;
+}
+
+[data-theme='light'] .project-files-section .mind-code-editor .cm-tooltip,
+[data-theme='light'] .project-files-section .mind-code-editor .cm-tooltip-autocomplete {
+  border-color: #c4d2e6;
+  background: #ffffff;
+  color: #132238;
+}
+
+[data-theme='light'] .project-files-section .mind-code-editor .cm-tooltip-autocomplete ul li[aria-selected] {
+  background: #dde7f6;
+  color: #0b57d0;
 }
 
 [data-theme='light'] .project-files-section .mind-markdown-preview {

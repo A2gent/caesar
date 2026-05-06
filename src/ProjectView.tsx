@@ -55,6 +55,13 @@ import {
 import ChatInput from './ChatInput';
 import MeetingsView from './MeetingsView';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from './EmptyState';
+import ProjectSourceEditor from './ProjectSourceEditor';
+import {
+  buildSelectedCodeSessionContext,
+  describeSourceSelection,
+  normalizeSourceSelection,
+  type SourceEditorSelection,
+} from './projectSourceSelection';
 import {
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
   AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
@@ -76,6 +83,9 @@ import {
 type MarkdownMode = 'kanban' | 'preview' | 'source';
 type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'meetings' | 'changes' | 'history' | 'settings';
 type MeetingSettingsPickerTarget = 'notes' | 'audio' | null;
+type FileSourceSelection = SourceEditorSelection & {
+  path: string;
+};
 
 const PROJECT_VIEW_TABS = new Set<ProjectViewTab>(['explorer', 'tasks', 'sessions', 'meetings', 'changes', 'history', 'settings']);
 
@@ -501,6 +511,13 @@ const PY_KEYWORDS = [
   'with', 'yield',
 ];
 
+const RUBY_KEYWORDS = [
+  'alias', 'and', 'begin', 'break', 'case', 'class', 'def', 'defined', 'do', 'else', 'elsif',
+  'end', 'ensure', 'false', 'for', 'if', 'in', 'module', 'next', 'nil', 'not', 'or', 'redo',
+  'rescue', 'retry', 'return', 'self', 'super', 'then', 'true', 'undef', 'unless', 'until',
+  'when', 'while', 'yield',
+];
+
 const SQL_KEYWORDS = [
   'select', 'from', 'where', 'join', 'left', 'right', 'inner', 'outer', 'on', 'group', 'by',
   'order', 'insert', 'into', 'values', 'update', 'set', 'delete', 'create', 'table', 'alter',
@@ -518,8 +535,8 @@ function getTokenRules(language: string): TokenRule[] {
 
   if (normalized === 'json') {
     return [
-      { regex: /\"(?:[^\"\\]|\\.)*\"\s*(?=:)/g, className: 'tok-key', priority: 4 },
-      { regex: /\"(?:[^\"\\]|\\.)*\"/g, className: 'tok-string', priority: 3 },
+      { regex: /"(?:[^"\\]|\\.)*"\s*(?=:)/g, className: 'tok-key', priority: 4 },
+      { regex: /"(?:[^"\\]|\\.)*"/g, className: 'tok-string', priority: 3 },
       { regex: /\b(?:true|false|null)\b/g, className: 'tok-keyword', priority: 2 },
       { regex: /\b\d+(?:\.\d+)?(?:e[+-]?\d+)?\b/gi, className: 'tok-number', priority: 1 },
     ];
@@ -528,7 +545,7 @@ function getTokenRules(language: string): TokenRule[] {
   if (normalized === 'bash' || normalized === 'sh' || normalized === 'zsh' || normalized === 'shell') {
     return [
       { regex: /#.*$/gm, className: 'tok-comment', priority: 4 },
-      { regex: /\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 3 },
+      { regex: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 3 },
       { regex: /\b(?:if|then|else|fi|for|in|do|done|case|esac|while|until|function)\b/g, className: 'tok-keyword', priority: 2 },
       { regex: /\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/g, className: 'tok-variable', priority: 2 },
       { regex: /\b\d+\b/g, className: 'tok-number', priority: 1 },
@@ -538,7 +555,7 @@ function getTokenRules(language: string): TokenRule[] {
   if (normalized === 'go' || normalized === 'golang') {
     return [
       { regex: /\/\*[\s\S]*?\*\/|\/\/.*$/gm, className: 'tok-comment', priority: 5 },
-      { regex: /\"(?:[^\"\\]|\\.)*\"|`[\s\S]*?`|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 4 },
+      { regex: /"(?:[^"\\]|\\.)*"|`[\s\S]*?`|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 4 },
       { regex: keywordRegex(GO_KEYWORDS), className: 'tok-keyword', priority: 3 },
       { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 2 },
       { regex: /\b[A-Z][A-Za-z0-9_]*\b/g, className: 'tok-type', priority: 1 },
@@ -548,17 +565,29 @@ function getTokenRules(language: string): TokenRule[] {
   if (normalized === 'py' || normalized === 'python') {
     return [
       { regex: /#.*$/gm, className: 'tok-comment', priority: 5 },
-      { regex: /\"\"\"[\s\S]*?\"\"\"|'''[\s\S]*?'''|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 4 },
+      { regex: /"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 4 },
       { regex: keywordRegex(PY_KEYWORDS), className: 'tok-keyword', priority: 3 },
       { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 2 },
       { regex: /\bself\b/g, className: 'tok-variable', priority: 1 },
     ];
   }
 
+  if (normalized === 'rb' || normalized === 'ruby') {
+    return [
+      { regex: /#.*$/gm, className: 'tok-comment', priority: 5 },
+      { regex: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, className: 'tok-string', priority: 4 },
+      { regex: /:[A-Za-z_][A-Za-z0-9_!?=]*/g, className: 'tok-key', priority: 3 },
+      { regex: keywordRegex(RUBY_KEYWORDS), className: 'tok-keyword', priority: 3 },
+      { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 2 },
+      { regex: /@[A-Za-z_][A-Za-z0-9_]*/g, className: 'tok-variable', priority: 1 },
+      { regex: /\b[A-Z][A-Za-z0-9_]*\b/g, className: 'tok-type', priority: 1 },
+    ];
+  }
+
   if (normalized === 'sql') {
     return [
       { regex: /--.*$/gm, className: 'tok-comment', priority: 4 },
-      { regex: /\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 3 },
+      { regex: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, className: 'tok-string', priority: 3 },
       { regex: keywordRegex(SQL_KEYWORDS, true), className: 'tok-keyword', priority: 2 },
       { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 1 },
     ];
@@ -566,7 +595,7 @@ function getTokenRules(language: string): TokenRule[] {
 
   return [
     { regex: /\/\*[\s\S]*?\*\/|\/\/.*$|#.*$/gm, className: 'tok-comment', priority: 5 },
-    { regex: /\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, className: 'tok-string', priority: 4 },
+    { regex: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g, className: 'tok-string', priority: 4 },
     { regex: keywordRegex(JS_KEYWORDS), className: 'tok-keyword', priority: 3 },
     { regex: /\b\d+(?:\.\d+)?\b/g, className: 'tok-number', priority: 2 },
     { regex: /\b[A-Z][A-Za-z0-9_]*\b/g, className: 'tok-type', priority: 1 },
@@ -656,7 +685,7 @@ function renderInlineMarkdown(value: string): string {
   text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
   text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  text = text.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '<a href="$2" rel="noreferrer noopener">$1</a>');
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noreferrer noopener">$1</a>');
   return text;
 }
 
@@ -1028,6 +1057,7 @@ function ProjectView() {
   const [selectedFilePath, setSelectedFilePath] = useState('');
   const [selectedFileContent, setSelectedFileContent] = useState('');
   const [savedFileContent, setSavedFileContent] = useState('');
+  const [sourceSelectionRange, setSourceSelectionRange] = useState<FileSourceSelection | null>(null);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [isSavingFile, setIsSavingFile] = useState(false);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
@@ -1174,8 +1204,9 @@ function ProjectView() {
       setIsGitRepo(false);
       setError(err instanceof Error ? err.message : 'Failed to load git status');
     } finally {
-      if (requestID !== gitStatusRequestRef.current) return;
-      setIsLoadingGitStatus(false);
+      if (requestID === gitStatusRequestRef.current) {
+        setIsLoadingGitStatus(false);
+      }
     }
   }, [projectId, rootFolder]);
 
@@ -1223,8 +1254,9 @@ function ProjectView() {
       setSelectedHistoryFileDiff('');
       setGitHistoryError(historyError instanceof Error ? historyError.message : 'Failed to load git history');
     } finally {
-      if (requestID !== gitHistoryRequestRef.current) return;
-      setIsLoadingGitHistory(false);
+      if (requestID === gitHistoryRequestRef.current) {
+        setIsLoadingGitHistory(false);
+      }
     }
   }, [projectId, rootFolder, isGitRepo, commitRepoPath]);
 
@@ -1434,6 +1466,10 @@ function ProjectView() {
 
   useEffect(() => {
     setMarkdownMode(defaultMarkdownModeForPath(selectedFilePath));
+  }, [selectedFilePath]);
+
+  useEffect(() => {
+    setSourceSelectionRange(null);
   }, [selectedFilePath]);
 
   // Persist expanded dirs
@@ -2200,8 +2236,9 @@ function ProjectView() {
       setSelectedCommitFileDiff('');
       setError(diffError instanceof Error ? diffError.message : 'Failed to load diff preview');
     } finally {
-      if (requestID !== commitDiffRequestRef.current) return;
-      setIsLoadingCommitFileDiff(false);
+      if (requestID === commitDiffRequestRef.current) {
+        setIsLoadingCommitFileDiff(false);
+      }
     }
   }, [projectId, commitRepoPath]);
 
@@ -2238,8 +2275,9 @@ function ProjectView() {
       setSelectedHistoryFileDiff('');
       setGitHistoryError(historyFilesError instanceof Error ? historyFilesError.message : 'Failed to load commit files');
     } finally {
-      if (requestID !== historyCommitFilesRequestRef.current) return;
-      setIsLoadingHistoryCommitFiles(false);
+      if (requestID === historyCommitFilesRequestRef.current) {
+        setIsLoadingHistoryCommitFiles(false);
+      }
     }
   }, [projectId, commitRepoPath]);
 
@@ -2262,8 +2300,9 @@ function ProjectView() {
       setSelectedHistoryFileDiff('');
       setGitHistoryError(historyDiffError instanceof Error ? historyDiffError.message : 'Failed to load commit diff');
     } finally {
-      if (requestID !== historyFileDiffRequestRef.current) return;
-      setIsLoadingHistoryFileDiff(false);
+      if (requestID === historyFileDiffRequestRef.current) {
+        setIsLoadingHistoryFileDiff(false);
+      }
     }
   }, [projectId, commitRepoPath]);
 
@@ -2456,10 +2495,29 @@ function ProjectView() {
 
   // File session dialog handlers
   const openSessionDialogForPath = (type: 'folder' | 'file', path: string) => {
-    const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, path) : path;
-    const label = type === 'folder' ? `folder "${path || 'root'}"` : `file "${path}"`;
+    const normalizedPath = normalizeMindPath(path);
+    const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, normalizedPath) : normalizedPath;
+    let label = type === 'folder' ? `folder "${normalizedPath || 'root'}"` : `file "${normalizedPath}"`;
+    let composerMessage = `${buildMindSessionContext(type, fullPath)}\n`;
+
+    if (
+      type === 'file'
+      && normalizedPath !== ''
+      && normalizeMindPath(selectedFilePath) === normalizedPath
+      && sourceSelectionRange?.path === selectedFilePath
+    ) {
+      const normalizedSelection = normalizeSourceSelection(sourceSelectionRange, selectedFileContent.length);
+      const selectedCodeContext = normalizedSelection
+        ? buildSelectedCodeSessionContext(fullPath, normalizedPath, selectedFileContent, normalizedSelection)
+        : null;
+      if (selectedCodeContext) {
+        label = `selection in "${normalizedPath}"`;
+        composerMessage = `${selectedCodeContext}\n`;
+      }
+    }
+
     setSessionTargetLabel(label);
-    setSessionComposerMessage(`${buildMindSessionContext(type, fullPath)}\n`);
+    setSessionComposerMessage(composerMessage);
     
     // Scroll to the sessions form
     setTimeout(() => {
@@ -2474,6 +2532,26 @@ function ProjectView() {
 
   // Computed values
   const hasUnsavedChanges = selectedFileContent !== savedFileContent;
+  const activeSourceSelection = useMemo(() => {
+    if (!sourceSelectionRange || sourceSelectionRange.path !== selectedFilePath) {
+      return null;
+    }
+    return normalizeSourceSelection(sourceSelectionRange, selectedFileContent.length);
+  }, [selectedFileContent.length, selectedFilePath, sourceSelectionRange]);
+  const activeSourceSelectionLabel = useMemo(() => (
+    activeSourceSelection ? describeSourceSelection(selectedFileContent, activeSourceSelection) : ''
+  ), [activeSourceSelection, selectedFileContent]);
+  const handleSourceEditorSelectionChange = useCallback((selection: SourceEditorSelection | null) => {
+    if (!selection || selectedFilePath.trim() === '') {
+      setSourceSelectionRange(null);
+      return;
+    }
+    setSourceSelectionRange({
+      path: selectedFilePath,
+      start: selection.start,
+      end: selection.end,
+    });
+  }, [selectedFilePath]);
   const selectedFileSupportsMarkdownPreview = selectedFilePath !== '' && isMarkdownFilePath(selectedFilePath);
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
   const todoBoard = useMemo(() => parseTodoBoard(selectedFileContent), [selectedFileContent]);
@@ -2831,8 +2909,9 @@ function ProjectView() {
         setProjectSearchResults(null);
         setProjectSearchError(searchError instanceof Error ? searchError.message : 'Failed to search project');
       } finally {
-        if (requestID !== projectSearchRequestRef.current) return;
-        setIsSearchingProject(false);
+        if (requestID === projectSearchRequestRef.current) {
+          setIsSearchingProject(false);
+        }
       }
     }, 220);
 
@@ -3682,13 +3761,22 @@ function ProjectView() {
                     <div className="mind-viewer-path">{selectedFilePath || 'Select a file from the tree'}</div>
                     <div className="mind-viewer-mode">
                       {selectedFilePath ? (
+                        activeSourceSelectionLabel ? (
+                          <span className="mind-source-selection-chip" title={`Selected ${activeSourceSelectionLabel}`}>
+                            {activeSourceSelectionLabel}
+                          </span>
+                        ) : null
+                      ) : null}
+                      {selectedFilePath ? (
                         <button
                           type="button"
                           className="mind-create-session-btn"
                           onClick={() => openSessionDialogForPath('file', selectedFilePath)}
-                          title="Create session for this file"
+                          title={activeSourceSelectionLabel
+                            ? `Create session for selected code (${activeSourceSelectionLabel})`
+                            : 'Create session for this file'}
                         >
-                          💭 Session
+                          {activeSourceSelectionLabel ? '💭 Selection' : '💭 Session'}
                         </button>
                       ) : null}
                       {selectedFilePath ? (
@@ -3789,12 +3877,13 @@ function ProjectView() {
                       </EmptyState>
                     ) : null}
                     {!isLoadingFile && selectedFilePath && (markdownMode === 'source' || !selectedFileSupportsMarkdownPreview) ? (
-                      <textarea
-                        className="mind-markdown-editor"
+                      <ProjectSourceEditor
+                        path={selectedFilePath}
                         value={selectedFileContent}
-                        onChange={(event) => setSelectedFileContent(event.target.value)}
                         disabled={isSavingFile}
-                        spellCheck={false}
+                        themeMode={commitDiffThemeMode}
+                        onChange={setSelectedFileContent}
+                        onSelectionChange={handleSourceEditorSelectionChange}
                       />
                     ) : null}
                     {!isLoadingFile && selectedFilePath && selectedFileSupportsMarkdownPreview && markdownMode === 'preview' ? (
@@ -4433,7 +4522,9 @@ function ProjectView() {
                         if (projectId) {
                           try {
                             localStorage.setItem(SELECTED_WORKFLOW_STORAGE_KEY_PREFIX + projectId, nextId);
-                          } catch {}
+                          } catch {
+                            // Ignore local storage failures.
+                          }
                         }
                       }}
                       title="Workflow"
