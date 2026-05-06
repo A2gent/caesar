@@ -824,6 +824,7 @@ function AppLayout() {
             }
           />
           <Route path="/projects/:projectId" element={<ProjectView />} />
+          <Route path="/projects/:projectId/:projectTab" element={<ProjectView />} />
           <Route path="/a2a" element={<A2ARegistryView />} />
           <Route path="/a2a/registry-settings" element={<A2ARegistrySettingsView />} />
           <Route path="/a2a/my-agent" element={<A2AMyAgentView />} />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { FileDiff, type FileDiffMetadata } from '@pierre/diffs/react';
 import { parsePatchFiles } from '@pierre/diffs';
 import {
@@ -76,6 +76,12 @@ import {
 type MarkdownMode = 'kanban' | 'preview' | 'source';
 type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'meetings' | 'changes' | 'history' | 'settings';
 type MeetingSettingsPickerTarget = 'notes' | 'audio' | null;
+
+const PROJECT_VIEW_TABS = new Set<ProjectViewTab>(['explorer', 'tasks', 'sessions', 'meetings', 'changes', 'history', 'settings']);
+
+function normalizeProjectViewTab(tab: string | undefined): ProjectViewTab {
+  return tab && PROJECT_VIEW_TABS.has(tab as ProjectViewTab) ? (tab as ProjectViewTab) : 'sessions';
+}
 
 const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);
 const TODO_TASK_LINE_PATTERN = /^(\s*)-\s+\[( |x|X)\]\s+(.*?)(?:\s+<!--\s*task-file:\s*([^\s][^>]*)\s*-->)?\s*$/;
@@ -900,7 +906,8 @@ function getProjectViewerPlaceholder(project: Project | null): { icon: string; t
 
 function ProjectView() {
   const navigate = useNavigate();
-  const { projectId } = useParams<{ projectId: string }>();
+  const location = useLocation();
+  const { projectId, projectTab } = useParams<{ projectId: string; projectTab?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Project state
@@ -913,10 +920,13 @@ function ProjectView() {
   const [projectSearchResults, setProjectSearchResults] = useState<ProjectSearchResponse | null>(null);
   const [isSearchingProject, setIsSearchingProject] = useState(false);
   const [projectSearchError, setProjectSearchError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ProjectViewTab>('sessions');
+  const activeTab = normalizeProjectViewTab(projectTab);
+  const setActiveTab = useCallback((tab: ProjectViewTab) => {
+    if (!projectId) return;
+    navigate(`/projects/${encodeURIComponent(projectId)}/${tab}${location.search}`);
+  }, [location.search, navigate, projectId]);
   const [rootFolder, setRootFolder] = useState('');
   const [isGitRepo, setIsGitRepo] = useState(false);
-  const [gitChangedFiles, setGitChangedFiles] = useState<ProjectGitChangedFile[]>([]);
   const [isLoadingGitStatus, setIsLoadingGitStatus] = useState(false);
   const [commitRepoPath, setCommitRepoPath] = useState('');
   const [commitRepoLabel, setCommitRepoLabel] = useState('');
@@ -1051,7 +1061,6 @@ function ProjectView() {
     setProject(null);
     setRootFolder('');
     setIsGitRepo(false);
-    setGitChangedFiles([]);
     setCommitRepoPath('');
     setCommitRepoLabel('');
     setCommitDialogFiles([]);
@@ -1137,7 +1146,6 @@ function ProjectView() {
   const loadGitStatus = useCallback(async () => {
     if (!projectId || !rootFolder) {
       setIsGitRepo(false);
-      setGitChangedFiles([]);
       setGitHistoryBranches([]);
       setGitHistoryCommits([]);
       setSelectedHistoryCommitHash('');
@@ -1155,12 +1163,10 @@ function ProjectView() {
       if (requestID !== gitStatusRequestRef.current) return;
 
       setIsGitRepo(status.has_git);
-      setGitChangedFiles(status.files || []);
     } catch (err) {
       if (requestID !== gitStatusRequestRef.current) return;
       console.error('Failed to load git status:', err);
       setIsGitRepo(false);
-      setGitChangedFiles([]);
       setError(err instanceof Error ? err.message : 'Failed to load git status');
     } finally {
       if (requestID !== gitStatusRequestRef.current) return;
@@ -2749,7 +2755,7 @@ function ProjectView() {
     if (activeTab !== 'meetings') return;
     if (project?.id === SYSTEM_PROJECT_KB_ID) return;
     setActiveTab('explorer');
-  }, [activeTab, project?.id]);
+  }, [activeTab, project?.id, setActiveTab]);
 
   useEffect(() => {
     if (!isKnowledgeBaseProject) {
@@ -2960,7 +2966,7 @@ function ProjectView() {
     };
 
     void openFromQuery();
-  }, [expandTreePath, openFile, rootFolder, searchParams, setSearchParams]);
+  }, [expandTreePath, openFile, rootFolder, searchParams, setActiveTab, setSearchParams]);
 
   // Handle markdown anchor scrolling
   useEffect(() => {
@@ -3599,40 +3605,6 @@ function ProjectView() {
       ) : null}
 
       <div className="page-content project-view-content">
-        <div className="project-view-tabs" role="tablist" aria-label="Project workflow views">
-          <div className="project-view-tabs-main">
-            <button type="button" role="tab" aria-selected={activeTab === 'sessions'} className={`project-view-tab ${activeTab === 'sessions' ? 'active' : ''}`} onClick={() => setActiveTab('sessions')}>
-              Sessions ({sessions.length})
-            </button>
-            <button type="button" role="tab" aria-selected={activeTab === 'explorer'} className={`project-view-tab ${activeTab === 'explorer' ? 'active' : ''}`} onClick={() => setActiveTab('explorer')}>
-              Explorer
-            </button>
-            <button type="button" role="tab" aria-selected={activeTab === 'tasks'} className={`project-view-tab ${activeTab === 'tasks' ? 'active' : ''}`} onClick={() => setActiveTab('tasks')}>
-              Tasks
-            </button>
-            {isKnowledgeBaseProject ? (
-              <button type="button" role="tab" aria-selected={activeTab === 'meetings'} className={`project-view-tab ${activeTab === 'meetings' ? 'active' : ''}`} onClick={() => setActiveTab('meetings')}>
-                Meetings
-              </button>
-            ) : null}
-            <button type="button" role="tab" aria-selected={activeTab === 'changes'} className={`project-view-tab ${activeTab === 'changes' ? 'active' : ''}`} onClick={() => setActiveTab('changes')}>
-              Changes ({gitChangedFiles.length})
-            </button>
-            <button type="button" role="tab" aria-selected={activeTab === 'history'} className={`project-view-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-              History
-            </button>
-          </div>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'settings'}
-            className={`project-view-tab-link ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            Settings
-          </button>
-        </div>
-
         {activeTab === 'explorer' ? (
           <div className="project-files-section">
             {!rootFolder ? (

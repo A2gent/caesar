@@ -5,9 +5,11 @@ import {
   getParentApiBaseUrl,
   getStoredAgentEndpoints,
   getSession,
+  listSessions,
   listProjects,
   createProject,
   type Project,
+  type Session,
 } from './api';
 import { withAgentEmoji } from './agentVisuals';
 import { AgentAvatar } from './AgentAvatar';
@@ -32,6 +34,13 @@ interface NavSection {
   id: string;
   label: string;
   items: NavItem[];
+}
+
+type ProjectSubNavId = 'sessions' | 'explorer' | 'tasks' | 'meetings' | 'changes' | 'history' | 'settings';
+
+interface ProjectSubNavItem {
+  id: ProjectSubNavId;
+  label: string;
 }
 
 // System project IDs - must match backend
@@ -76,6 +85,25 @@ const navSections: NavSection[] = [
   },
 ];
 
+const projectSubNavItems: ProjectSubNavItem[] = [
+  { id: 'sessions', label: 'Sessions' },
+  { id: 'explorer', label: 'Explorer' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'changes', label: 'Changes' },
+  { id: 'history', label: 'History' },
+  { id: 'settings', label: 'Settings' },
+];
+
+const knowledgeBaseSubNavItems: ProjectSubNavItem[] = [
+  { id: 'sessions', label: 'Sessions' },
+  { id: 'explorer', label: 'Explorer' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'meetings', label: 'Meetings' },
+  { id: 'changes', label: 'Changes' },
+  { id: 'history', label: 'History' },
+  { id: 'settings', label: 'Settings' },
+];
+
 function getVisibleNavSections(hideLocalAgents: boolean): NavSection[] {
   if (!hideLocalAgents) {
     return navSections;
@@ -117,6 +145,82 @@ function getSectionForPath(pathname: string, sections: NavSection[]): string | n
     }
   }
   return null;
+}
+
+function safeDecodePathSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function getProjectIdFromPath(pathname: string): string | null {
+  const match = pathname.match(/^\/projects\/([^/]+)/);
+  return match?.[1] ? safeDecodePathSegment(match[1]) : null;
+}
+
+function getProjectIdFromNavPath(path: string): string | null {
+  const match = path.match(/^\/projects\/([^/]+)$/);
+  return match?.[1] ? safeDecodePathSegment(match[1]) : null;
+}
+
+function getChatSessionIdFromPath(pathname: string): string | null {
+  const match = pathname.match(/^\/chat\/([^/]+)/);
+  return match?.[1] ? safeDecodePathSegment(match[1]) : null;
+}
+
+function buildProjectSubNavPath(projectId: string, itemId: ProjectSubNavId): string {
+  return `/projects/${encodeURIComponent(projectId)}/${itemId}`;
+}
+
+function buildChatSessionPath(sessionId: string): string {
+  return `/chat/${encodeURIComponent(sessionId)}`;
+}
+
+function getProjectSubNavItems(projectId: string): ProjectSubNavItem[] {
+  return projectId === SYSTEM_PROJECT_KB_ID ? knowledgeBaseSubNavItems : projectSubNavItems;
+}
+
+function normalizeProjectSubNavId(value: string | undefined): ProjectSubNavId {
+  const item = [...knowledgeBaseSubNavItems].find((candidate) => candidate.id === value);
+  return item?.id || 'sessions';
+}
+
+function getActiveProjectSubNavId(pathname: string, projectId: string, activeProjectIdFromSession: string | null): ProjectSubNavId | null {
+  const projectMatch = pathname.match(/^\/projects\/([^/]+)(?:\/([^/]+))?/);
+  if (projectMatch?.[1] && safeDecodePathSegment(projectMatch[1]) === projectId) {
+    return normalizeProjectSubNavId(projectMatch[2] ? safeDecodePathSegment(projectMatch[2]) : undefined);
+  }
+
+  if (activeProjectIdFromSession === projectId && getChatSessionIdFromPath(pathname)) {
+    return 'sessions';
+  }
+
+  return null;
+}
+
+function formatSidebarSessionTitle(session: Session): string {
+  return session.title || `Session ${session.id.slice(0, 8)}`;
+}
+
+function formatSidebarSessionTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'now';
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 function Sidebar({
@@ -172,6 +276,10 @@ function Sidebar({
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [activeProjectIdFromSession, setActiveProjectIdFromSession] = useState<string | null>(null);
+  const [recentProjectSessions, setRecentProjectSessions] = useState<Session[]>([]);
+  const activeProjectIdFromRoute = getProjectIdFromPath(location.pathname);
+  const activeProjectId = activeProjectIdFromRoute || activeProjectIdFromSession;
+  const activeChatSessionId = getChatSessionIdFromPath(location.pathname);
 
   const reloadAgentOptions = useCallback(() => {
     setActiveBaseUrl(getApiBaseUrl());
@@ -223,7 +331,7 @@ function Sidebar({
       return;
     }
 
-    const sessionId = decodeURIComponent(chatMatch[1]);
+    const sessionId = safeDecodePathSegment(chatMatch[1]);
     let cancelled = false;
 
     const loadSessionProject = async () => {
@@ -246,6 +354,39 @@ function Sidebar({
       cancelled = true;
     };
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      setRecentProjectSessions([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRecentProjectSessions = async () => {
+      try {
+        const data = await listSessions();
+        if (cancelled) return;
+
+        const recent = data
+          .filter((session) => session.project_id === activeProjectId)
+          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+          .slice(0, 5);
+        setRecentProjectSessions(recent);
+      } catch (err) {
+        console.error('Failed to load recent project sessions:', err);
+        if (!cancelled) {
+          setRecentProjectSessions([]);
+        }
+      }
+    };
+
+    void loadRecentProjectSessions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, location.pathname, refreshKey]);
 
   const handleAgentChange = async (nextUrl: string) => {
     if (nextUrl === '' || nextUrl === activeBaseUrl || isSwitchingAgent) {
@@ -312,14 +453,6 @@ function Sidebar({
   const hasAlternateAgents = alternateAgents.length > 0;
   const canReturnToParentAgent = parentBaseUrl !== '' && parentBaseUrl !== activeBaseUrl;
   const visibleNavSections = getVisibleNavSections(canReturnToParentAgent);
-  const activeProjectIdFromRoute = (() => {
-    const match = location.pathname.match(/^\/projects\/([^/]+)/);
-    if (!match?.[1]) {
-      return null;
-    }
-    return decodeURIComponent(match[1]);
-  })();
-  const activeProjectId = activeProjectIdFromRoute || activeProjectIdFromSession;
 
   const handleReturnToParent = async () => {
     if (!onReturnToParentAgent || !canReturnToParentAgent || isSwitchingAgent) {
@@ -334,6 +467,58 @@ function Sidebar({
       setIsDropdownOpen(false);
       reloadAgentOptions();
     }
+  };
+
+  const renderProjectSubNav = (projectId: string, projectName: string) => {
+    if (activeProjectId !== projectId) {
+      return null;
+    }
+
+    const activeSubNavId = getActiveProjectSubNavId(location.pathname, projectId, activeProjectIdFromSession) || 'sessions';
+    const items = getProjectSubNavItems(projectId);
+
+    return (
+      <ul className="nav-submenu project-subnav-list" aria-label={`${projectName} project views`}>
+        {items.map((item) => {
+          const isSessionsItem = item.id === 'sessions';
+          const isItemActive = activeSubNavId === item.id;
+          return (
+            <li key={item.id} className="nav-subitem">
+              <Link
+                to={buildProjectSubNavPath(projectId, item.id)}
+                className={`nav-link nav-subnav-link ${isItemActive ? 'active' : ''}`}
+                onClick={onNavigate}
+              >
+                {item.label}
+              </Link>
+              {isSessionsItem && recentProjectSessions.length > 0 ? (
+                <ul className="nav-recent-sessions-list" aria-label="Recent sessions">
+                  {recentProjectSessions.map((session) => {
+                    const sessionTitle = formatSidebarSessionTitle(session);
+                    const sessionTime = formatSidebarSessionTime(session.updated_at);
+                    const isActiveSession = activeChatSessionId === session.id;
+                    return (
+                      <li key={session.id} className="nav-recent-session-item">
+                        <Link
+                          to={buildChatSessionPath(session.id)}
+                          className={`nav-recent-session-link ${isActiveSession ? 'active' : ''}`}
+                          title={sessionTitle}
+                          onClick={onNavigate}
+                        >
+                          <span className={`session-status-dot status-${session.status}`} aria-hidden="true" />
+                          <span className="nav-recent-session-title">{sessionTitle}</span>
+                          {sessionTime ? <span className="nav-recent-session-time">{sessionTime}</span> : null}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    );
   };
 
   return (
@@ -406,17 +591,21 @@ function Sidebar({
         <div className="nav-section">
           <div className="nav-section-header">📂 Projects</div>
           <ul className="nav-list">
-            {sortedProjects().map(project => (
-              <li key={project.id} className="nav-item">
-                <Link
-                  to={`/projects/${project.id}`}
-                  className={`nav-link ${activeProjectId === project.id ? 'active' : ''}`}
-                  onClick={onNavigate}
-                >
-                  {getProjectIcon(project)} {project.name}
-                </Link>
-              </li>
-            ))}
+            {sortedProjects().map(project => {
+              const isActiveProject = activeProjectId === project.id;
+              return (
+                <li key={project.id} className={`nav-item nav-project-item ${isActiveProject ? 'nav-project-item--active' : ''}`}>
+                  <Link
+                    to={buildProjectSubNavPath(project.id, 'sessions')}
+                    className={`nav-link nav-project-link ${isActiveProject ? 'active' : ''}`}
+                    onClick={onNavigate}
+                  >
+                    {getProjectIcon(project)} {project.name}
+                  </Link>
+                  {renderProjectSubNav(project.id, project.name)}
+                </li>
+              );
+            })}
           </ul>
 
           {/* Add Project Button */}
@@ -477,17 +666,22 @@ function Sidebar({
               </button>
               {isExpanded && (
                 <ul className="nav-list">
-                  {section.items.map(item => (
-                    <li key={item.id} className="nav-item">
-                      <Link
-                        to={item.path}
-                        className={`nav-link ${isNavItemActive(location.pathname, item.path) ? 'active' : ''}`}
-                        onClick={onNavigate}
-                      >
-                        {item.label}
-                      </Link>
-                    </li>
-                  ))}
+                  {section.items.map(item => {
+                    const itemProjectId = getProjectIdFromNavPath(item.path);
+                    const isActiveProjectItem = Boolean(itemProjectId && activeProjectId === itemProjectId);
+                    return (
+                      <li key={item.id} className={`nav-item ${isActiveProjectItem ? 'nav-project-item nav-project-item--active' : ''}`}>
+                        <Link
+                          to={itemProjectId ? buildProjectSubNavPath(itemProjectId, 'sessions') : item.path}
+                          className={`nav-link ${isActiveProjectItem ? 'nav-project-link ' : ''}${isNavItemActive(location.pathname, item.path) || isActiveProjectItem ? 'active' : ''}`}
+                          onClick={onNavigate}
+                        >
+                          {item.label}
+                        </Link>
+                        {itemProjectId ? renderProjectSubNav(itemProjectId, item.label) : null}
+                      </li>
+                    );
+                  })}
                   {/* Notifications in Agent section */}
                   {section.id === 'agent' && (
                     <li className="nav-item">
