@@ -195,8 +195,13 @@ function isTodoFilePath(path: string): boolean {
   return TODO_FILE_NAMES.has(base);
 }
 
+function isMarkdownFilePath(path: string): boolean {
+  const lowerPath = path.toLowerCase();
+  return lowerPath.endsWith('.md') || lowerPath.endsWith('.markdown');
+}
+
 function defaultMarkdownModeForPath(path: string): MarkdownMode {
-  return isTodoFilePath(path) ? 'kanban' : 'preview';
+  return isMarkdownFilePath(path) ? 'preview' : 'source';
 }
 
 function parseTodoBoard(content: string): TodoBoard {
@@ -2469,6 +2474,7 @@ function ProjectView() {
 
   // Computed values
   const hasUnsavedChanges = selectedFileContent !== savedFileContent;
+  const selectedFileSupportsMarkdownPreview = selectedFilePath !== '' && isMarkdownFilePath(selectedFilePath);
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
   const todoBoard = useMemo(() => parseTodoBoard(selectedFileContent), [selectedFileContent]);
   const knownTodoFilePaths = useMemo(() => {
@@ -3003,7 +3009,7 @@ function ProjectView() {
     }
 
     const resolvedPath = resolveMarkdownLinkPath(selectedFilePath, decodeURIComponent(rawPathPart));
-    if (!resolvedPath.toLowerCase().endsWith('.md') && !resolvedPath.toLowerCase().endsWith('.markdown')) {
+    if (!isMarkdownFilePath(resolvedPath)) {
       setError('Only markdown links are supported in preview.');
       return;
     }
@@ -3753,7 +3759,7 @@ function ProjectView() {
                           aria-selected={markdownMode === 'preview'}
                           className={`mind-mode-tab ${markdownMode === 'preview' ? 'active' : ''}`}
                           onClick={() => setMarkdownMode('preview')}
-                          disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
+                          disabled={!selectedFilePath || !selectedFileSupportsMarkdownPreview || isLoadingFile || isDeletingFile}
                           title="Markdown preview"
                         >
                           Preview
@@ -3765,7 +3771,7 @@ function ProjectView() {
                           className={`mind-mode-tab ${markdownMode === 'source' ? 'active' : ''}`}
                           onClick={() => setMarkdownMode('source')}
                           disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
-                          title="Edit markdown source"
+                          title="Edit file source"
                         >
                           Edit
                         </button>
@@ -3782,7 +3788,7 @@ function ProjectView() {
                         <EmptyStateHint>{viewerPlaceholder.hint}</EmptyStateHint>
                       </EmptyState>
                     ) : null}
-                    {!isLoadingFile && selectedFilePath && markdownMode === 'source' ? (
+                    {!isLoadingFile && selectedFilePath && (markdownMode === 'source' || !selectedFileSupportsMarkdownPreview) ? (
                       <textarea
                         className="mind-markdown-editor"
                         value={selectedFileContent}
@@ -3791,7 +3797,7 @@ function ProjectView() {
                         spellCheck={false}
                       />
                     ) : null}
-                    {!isLoadingFile && selectedFilePath && markdownMode === 'preview' ? (
+                    {!isLoadingFile && selectedFilePath && selectedFileSupportsMarkdownPreview && markdownMode === 'preview' ? (
                       <div className="mind-markdown-preview" onClick={(event) => void handlePreviewClick(event)} dangerouslySetInnerHTML={{ __html: markdownHtml }} />
                     ) : null}
                   </div>
