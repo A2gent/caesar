@@ -40,6 +40,10 @@ vi.mock('./api', () => ({
   listSubAgents: listSubAgentsMock,
 }));
 
+beforeEach(() => {
+  window.HTMLElement.prototype.scrollIntoView = vi.fn();
+});
+
 describe('ChatView pending question flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -217,5 +221,94 @@ describe('ChatView session header project link', () => {
 
     const projectLink = await screen.findByRole('link', { name: 'Project Alpha' });
     expect(projectLink).toHaveAttribute('href', '/projects/project-123');
+  });
+});
+
+
+describe('ChatView initial session loading', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    getSessionMock.mockReturnValue(new Promise(() => {}));
+    listSessionsMock.mockResolvedValue([]);
+    listProvidersMock.mockResolvedValue([]);
+    listSubAgentsMock.mockResolvedValue([]);
+    getProjectMock.mockResolvedValue(null);
+    sendMessageStreamMock.mockImplementation(async function* emptyStream() {});
+    getPendingQuestionMock.mockResolvedValue(null);
+    answerQuestionMock.mockResolvedValue(undefined);
+    createSessionMock.mockResolvedValue(null);
+    cancelSessionRunMock.mockResolvedValue(undefined);
+  });
+
+  it('does not present a URL-backed session as a new empty session while loading', async () => {
+    render(
+      <MemoryRouter initialEntries={['/chat/session-1']}>
+        <Routes>
+          <Route path="/chat/:sessionId" element={<ChatView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByText(/Loading session/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('New Session')).not.toBeInTheDocument();
+    expect(screen.queryByText('Start a conversation')).not.toBeInTheDocument();
+  });
+});
+
+
+describe('ChatView provider failure details', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    getSessionMock.mockResolvedValue({
+      id: 'session-1',
+      agent_id: 'build',
+      title: 'Failed Codex session',
+      status: 'failed',
+      created_at: '2026-04-16T10:00:00Z',
+      updated_at: '2026-04-16T10:00:00Z',
+      messages: [
+        {
+          role: 'assistant',
+          content: 'Request failed: LLM error: failed to read Codex response: stream error: stream ID 21; INTERNAL_ERROR; received from peer',
+          timestamp: '2026-04-16T10:01:00Z',
+        },
+      ],
+      provider_failures: [
+        {
+          provider: 'openai_codex',
+          model: 'gpt-5.4',
+          phase: 'retry_layer_failed',
+          attempt: 1,
+          max_attempts: 4,
+          reason: 'failed to read Codex response: stream error: stream ID 21; INTERNAL_ERROR; received from peer',
+          timestamp: '2026-04-16T10:01:00Z',
+        },
+      ],
+      metadata: {},
+    });
+    listSessionsMock.mockResolvedValue([]);
+    listProvidersMock.mockResolvedValue([]);
+    listSubAgentsMock.mockResolvedValue([]);
+    getProjectMock.mockResolvedValue(null);
+    sendMessageStreamMock.mockImplementation(async function* emptyStream() {});
+    getPendingQuestionMock.mockResolvedValue(null);
+    answerQuestionMock.mockResolvedValue(undefined);
+    createSessionMock.mockResolvedValue(null);
+    cancelSessionRunMock.mockResolvedValue(undefined);
+  });
+
+  it('classifies Codex HTTP/2 stream resets as network/provider reachability failures', async () => {
+    render(
+      <MemoryRouter initialEntries={['/chat/session-1']}>
+        <Routes>
+          <Route path="/chat/:sessionId" element={<ChatView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(/Failure reason: Provider is unreachable:/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/\[network\] openai_codex\/gpt-5\.4/)).length).toBeGreaterThan(0);
   });
 });

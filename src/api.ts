@@ -1170,7 +1170,7 @@ export async function getSession(sessionId: string): Promise<Session> {
 }
 
 export async function getSessionSummary(sessionId: string): Promise<Session> {
-  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}?include_messages=false`);
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}?include_messages=false&include_metadata=false`);
   if (!response.ok) {
     throw new Error(`Failed to get session summary: ${response.statusText}`);
   }

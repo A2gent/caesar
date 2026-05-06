@@ -273,7 +273,10 @@ function normalizeFailureReason(raw: string): string {
     lower.includes('dial tcp') ||
     lower.includes('timeout') ||
     lower.includes('failed to connect') ||
-    lower.includes('request failed')
+    lower.includes('request failed') ||
+    lower.includes('stream error') ||
+    lower.includes('internal_error') ||
+    lower.includes('received from peer')
   ) {
     return `Provider is unreachable: ${cleaned}`;
   }
@@ -471,7 +474,10 @@ function classifyProviderFailureReason(reason: string): 'billing' | 'auth' | 'ra
     text.includes('no such host') ||
     text.includes('connection reset') ||
     text.includes('broken pipe') ||
-    text.includes('tls')
+    text.includes('tls') ||
+    text.includes('stream error') ||
+    text.includes('internal_error') ||
+    text.includes('received from peer')
   ) {
     return 'network';
   }
@@ -1141,6 +1147,7 @@ function ChatView() {
   const isActiveRequest = Boolean(session && activeRequestSessionId === session.id);
   const showStopButton = Boolean(session && (isActiveRequest || isCancelableSessionStatus(session.status)));
   const inputDisabled = isLoading && !session;
+  const isInitialSessionLoad = Boolean(activeSessionId && isLoading && !session);
   const linkedPromptForSelectedType = session ? linkedSessionDefaultPrompt(linkedSessionType, session) : '';
 
   const handleSelectLinkedType = (nextType: 'review' | 'continuation') => {
@@ -1197,6 +1204,9 @@ function ChatView() {
     if (pendingQuestion) {
       return 'Type your answer or select an option above...';
     }
+    if (isInitialSessionLoad) {
+      return 'Loading session...';
+    }
     if (!session) {
       return undefined;
     }
@@ -1205,7 +1215,7 @@ function ChatView() {
     }
     const modeLabel = linkedSessionType === 'review' ? 'review' : 'continuation';
     return `Start a new chat (${modeLabel} via ${selectedLinkedAgentName})...`;
-  }, [linkedSessionType, pendingQuestion, selectedLinkedAgentName, session, workflowState?.workflowName]);
+  }, [isInitialSessionLoad, linkedSessionType, pendingQuestion, selectedLinkedAgentName, session, workflowState?.workflowName]);
 
   const sessionSlashCommands = useMemo<SlashCommand[]>(() => {
     if (!session || pendingQuestion) {
@@ -1542,6 +1552,8 @@ function ChatView() {
               ) : null}
               </div>
             </>
+          ) : isInitialSessionLoad ? (
+            <span className="session-title">Loading session...</span>
           ) : (
             <span className="session-title">New Session</span>
           )}
@@ -1569,6 +1581,11 @@ function ChatView() {
             subAgents={subAgents}
           />
           </>
+        ) : isInitialSessionLoad ? (
+          <EmptyState>
+            <EmptyStateTitle>Loading session</EmptyStateTitle>
+            <EmptyStateHint>Fetching the latest transcript.</EmptyStateHint>
+          </EmptyState>
         ) : (
           <EmptyState>
             <EmptyStateTitle>Start a conversation</EmptyStateTitle>
