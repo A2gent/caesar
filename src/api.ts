@@ -236,6 +236,8 @@ export interface Session {
   total_tokens?: number;
   input_tokens?: number;
   output_tokens?: number;
+  cached_input_tokens?: number;
+  reasoning_tokens?: number;
   current_context_tokens?: number;
   model_context_window?: number;
   run_duration_seconds?: number;
@@ -717,6 +719,12 @@ export interface ProviderConfig {
   has_api_key: boolean;
   base_url: string;
   model: string;
+  prompt_cache_key?: string;
+  reasoning_effort?: string;
+  text_verbosity?: string;
+  service_tier?: string;
+  max_tokens?: number;
+  stateful_responses?: boolean;
   proxy_managed?: boolean;
   proxy_base_url?: string;
   fallback_chain?: FallbackChainNode[];
@@ -730,6 +738,12 @@ export interface UpdateProviderRequest {
   api_key?: string;
   base_url?: string;
   model?: string;
+  prompt_cache_key?: string;
+  reasoning_effort?: string;
+  text_verbosity?: string;
+  service_tier?: string;
+  max_tokens?: number;
+  stateful_responses?: boolean;
   fallback_chain?: FallbackChainNode[];
   router_provider?: LLMProviderType;
   router_model?: string;

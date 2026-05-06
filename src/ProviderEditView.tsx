@@ -51,6 +51,12 @@ function ProviderEditView() {
   const [apiKey, setApiKey] = useState('');
   const [baseURL, setBaseURL] = useState('');
   const [model, setModel] = useState('');
+  const [promptCacheKey, setPromptCacheKey] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState('');
+  const [textVerbosity, setTextVerbosity] = useState('');
+  const [serviceTier, setServiceTier] = useState('');
+  const [maxTokens, setMaxTokens] = useState('');
+  const [statefulResponses, setStatefulResponses] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -214,6 +220,12 @@ function ProviderEditView() {
       setApiKey('');
       setBaseURL('');
       setModel('');
+      setPromptCacheKey('');
+      setReasoningEffort('');
+      setTextVerbosity('');
+      setServiceTier('');
+      setMaxTokens('');
+      setStatefulResponses(false);
       setAvailableModels([]);
       setModelsError(null);
       setIsLoadingModels(false);
@@ -233,6 +245,12 @@ function ProviderEditView() {
       setApiKey('');
       setBaseURL('');
       setModel('');
+      setPromptCacheKey('');
+      setReasoningEffort('');
+      setTextVerbosity('');
+      setServiceTier('');
+      setMaxTokens('');
+      setStatefulResponses(false);
       setAvailableModels([]);
       setModelsError(null);
       return;
@@ -245,6 +263,12 @@ function ProviderEditView() {
     }
     setBaseURL(initialBaseURL);
     setModel(selected.model || selected.default_model || '');
+    setPromptCacheKey(selected.prompt_cache_key || '');
+    setReasoningEffort(selected.reasoning_effort || '');
+    setTextVerbosity(selected.text_verbosity || '');
+    setServiceTier(selected.service_tier || '');
+    setMaxTokens(selected.max_tokens && selected.max_tokens > 0 ? String(selected.max_tokens) : '');
+    setStatefulResponses(Boolean(selected.stateful_responses));
     setAvailableModels([]);
     setModelsError(null);
 
@@ -404,6 +428,12 @@ function ProviderEditView() {
               api_key: apiKey.trim() === '' ? undefined : apiKey.trim(),
               base_url: baseURL.trim(),
               model: model.trim(),
+              prompt_cache_key: promptCacheKey.trim(),
+              reasoning_effort: reasoningEffort.trim(),
+              text_verbosity: textVerbosity.trim(),
+              service_tier: serviceTier.trim(),
+              max_tokens: maxTokens.trim() === '' ? 0 : Number(maxTokens),
+              stateful_responses: statefulResponses,
             };
 
       const updated = await updateProvider(providerType, payload);
@@ -957,6 +987,77 @@ function ProviderEditView() {
               <span>Default model</span>
               <input type="text" value={model} onChange={(e) => setModel(e.target.value)} autoComplete="off" />
             </label>
+          ) : null}
+
+          {isOpenAICodex && !isFallback && !isAutomaticRouter ? (
+            <>
+              <label className="settings-field">
+                <span>Prompt cache key</span>
+                <input
+                  type="text"
+                  value={promptCacheKey}
+                  onChange={(e) => setPromptCacheKey(e.target.value)}
+                  placeholder="Session ID"
+                  autoComplete="off"
+                />
+              </label>
+
+              <div className="settings-grid-two">
+                <label className="settings-field">
+                  <span>Reasoning effort</span>
+                  <select value={reasoningEffort} onChange={(e) => setReasoningEffort(e.target.value)}>
+                    <option value="">Provider default</option>
+                    <option value="none">None</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="xhigh">XHigh</option>
+                  </select>
+                </label>
+
+                <label className="settings-field">
+                  <span>Text verbosity</span>
+                  <select value={textVerbosity} onChange={(e) => setTextVerbosity(e.target.value)}>
+                    <option value="">Provider default</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="settings-grid-two">
+                <label className="settings-field">
+                  <span>Service tier</span>
+                  <select value={serviceTier} onChange={(e) => setServiceTier(e.target.value)}>
+                    <option value="">Provider default</option>
+                    <option value="auto">Auto</option>
+                    <option value="flex">Flex</option>
+                    <option value="priority">Priority</option>
+                  </select>
+                </label>
+
+                <label className="settings-field">
+                  <span>Max output tokens</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(e.target.value)}
+                    placeholder="Provider default"
+                  />
+                </label>
+              </div>
+
+              <label className="settings-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={statefulResponses}
+                  onChange={(e) => setStatefulResponses(e.target.checked)}
+                />
+                <span>Use previous response state</span>
+              </label>
+            </>
           ) : null}
 
           {isLMStudio && !isFallback && !isAutomaticRouter ? (
