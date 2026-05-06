@@ -7160,6 +7160,10 @@ input[type="checkbox"]:disabled {
   padding: 14px;
 }
 
+.mind-viewer-body-editor {
+  padding: 0;
+}
+
 .mind-markdown-source {
   margin: 0;
   padding: 12px;
@@ -7194,7 +7198,7 @@ input[type="checkbox"]:disabled {
   height: 100%;
   min-height: 280px;
   border: 1px solid #30394a;
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
   background: #15171c;
 }
@@ -7215,6 +7219,7 @@ input[type="checkbox"]:disabled {
 .mind-code-editor .cm-editor {
   height: 100%;
   min-height: 280px;
+  border-radius: 0;
 }
 
 .mind-code-editor .cm-scroller {

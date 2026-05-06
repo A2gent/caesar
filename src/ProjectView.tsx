@@ -2553,6 +2553,9 @@ function ProjectView() {
     });
   }, [selectedFilePath]);
   const selectedFileSupportsMarkdownPreview = selectedFilePath !== '' && isMarkdownFilePath(selectedFilePath);
+  const selectedFileShowsSourceEditor = selectedFilePath !== '' && (
+    markdownMode === 'source' || !selectedFileSupportsMarkdownPreview
+  );
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
   const todoBoard = useMemo(() => parseTodoBoard(selectedFileContent), [selectedFileContent]);
   const knownTodoFilePaths = useMemo(() => {
@@ -3867,7 +3870,7 @@ function ProjectView() {
                     </div>
                   </div>
 
-                  <div className="mind-viewer-body">
+                  <div className={`mind-viewer-body ${selectedFileShowsSourceEditor ? 'mind-viewer-body-editor' : ''}`}>
                     {isLoadingFile ? <div className="sessions-loading">Loading file...</div> : null}
                     {!isLoadingFile && !selectedFilePath ? (
                       <EmptyState className="sessions-empty project-viewer-empty">
@@ -3876,7 +3879,7 @@ function ProjectView() {
                         <EmptyStateHint>{viewerPlaceholder.hint}</EmptyStateHint>
                       </EmptyState>
                     ) : null}
-                    {!isLoadingFile && selectedFilePath && (markdownMode === 'source' || !selectedFileSupportsMarkdownPreview) ? (
+                    {!isLoadingFile && selectedFileShowsSourceEditor ? (
                       <ProjectSourceEditor
                         path={selectedFilePath}
                         value={selectedFileContent}
