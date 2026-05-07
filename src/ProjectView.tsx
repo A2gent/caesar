@@ -90,7 +90,7 @@ type FileSourceSelection = SourceEditorSelection & {
 const PROJECT_VIEW_TABS = new Set<ProjectViewTab>(['explorer', 'tasks', 'sessions', 'meetings', 'changes', 'history', 'settings']);
 
 function normalizeProjectViewTab(tab: string | undefined): ProjectViewTab {
-  return tab && PROJECT_VIEW_TABS.has(tab as ProjectViewTab) ? (tab as ProjectViewTab) : 'sessions';
+  return tab && PROJECT_VIEW_TABS.has(tab as ProjectViewTab) ? (tab as ProjectViewTab) : 'explorer';
 }
 
 const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);

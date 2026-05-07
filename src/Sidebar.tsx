@@ -184,7 +184,7 @@ function getProjectSubNavItems(projectId: string): ProjectSubNavItem[] {
 
 function normalizeProjectSubNavId(value: string | undefined): ProjectSubNavId {
   const item = [...knowledgeBaseSubNavItems].find((candidate) => candidate.id === value);
-  return item?.id || 'sessions';
+  return item?.id || 'explorer';
 }
 
 function getActiveProjectSubNavId(pathname: string, projectId: string, activeProjectIdFromSession: string | null): ProjectSubNavId | null {
@@ -474,7 +474,7 @@ function Sidebar({
       return null;
     }
 
-    const activeSubNavId = getActiveProjectSubNavId(location.pathname, projectId, activeProjectIdFromSession) || 'sessions';
+    const activeSubNavId = getActiveProjectSubNavId(location.pathname, projectId, activeProjectIdFromSession) || 'explorer';
     const items = getProjectSubNavItems(projectId);
 
     return (
@@ -596,7 +596,7 @@ function Sidebar({
               return (
                 <li key={project.id} className={`nav-item nav-project-item ${isActiveProject ? 'nav-project-item--active' : ''}`}>
                   <Link
-                    to={buildProjectSubNavPath(project.id, 'sessions')}
+                    to={buildProjectSubNavPath(project.id, 'explorer')}
                     className={`nav-link nav-project-link ${isActiveProject ? 'active' : ''}`}
                     onClick={onNavigate}
                   >
@@ -672,7 +672,7 @@ function Sidebar({
                     return (
                       <li key={item.id} className={`nav-item ${isActiveProjectItem ? 'nav-project-item nav-project-item--active' : ''}`}>
                         <Link
-                          to={itemProjectId ? buildProjectSubNavPath(itemProjectId, 'sessions') : item.path}
+                          to={itemProjectId ? buildProjectSubNavPath(itemProjectId, 'explorer') : item.path}
                           className={`nav-link ${isActiveProjectItem ? 'nav-project-link ' : ''}${isNavItemActive(location.pathname, item.path) || isActiveProjectItem ? 'active' : ''}`}
                           onClick={onNavigate}
                         >

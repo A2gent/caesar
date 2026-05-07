@@ -1410,7 +1410,7 @@ function ChatView() {
                   {projectName ? (
                     <>
                       {session?.project_id ? (
-                        <Link className="session-project-name" to={`/projects/${session.project_id}`}>
+                        <Link className="session-project-name" to={`/projects/${session.project_id}/explorer`}>
                           {projectName}
                         </Link>
                       ) : (

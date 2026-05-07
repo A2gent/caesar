@@ -216,6 +216,6 @@ describe('ChatView session header project link', () => {
     );
 
     const projectLink = await screen.findByRole('link', { name: 'Project Alpha' });
-    expect(projectLink).toHaveAttribute('href', '/projects/project-123');
+    expect(projectLink).toHaveAttribute('href', '/projects/project-123/explorer');
   });
 });
