@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import mermaid from 'mermaid';
 import { FileDiff, type FileDiffMetadata } from '@pierre/diffs/react';
 import { parsePatchFiles } from '@pierre/diffs';
 import {
@@ -828,35 +829,6 @@ function resolveMarkdownLinkPath(currentFilePath: string, hrefPath: string): str
   return normalizeMindPath([dirname(currentFilePath), hrefPath].filter(Boolean).join('/'));
 }
 
-function normalizePathForCompare(value: string): string {
-  return value.replace(/[\\]+/g, '/').replace(/\/+$/, '');
-}
-
-function isAbsolutePath(path: string): boolean {
-  return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\');
-}
-
-function toMindRelativePath(rootFolder: string, path: string): string {
-  const trimmedPath = path.trim();
-  if (trimmedPath === '') {
-    return '';
-  }
-
-  if (!isAbsolutePath(trimmedPath)) {
-    return normalizeMindPath(trimmedPath);
-  }
-
-  const rootNormalized = normalizePathForCompare(rootFolder.trim());
-  const pathNormalized = normalizePathForCompare(trimmedPath);
-  if (rootNormalized === '' || pathNormalized.length <= rootNormalized.length) {
-    return '';
-  }
-  if (!pathNormalized.toLowerCase().startsWith(`${rootNormalized.toLowerCase()}/`)) {
-    return '';
-  }
-
-  return normalizeMindPath(pathNormalized.slice(rootNormalized.length + 1));
-}
 
 function escapeHtml(value: string): string {
   return value
@@ -1105,6 +1077,112 @@ function isTableSeparator(line: string, expectedCells: number): boolean {
   return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function isMermaidLanguage(language: string): boolean {
+  const normalized = language.trim().toLowerCase();
+  return normalized === 'mermaid' || normalized === 'mmd';
+}
+
+function renderMermaidBlock(source: string): string {
+  return `<div class="md-mermaid">${escapeHtml(source)}</div>`;
+}
+
+type MermaidDiagramProps = {
+  source: string;
+  diagramKey: string;
+};
+
+function MermaidDiagram({ source, diagramKey }: MermaidDiagramProps): ReactElement {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
+
+    let cancelled = false;
+    const isLightTheme = document.documentElement.dataset.theme === 'light';
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: isLightTheme ? 'default' : 'dark',
+    });
+
+    container.textContent = '';
+    setErrorMessage('');
+
+    void mermaid.render(`project-mermaid-${diagramKey}`, source).then(({ svg, bindFunctions }) => {
+      if (cancelled) {
+        return;
+      }
+      container.innerHTML = svg;
+      bindFunctions?.(container);
+    }).catch((renderError: unknown) => {
+      if (cancelled) {
+        return;
+      }
+      setErrorMessage(renderError instanceof Error ? renderError.message : 'Unable to render Mermaid diagram.');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [diagramKey, source]);
+
+  if (errorMessage !== '') {
+    return <div className="md-mermaid md-mermaid-error">Mermaid diagram error: {errorMessage}</div>;
+  }
+
+  return <div ref={containerRef} className="md-mermaid" />;
+}
+
+function parseMarkdownPreviewSegments(html: string): Array<{ type: 'html'; html: string } | { type: 'mermaid'; source: string }> {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const segments: Array<{ type: 'html'; html: string } | { type: 'mermaid'; source: string }> = [];
+  let htmlBuffer = '';
+
+  Array.from(template.content.childNodes).forEach((node) => {
+    if (node.nodeType === Node.ELEMENT_NODE && (node as Element).classList.contains('md-mermaid')) {
+      if (htmlBuffer !== '') {
+        segments.push({ type: 'html', html: htmlBuffer });
+        htmlBuffer = '';
+      }
+      segments.push({ type: 'mermaid', source: node.textContent || '' });
+      return;
+    }
+    if (node.nodeType === Node.TEXT_NODE) {
+      htmlBuffer += escapeHtml(node.textContent || '');
+      return;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.appendChild(node.cloneNode(true));
+    htmlBuffer += wrapper.innerHTML;
+  });
+
+  if (htmlBuffer !== '') {
+    segments.push({ type: 'html', html: htmlBuffer });
+  }
+
+  return segments;
+}
+
+function MarkdownPreview({ html, onClick }: { html: string; onClick: (event: ReactMouseEvent<HTMLDivElement>) => void }): ReactElement {
+  const segments = useMemo(() => parseMarkdownPreviewSegments(html), [html]);
+
+  return (
+    <div className="mind-markdown-preview" onClick={onClick}>
+      {segments.map((segment, index) => (
+        segment.type === 'mermaid' ? (
+          <MermaidDiagram key={`mermaid-${index}-${segment.source}`} source={segment.source} diagramKey={`${index}-${slugifyHeading(segment.source).slice(0, 48)}`} />
+        ) : (
+          <div key={`html-${index}`} dangerouslySetInnerHTML={{ __html: segment.html }} />
+        )
+      ))}
+    </div>
+  );
+}
 function renderMarkdownToHtml(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const html: string[] = [];
@@ -1136,8 +1214,12 @@ function renderMarkdownToHtml(markdown: string): string {
       return;
     }
     const langClass = codeLanguage ? ` language-${escapeHtml(codeLanguage)}` : '';
-    const highlighted = highlightCode(codeFenceLines.join('\n'), codeLanguage);
-    html.push(`<pre class="md-code-block"><code class="${langClass.trim()}">${highlighted}</code></pre>`);
+    if (isMermaidLanguage(codeLanguage)) {
+      html.push(renderMermaidBlock(codeFenceLines.join('\n')));
+    } else {
+      const highlighted = highlightCode(codeFenceLines.join('\n'), codeLanguage);
+      html.push(`<pre class="md-code-block"><code class="${langClass.trim()}">${highlighted}</code></pre>`);
+    }
     inCodeFence = false;
     codeLanguage = '';
     codeFenceLines = [];
@@ -1333,7 +1415,6 @@ function ProjectView() {
   const navigate = useNavigate();
   const location = useLocation();
   const { projectId, projectTab } = useParams<{ projectId: string; projectTab?: string }>();
-  const [searchParams] = useSearchParams();
   
   // Project state
   const [project, setProject] = useState<Project | null>(null);
@@ -1981,6 +2062,26 @@ function ProjectView() {
       writeStoredSelectedFile(projectId, selectedFilePath);
     }
   }, [selectedFilePath, projectId]);
+
+  useEffect(() => {
+    if (!projectId || selectedFilePath || rootFolder.trim() === '') {
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    const requestedPath = (params.get('file') || params.get('openFile') || '').trim();
+    if (requestedPath === '') {
+      return;
+    }
+
+    const normalizedPath = normalizeMindPath(decodeURIComponent(requestedPath));
+    if (normalizedPath === '') {
+      return;
+    }
+
+    handledOpenFileQueryRef.current = normalizedPath;
+    setSelectedFilePath(normalizedPath);
+  }, [location.search, projectId, rootFolder, selectedFilePath]);
 
   // Keep the currently selected project file in the URL so refresh/deep links restore it.
   useEffect(() => {
@@ -4025,33 +4126,6 @@ function ProjectView() {
     setIsFileActionsMenuOpen(false);
     navigate(`/agent/jobs/new?prefillInstructionFile=${encodeURIComponent(selectedFileAbsolutePath)}`);
   };
-
-  // Handle file query params. `file` is the persistent deep-link param, while
-  // `openFile` is kept for older links from chat/tool results and is normalized to `file`.
-  useEffect(() => {
-    const requestedOpenPath = (searchParams.get('openFile') || '').trim();
-    const requestedFilePath = (searchParams.get('file') || '').trim();
-    const requestedPath = requestedOpenPath || requestedFilePath;
-    if (requestedPath === '' || !rootFolder) return;
-    if (handledOpenFileQueryRef.current === requestedPath) return;
-
-    const relativePath = toMindRelativePath(rootFolder, requestedPath);
-    handledOpenFileQueryRef.current = requestedPath;
-
-    if (relativePath === '') {
-      setError('Requested file is outside of project folder.');
-      return;
-    }
-
-    const openFromQuery = async () => {
-      setActiveTab('explorer');
-      await expandTreePath(relativePath);
-      await openFile(relativePath);
-    };
-
-    void openFromQuery();
-  }, [expandTreePath, openFile, rootFolder, searchParams, setActiveTab]);
-
   // Handle markdown anchor scrolling
   useEffect(() => {
     if (!pendingAnchor || isLoadingFile || markdownMode !== 'preview') return;
@@ -4934,7 +5008,7 @@ function ProjectView() {
                       />
                     ) : null}
                     {!isLoadingFile && selectedFilePath && selectedFileSupportsMarkdownPreview && markdownMode === 'preview' ? (
-                      <div className="mind-markdown-preview" onClick={(event) => void handlePreviewClick(event)} dangerouslySetInnerHTML={{ __html: markdownHtml }} />
+                      <MarkdownPreview html={markdownHtml} onClick={(event) => void handlePreviewClick(event)} />
                     ) : null}
                   </div>
                 </div>

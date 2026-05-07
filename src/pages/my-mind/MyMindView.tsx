@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import mermaid from 'mermaid';
 import {
   browseMindDirectories,
   cancelSessionRun,
@@ -231,6 +232,15 @@ function isTableSeparator(line: string, expectedCells: number): boolean {
   return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function isMermaidLanguage(language: string): boolean {
+  const normalized = language.trim().toLowerCase();
+  return normalized === 'mermaid' || normalized === 'mmd';
+}
+
+function renderMermaidBlock(source: string): string {
+  return `<div class="md-mermaid">${escapeHtml(source)}</div>`;
+}
+
 function renderMarkdownToHtml(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const html: string[] = [];
@@ -238,6 +248,8 @@ function renderMarkdownToHtml(markdown: string): string {
   let inCodeFence = false;
   let inTable = false;
   let tableColumns = 0;
+  let codeLanguage = '';
+  let codeFenceLines: string[] = [];
   const headingCounts = new Map<string, number>();
 
   const closeList = () => {
@@ -257,24 +269,31 @@ function renderMarkdownToHtml(markdown: string): string {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (line.startsWith('```')) {
+    const fenceMatch = /^```\s*([a-zA-Z0-9_+-]+)?\s*$/.exec(line);
+    if (fenceMatch) {
       closeList();
       closeTable();
       if (!inCodeFence) {
-        html.push('<pre><code>');
         inCodeFence = true;
+        codeLanguage = (fenceMatch[1] || '').toLowerCase();
+        codeFenceLines = [];
       } else {
-        html.push('</code></pre>');
+        if (isMermaidLanguage(codeLanguage)) {
+          html.push(renderMermaidBlock(codeFenceLines.join('\n')));
+        } else {
+          html.push(`<pre><code>${escapeHtml(codeFenceLines.join('\n'))}</code></pre>`);
+        }
         inCodeFence = false;
+        codeLanguage = '';
+        codeFenceLines = [];
       }
       continue;
     }
 
     if (inCodeFence) {
-      html.push(`${escapeHtml(line)}\n`);
+      codeFenceLines.push(line);
       continue;
     }
-
     const trimmed = line.trim();
     if (trimmed === '') {
       closeList();
@@ -344,7 +363,11 @@ function renderMarkdownToHtml(markdown: string): string {
   }
 
   if (inCodeFence) {
-    html.push('</code></pre>');
+    if (isMermaidLanguage(codeLanguage)) {
+      html.push(renderMermaidBlock(codeFenceLines.join('\n')));
+    } else {
+      html.push(`<pre><code>${escapeHtml(codeFenceLines.join('\n'))}</code></pre>`);
+    }
   }
   if (inList) {
     html.push('</ul>');
@@ -425,6 +448,8 @@ function MyMindView() {
   const [isSavingFile, setIsSavingFile] = useState(false);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
   const [markdownMode, setMarkdownMode] = useState<MarkdownMode>('preview');
+  const markdownPreviewRef = useRef<HTMLDivElement | null>(null);
+  const mermaidRenderRequestRef = useRef(0);
   const [pendingAnchor, setPendingAnchor] = useState('');
 
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
@@ -1332,6 +1357,47 @@ function MyMindView() {
           setSelectedFileContent(response.content);
           setSavedFileContent(response.content);
           
+
+  useEffect(() => {
+    if (isLoadingFile || markdownMode !== 'preview') {
+      return;
+    }
+
+    const previewElement = markdownPreviewRef.current;
+    if (!previewElement) {
+      return;
+    }
+
+    const diagrams = Array.from(previewElement.querySelectorAll<HTMLElement>('.md-mermaid'));
+    if (diagrams.length === 0) {
+      return;
+    }
+
+    const requestID = mermaidRenderRequestRef.current + 1;
+    mermaidRenderRequestRef.current = requestID;
+    const isLightTheme = document.documentElement.dataset.theme === 'light';
+
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: isLightTheme ? 'default' : 'dark',
+    });
+
+    void mermaid.run({ nodes: diagrams }).catch((renderError: unknown) => {
+      if (mermaidRenderRequestRef.current !== requestID) {
+        return;
+      }
+      for (const diagram of diagrams) {
+        if (diagram.querySelector('svg')) {
+          continue;
+        }
+        diagram.classList.add('md-mermaid-error');
+        diagram.textContent = renderError instanceof Error
+          ? `Mermaid diagram error: ${renderError.message}`
+          : 'Mermaid diagram error.';
+      }
+    });
+  }, [isLoadingFile, markdownMode, markdownHtml]);
           const nextParams = new URLSearchParams(searchParams);
           nextParams.delete('openFile');
           setSearchParams(nextParams, { replace: true });
@@ -1807,7 +1873,12 @@ function MyMindView() {
                     />
                   ) : null}
                   {!isLoadingFile && selectedFilePath && markdownMode === 'preview' ? (
-                    <div className="mind-markdown-preview" onClick={(event) => void handlePreviewClick(event)} dangerouslySetInnerHTML={{ __html: markdownHtml }} />
+                    <div
+                      ref={markdownPreviewRef}
+                      className="mind-markdown-preview"
+                      onClick={(event) => void handlePreviewClick(event)}
+                      dangerouslySetInnerHTML={{ __html: markdownHtml }}
+                    />
                   ) : null}
                 </div>
               </div>

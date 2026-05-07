@@ -226,6 +226,15 @@ function isTableSeparator(line: string, expectedCells: number): boolean {
   return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function isMermaidLanguage(language: string): boolean {
+  const normalized = language.trim().toLowerCase();
+  return normalized === 'mermaid' || normalized === 'mmd';
+}
+
+function renderMermaidBlock(source: string): string {
+  return `<div class=\"md-mermaid\">${escapeHtml(source)}</div>`;
+}
+
 export function renderMarkdownToHtml(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const html: string[] = [];
@@ -248,8 +257,12 @@ export function renderMarkdownToHtml(markdown: string): string {
       return;
     }
     const langClass = codeLanguage ? ` language-${escapeHtml(codeLanguage)}` : '';
-    const highlighted = highlightCode(codeFenceLines.join('\n'), codeLanguage);
-    html.push(`<pre class=\"md-code-block\"><code class=\"${langClass.trim()}\">${highlighted}</code></pre>`);
+    if (isMermaidLanguage(codeLanguage)) {
+      html.push(renderMermaidBlock(codeFenceLines.join('\n')));
+    } else {
+      const highlighted = highlightCode(codeFenceLines.join('\n'), codeLanguage);
+      html.push(`<pre class=\"md-code-block\"><code class=\"${langClass.trim()}\">${highlighted}</code></pre>`);
+    }
     inCodeFence = false;
     codeLanguage = '';
     codeFenceLines = [];

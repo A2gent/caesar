@@ -4,7 +4,7 @@ const API_BASE_URL_STORAGE_KEY = 'a2gent.api_base_url';
 const API_BASE_URL_HISTORY_KEY = 'a2gent.api_base_url_history';
 const API_BASE_URL_AGENT_NAME_MAP_KEY = 'a2gent.api_base_url_agent_names';
 const PARENT_API_BASE_URL_STORAGE_KEY = 'a2gent.parent_api_base_url';
-const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5445';
 function normalizeApiBaseUrl(url: string): string {
   return url.trim().replace(/\/$/, '');
 }

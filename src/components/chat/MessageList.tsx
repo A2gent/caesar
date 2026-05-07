@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import mermaid from 'mermaid';
 // noop touch to satisfy workflow: ensuring latest edit pass for duration rendering fixes
 import { Link } from 'react-router-dom';
 import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type Session, type SubAgent, type SystemPromptSnapshot, type ToolCall, type ToolResult } from '../../api';
@@ -228,6 +229,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
   }, [session?.a2a_source_agent_id, session?.a2a_target_agent_id, session?.metadata]);
 
   const subAgentIdSet = useMemo(() => new Set(subAgents.map((agent) => agent.id)), [subAgents]);
+  const mermaidRenderRequestRef = useRef(0);
 
   const childSessionEmoji = useCallback((child: Session): string => {
     const metadata = (child.metadata || {}) as Record<string, unknown>;
@@ -1372,6 +1374,43 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       })
       .map((entry) => entry.node);
   }, [messages, userAvatarUrl, assistantEmoji, childSessions, childSessionEmoji, isLoading]);
+
+  useEffect(() => {
+    const messageListElement = document.querySelector('.message-list');
+    if (!messageListElement) {
+      return;
+    }
+
+    const diagrams = Array.from(messageListElement.querySelectorAll<HTMLElement>('.md-mermaid'));
+    if (diagrams.length === 0) {
+      return;
+    }
+
+    const requestID = mermaidRenderRequestRef.current + 1;
+    mermaidRenderRequestRef.current = requestID;
+    const isLightTheme = document.documentElement.dataset.theme === 'light';
+
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: isLightTheme ? 'default' : 'dark',
+    });
+
+    void mermaid.run({ nodes: diagrams }).catch((renderError: unknown) => {
+      if (mermaidRenderRequestRef.current !== requestID) {
+        return;
+      }
+      for (const diagram of diagrams) {
+        if (diagram.querySelector('svg')) {
+          continue;
+        }
+        diagram.classList.add('md-mermaid-error');
+        diagram.textContent = renderError instanceof Error
+          ? `Mermaid diagram error: ${renderError.message}`
+          : 'Mermaid diagram error.';
+      }
+    });
+  }, [renderedMessages]);
 
   return (
     <div className="message-list">

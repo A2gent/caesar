@@ -13,7 +13,7 @@ function AgentUrlComboField({
   history,
   onChange,
   onRemoveFromHistory,
-  placeholder = 'http://localhost:8080',
+  placeholder = 'http://localhost:5445',
 }: AgentUrlComboFieldProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

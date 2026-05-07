@@ -2280,6 +2280,29 @@ body.mind-resizing * {
   color: #d9deea;
 }
 
+.message-markdown .md-mermaid {
+  margin: 0.7rem 0;
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: #13151a;
+  text-align: center;
+}
+
+.message-markdown .md-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.message-markdown .md-mermaid-error {
+  color: #ffb4ab;
+  text-align: left;
+  white-space: pre-wrap;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
 .message-markdown .tok-comment {
   color: #7f8a9c;
   font-style: italic;
@@ -7425,6 +7448,29 @@ input[type="checkbox"]:disabled {
   color: #d9deea;
 }
 
+
+.mind-markdown-preview .md-mermaid {
+  margin: 14px 0;
+  padding: 14px;
+  overflow-x: auto;
+  border: 1px solid #3b3b3b;
+  border-radius: 10px;
+  background: #1a1a1a;
+  text-align: center;
+}
+
+.mind-markdown-preview .md-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mind-markdown-preview .md-mermaid-error {
+  color: #ffb4ab;
+  text-align: left;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
 .mind-markdown-preview a {
   color: #90a8ff;
 }
@@ -11262,6 +11308,15 @@ button.session-provider-chip:hover {
 
 [data-theme='light'] .project-files-section .mind-markdown-preview .md-table th {
   background: #eef3fb;
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .md-mermaid {
+  background: #f5f8fd;
+  border-color: #d5dfef;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .md-mermaid-error {
+  color: #b42318;
+}
   border-color: #d5dfef;
 }
 
