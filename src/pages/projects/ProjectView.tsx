@@ -4426,6 +4426,7 @@ function ProjectView() {
   const hasSearchHits = fileNameSearchMatches.length > 0 || contentSearchMatches.length > 0;
   const viewerPlaceholder = getProjectViewerPlaceholder(project);
   const showSessionComposer = activeTab === 'explorer' || activeTab === 'sessions' || sessionAppendContext.trim() !== '' || inlineSession !== null;
+  const sessionComposerUsesInlineMode = activeTab !== 'sessions' && sessionComposerMode === 'inline';
 
   const renderBranchChangedFileTreeNode = (node: BranchChangedFileTreeNode, depth = 0): ReactElement => {
     if (node.file) {
@@ -5669,11 +5670,11 @@ function ProjectView() {
         {showSessionComposer ? (
           <SessionCreationPanel
             className="project-sessions-composer"
-            onSend={sessionComposerMode === 'inline' ? handleStartSessionInline : handleStartSession}
-            onQueue={sessionComposerMode === 'inline' ? undefined : handleQueueSession}
+            onSend={sessionComposerUsesInlineMode ? handleStartSessionInline : handleStartSession}
+            onQueue={sessionComposerUsesInlineMode ? undefined : handleQueueSession}
             disabled={isCreatingSession || isQueuingSession || isInlineSessionLoading}
             autoFocus={!rootFolder || sessionAppendContext.trim() !== ''}
-            showQueueButton={sessionComposerMode !== 'inline'}
+            showQueueButton={!sessionComposerUsesInlineMode}
             showVoiceButton={false}
             composerValue={sessionComposerMessage}
             onComposerValueChange={setSessionComposerMessage}
@@ -5734,18 +5735,20 @@ function ProjectView() {
                     ))}
                   </select>
                 </label>
-                <label className="chat-provider-select">
-                  <select
-                    value={sessionComposerMode}
-                    onChange={(event) => setSessionComposerMode(event.target.value as SessionComposerMode)}
-                    title="Open mode"
-                    aria-label="Open mode"
-                    disabled={Boolean(inlineSession)}
-                  >
-                    <option value="navigate">Open full chat</option>
-                    <option value="inline">Ask inline</option>
-                  </select>
-                </label>
+                {activeTab !== 'sessions' ? (
+                  <label className="chat-provider-select">
+                    <select
+                      value={sessionComposerMode}
+                      onChange={(event) => setSessionComposerMode(event.target.value as SessionComposerMode)}
+                      title="Open mode"
+                      aria-label="Open mode"
+                      disabled={Boolean(inlineSession)}
+                    >
+                      <option value="navigate">Open full chat</option>
+                      <option value="inline">Ask inline</option>
+                    </select>
+                  </label>
+                ) : null}
               </div>
             }
           />

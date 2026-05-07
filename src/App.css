@@ -9981,22 +9981,23 @@ input[type="checkbox"]:disabled {
   background: #1a1d24;
 }
 
-/* Toast Notifications Container - Bottom Left */
+/* Toast Notifications Container - Top Left menu area */
 .toast-notifications-container {
   position: fixed;
-  bottom: 20px;
-  left: calc(var(--sidebar-width, 280px) + 20px);
+  top: 16px;
+  left: 16px;
   z-index: 1500;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   gap: 10px;
   pointer-events: none;
-  max-width: 400px;
+  width: min(400px, calc(var(--sidebar-width, 280px) - 32px));
+  max-width: calc(100vw - 32px);
 }
 
 .sidebar-closed .toast-notifications-container,
 .mobile-layout .toast-notifications-container {
-  left: 20px;
+  width: min(400px, calc(100vw - 32px));
 }
 
 /* Individual Toast Notification */
@@ -10015,11 +10016,10 @@ input[type="checkbox"]:disabled {
 .toast-notification.is-new {
   animation: toast-enter 0.3s ease-out;
 }
-
 @keyframes toast-enter {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(-12px);
   }
   to {
     opacity: 1;
@@ -10030,7 +10030,6 @@ input[type="checkbox"]:disabled {
 .toast-notification.is-exiting {
   animation: toast-exit 0.3s ease-in forwards;
 }
-
 @keyframes toast-exit {
   from {
     opacity: 1;
@@ -10038,7 +10037,7 @@ input[type="checkbox"]:disabled {
   }
   to {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(-12px);
   }
 }
 
@@ -10394,11 +10393,12 @@ input[type="checkbox"]:disabled {
     width: 100%;
     justify-content: flex-end;
   }
-
   .toast-notifications-container {
+    top: 10px;
     left: 10px;
     right: 10px;
-    bottom: 10px;
+    bottom: auto;
+    width: auto;
     max-width: none;
   }
 
