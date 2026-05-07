@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatView from './ChatView';
 
 const {
   getSessionMock,
+  getSessionSummaryMock,
   cancelSessionRunMock,
   listSessionsMock,
   listProvidersMock,
@@ -16,6 +17,16 @@ const {
   listSubAgentsMock,
 } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),
+  getSessionSummaryMock: vi.fn(async (sessionId: string) => ({
+    id: sessionId,
+    agent_id: 'build',
+    title: 'Session',
+    status: 'completed',
+    created_at: '2026-04-16T10:00:00Z',
+    updated_at: '2026-04-16T10:00:00Z',
+    messages: [] as unknown[],
+    metadata: {} as Record<string, unknown>,
+  })),
   cancelSessionRunMock: vi.fn(),
   listSessionsMock: vi.fn(),
   listProvidersMock: vi.fn(),
@@ -29,6 +40,7 @@ const {
 
 vi.mock('../../api', () => ({
   getSession: getSessionMock,
+  getSessionSummary: getSessionSummaryMock,
   cancelSessionRun: cancelSessionRunMock,
   listSessions: listSessionsMock,
   listProviders: listProvidersMock,
@@ -38,11 +50,24 @@ vi.mock('../../api', () => ({
   answerQuestion: answerQuestionMock,
   createSession: createSessionMock,
   listSubAgents: listSubAgentsMock,
+  buildImageAssetUrl: (path: string) => `/assets/images?path=${encodeURIComponent(path)}`,
+  buildSpeechClipUrl: (clipID: string) => `/speech/clips/${encodeURIComponent(clipID)}`,
+  attachToolCallsToCurrentAssistant: (messages: unknown[], _toolCalls: unknown[], message?: unknown) => (
+    message ? [...messages, message] : messages
+  ),
+  mergeStreamMessage: (messages: unknown[], message?: unknown) => (
+    message ? [...messages, message] : messages
+  ),
 }));
 
-beforeEach(() => {
-  window.HTMLElement.prototype.scrollIntoView = vi.fn();
-});
+const OpenOldSessionButton = () => {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate('/chat/session-old')}>
+      Open old session
+    </button>
+  );
+};
 
 describe('ChatView pending question flow', () => {
   beforeEach(() => {
@@ -253,6 +278,117 @@ describe('ChatView initial session loading', () => {
     expect(screen.getAllByText(/Loading session/).length).toBeGreaterThan(0);
     expect(screen.queryByText('New Session')).not.toBeInTheDocument();
     expect(screen.queryByText('Start a conversation')).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatView session transcript isolation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    const sessions = {
+      'session-new': {
+        id: 'session-new',
+        agent_id: 'build',
+        title: 'New running session',
+        status: 'running',
+        created_at: '2026-04-16T10:00:00Z',
+        updated_at: '2026-04-16T10:00:00Z',
+        messages: [],
+        metadata: {},
+      },
+      'session-old': {
+        id: 'session-old',
+        agent_id: 'build',
+        title: 'Old completed session',
+        status: 'completed',
+        created_at: '2026-04-15T10:00:00Z',
+        updated_at: '2026-04-15T10:01:00Z',
+        messages: [
+          {
+            role: 'assistant',
+            content: 'old session answer',
+            timestamp: '2026-04-15T10:01:00Z',
+          },
+        ],
+        metadata: {},
+      },
+    };
+
+    getSessionMock.mockImplementation(async (sessionId: string) => sessions[sessionId as keyof typeof sessions] || sessions['session-old']);
+    getSessionSummaryMock.mockImplementation(async (sessionId: string) => sessions[sessionId as keyof typeof sessions] || sessions['session-old']);
+    listSessionsMock.mockResolvedValue(Object.values(sessions));
+    listProvidersMock.mockResolvedValue([]);
+    listSubAgentsMock.mockResolvedValue([]);
+    getProjectMock.mockResolvedValue(null);
+    getPendingQuestionMock.mockResolvedValue(null);
+    answerQuestionMock.mockResolvedValue(undefined);
+    createSessionMock.mockResolvedValue(null);
+    cancelSessionRunMock.mockResolvedValue(undefined);
+  });
+
+  it('does not render stream updates for a session after navigating to another session', async () => {
+    let releaseStream: (() => void) | undefined;
+    let resolveStreamFinished: () => void = () => {};
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve;
+    });
+
+    sendMessageStreamMock.mockImplementation(async function* stream() {
+      await new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+
+      yield { type: 'assistant_delta', delta: 'new session answer' };
+      yield {
+        type: 'done',
+        content: 'new session answer',
+        status: 'completed',
+        messages: [
+          {
+            role: 'user',
+            content: 'start new session',
+            timestamp: '2026-04-16T10:00:30Z',
+          },
+          {
+            role: 'assistant',
+            content: 'new session answer',
+            timestamp: '2026-04-16T10:01:00Z',
+          },
+        ],
+      };
+      resolveStreamFinished();
+    });
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/chat/session-new', state: { initialMessage: 'start new session' } }]}>
+        <Routes>
+          <Route
+            path="/chat/:sessionId"
+            element={(
+              <>
+                <ChatView />
+                <OpenOldSessionButton />
+              </>
+            )}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(releaseStream).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open old session' }));
+    expect(await screen.findByText('old session answer')).toBeInTheDocument();
+
+    await act(async () => {
+      releaseStream?.();
+      await streamFinished;
+    });
+
+    expect(screen.getByText('old session answer')).toBeInTheDocument();
+    expect(screen.queryByText('new session answer')).not.toBeInTheDocument();
   });
 });
 

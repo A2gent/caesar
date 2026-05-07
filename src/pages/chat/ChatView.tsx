@@ -631,6 +631,8 @@ function ChatView() {
   const SESSION_POLL_INTERVAL_MS = 2000; // Poll every 2 seconds for active sessions
   
   const activeSessionId = urlSessionId;
+  const activeSessionIdRef = useRef<string | undefined>(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
   const locationState = (location.state || {}) as ChatLocationState;
   const sessionFailureReason = useMemo(
     () => deriveSessionFailureReason(session, error),
@@ -654,6 +656,16 @@ function ChatView() {
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  const isViewingSession = (targetSessionId: string): boolean => activeSessionIdRef.current === targetSessionId;
+
+  const replaceMessagesForSession = (targetSessionId: string, nextMessages: Message[]) => {
+    setMessages((prev) => (isViewingSession(targetSessionId) ? nextMessages : prev));
+  };
+
+  const updateMessagesForSession = (targetSessionId: string, updater: (prev: Message[]) => Message[]) => {
+    setMessages((prev) => (isViewingSession(targetSessionId) ? updater(prev) : prev));
+  };
 
   useEffect(() => {
     if (activeSessionId) {
@@ -788,7 +800,7 @@ function ChatView() {
             void getSession(sessionId)
               .then((fresh) => {
                 setSession(prev => (prev && prev.id === sessionId ? fresh : prev));
-                setMessages(fresh.messages || []);
+                setMessages((prev) => (activeSessionIdRef.current === sessionId ? fresh.messages || [] : prev));
               })
               .catch((refreshError) => {
                 console.error('Failed to refresh session transcript:', refreshError);
@@ -835,13 +847,21 @@ function ChatView() {
       setIsLoading(true);
       setError(null);
       const data = await getSession(id);
+      if (!isViewingSession(id)) {
+        return;
+      }
       setSession(data);
       setMessages(data.messages || []);
     } catch (err) {
+      if (!isViewingSession(id)) {
+        return;
+      }
       console.error('Failed to load session:', err);
       setError(err instanceof Error ? err.message : 'Failed to load session');
     } finally {
-      setIsLoading(false);
+      if (isViewingSession(id)) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -867,7 +887,7 @@ function ChatView() {
         content: '',
         timestamp: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, userMessage, assistantMessage]);
+      updateMessagesForSession(targetSessionId, (prev) => [...prev, userMessage, assistantMessage]);
     } else {
       // Just add placeholder for assistant response
       const assistantMessage: Message = {
@@ -875,11 +895,13 @@ function ChatView() {
         content: '',
         timestamp: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, assistantMessage]);
+      updateMessagesForSession(targetSessionId, (prev) => [...prev, assistantMessage]);
     }
-    setIsLoading(true);
-    setError(null);
-    setProviderTrace('');
+    if (isViewingSession(targetSessionId)) {
+      setIsLoading(true);
+      setError(null);
+      setProviderTrace('');
+    }
     const controller = new AbortController();
     activeStreamAbortRef.current = controller;
 
@@ -891,13 +913,17 @@ function ChatView() {
       const isAbort = err instanceof DOMException && err.name === 'AbortError';
       if (!isAbort) {
         console.error('Failed to send message:', err);
-        setError(normalizeFailureReason(err instanceof Error ? err.message : 'Failed to send message'));
+        if (isViewingSession(targetSessionId)) {
+          setError(normalizeFailureReason(err instanceof Error ? err.message : 'Failed to send message'));
+        }
         // Remove the placeholder assistant message (and user message if we added it)
         const removeCount = messageAlreadyExists ? 1 : 2;
-        setMessages(prev => prev.slice(0, -removeCount));
+        updateMessagesForSession(targetSessionId, (prev) => prev.slice(0, -removeCount));
       }
     } finally {
-      setIsLoading(false);
+      if (isViewingSession(targetSessionId)) {
+        setIsLoading(false);
+      }
       setActiveRequestSessionId(prev => prev === targetSessionId ? null : prev);
       if (activeStreamAbortRef.current === controller) {
         activeStreamAbortRef.current = null;
@@ -910,7 +936,7 @@ function ChatView() {
       if (!event.delta) {
         return;
       }
-      setMessages(prev => {
+      updateMessagesForSession(targetSessionId, (prev) => {
         if (prev.length === 0) {
           return prev;
         }
@@ -936,15 +962,15 @@ function ChatView() {
     }
 
     if (event.type === 'tool_executing') {
-      setMessages(prev => attachToolCallsToCurrentAssistant(prev, event.tool_calls || [], event.message));
+      updateMessagesForSession(targetSessionId, (prev) => attachToolCallsToCurrentAssistant(prev, event.tool_calls || [], event.message));
       return;
     }
 
     if (event.type === 'tool_completed') {
       if (event.messages) {
-        setMessages(event.messages);
+        replaceMessagesForSession(targetSessionId, event.messages);
       } else {
-        setMessages(prev => mergeStreamMessage(prev, event.message));
+        updateMessagesForSession(targetSessionId, (prev) => mergeStreamMessage(prev, event.message));
       }
       setSession(prev => (prev && prev.id === targetSessionId ? { ...prev, status: event.status } : prev));
       return;
@@ -956,7 +982,9 @@ function ChatView() {
     }
 
     if (event.type === 'provider_trace') {
-      setProviderTrace(formatProviderTrace(event));
+      if (isViewingSession(targetSessionId)) {
+        setProviderTrace(formatProviderTrace(event));
+      }
       if (isProviderFailurePhase(event.provider?.phase)) {
         const now = new Date().toISOString();
         setSession((prev) => {
@@ -1000,8 +1028,10 @@ function ChatView() {
     }
 
     if (event.type === 'done') {
-      setMessages(event.messages);
-      setProviderTrace('');
+      replaceMessagesForSession(targetSessionId, event.messages);
+      if (isViewingSession(targetSessionId)) {
+        setProviderTrace('');
+      }
       setSession(prev => {
         if (!prev || prev.id !== targetSessionId) {
           return prev;
@@ -1025,8 +1055,10 @@ function ChatView() {
     }
 
     if (event.type === 'error') {
-      setProviderTrace('');
-      setError(normalizeFailureReason(event.error || 'Failed to send message'));
+      if (isViewingSession(targetSessionId)) {
+        setProviderTrace('');
+        setError(normalizeFailureReason(event.error || 'Failed to send message'));
+      }
       if (typeof event.status === 'string' && event.status.trim() !== '') {
         setSession(prev => (prev && prev.id === targetSessionId ? { ...prev, status: event.status as string } : prev));
       }
@@ -1067,15 +1099,22 @@ function ChatView() {
     try {
       await cancelSessionRun(session.id);
       const fresh = await getSession(session.id);
+      if (!isViewingSession(session.id)) {
+        return;
+      }
       setSession(fresh);
       setMessages(fresh.messages || []);
       setProviderTrace('');
       setError('Request was canceled before completion.');
     } catch (err) {
-      console.error('Failed to cancel session:', err);
-      setError(err instanceof Error ? err.message : 'Failed to cancel session');
+      if (isViewingSession(session.id)) {
+        console.error('Failed to cancel session:', err);
+        setError(err instanceof Error ? err.message : 'Failed to cancel session');
+      }
     } finally {
-      setIsLoading(false);
+      if (isViewingSession(session.id)) {
+        setIsLoading(false);
+      }
       setActiveRequestSessionId((prev) => (prev === session.id ? null : prev));
     }
   };
@@ -1093,6 +1132,9 @@ function ChatView() {
       
       // Reload session to continue execution
       const fresh = await getSession(session.id);
+      if (!isViewingSession(session.id)) {
+        return;
+      }
       setSession(fresh);
       setMessages(fresh.messages || []);
       
@@ -1100,10 +1142,14 @@ function ChatView() {
       // There is no active stream in this flow.
       setActiveRequestSessionId((prev) => (prev === fresh.id ? null : prev));
     } catch (err) {
-      console.error('Failed to answer question:', err);
-      setError(err instanceof Error ? err.message : 'Failed to answer question');
+      if (isViewingSession(session.id)) {
+        console.error('Failed to answer question:', err);
+        setError(err instanceof Error ? err.message : 'Failed to answer question');
+      }
     } finally {
-      setIsLoading(false);
+      if (isViewingSession(session.id)) {
+        setIsLoading(false);
+      }
     }
   };
 
