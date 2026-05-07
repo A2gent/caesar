@@ -8615,6 +8615,111 @@ input[type="checkbox"]:disabled {
   min-height: 0;
 }
 
+.project-branch-changes-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 36%) minmax(0, 1fr);
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.project-branch-changes-files {
+  border: 1px solid #2c3443;
+  border-radius: 10px;
+  background: #0f141d;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.project-branch-changes-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid #2c3443;
+}
+
+.project-branch-changes-header h3 {
+  margin: 0;
+  color: #d9e2f2;
+  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-branch-changes-header span {
+  color: #91a2bd;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.project-branch-file-list {
+  border: 0;
+  border-radius: 0;
+}
+
+.project-branch-file-row {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #121925;
+  color: #d5dfef;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.project-branch-file-row:hover {
+  border-color: #4f6ea5;
+}
+
+.project-branch-file-row.selected {
+  border-color: #5b8cff;
+  background: #1a2640;
+}
+
+.project-branch-file-select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 7px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-branch-file-select code {
+  font-size: 11px;
+  color: #9fc27e;
+}
+
+.project-branch-file-open {
+  width: 28px;
+  border: 0;
+  border-left: 1px solid #2c3443;
+  background: transparent;
+  color: #9fb2d1;
+  cursor: pointer;
+}
+
+.project-branch-file-open:hover:not(:disabled) {
+  color: #dbe7fb;
+  background: rgba(91, 140, 255, 0.12);
+}
+
+.project-branch-file-open:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .project-history-left,
 .project-history-right {
   border: 1px solid #2c3443;
@@ -9251,6 +9356,10 @@ input[type="checkbox"]:disabled {
     grid-template-columns: 1fr;
     max-height: none;
     min-height: 0;
+  }
+
+  .project-branch-changes-panel {
+    grid-template-columns: 1fr;
   }
 
   .project-history-left {
@@ -11274,19 +11383,26 @@ button.session-provider-chip:hover {
 }
 
 [data-theme='light'] .project-history-left,
-[data-theme='light'] .project-history-right {
+[data-theme='light'] .project-history-right,
+[data-theme='light'] .project-branch-changes-files {
   border-color: #c9d3e2;
   background: #f8fbff;
 }
 
 [data-theme='light'] .project-history-header,
 [data-theme='light'] .project-history-right-header,
-[data-theme='light'] .project-history-branches {
+[data-theme='light'] .project-history-branches,
+[data-theme='light'] .project-branch-changes-header {
   border-bottom-color: #d7deea;
 }
 
-[data-theme='light'] .project-history-header h3 {
+[data-theme='light'] .project-history-header h3,
+[data-theme='light'] .project-branch-changes-header h3 {
   color: #223a5f;
+}
+
+[data-theme='light'] .project-branch-changes-header span {
+  color: #55657d;
 }
 
 [data-theme='light'] .project-history-error {
@@ -11360,12 +11476,37 @@ button.session-provider-chip:hover {
   background: #e8f0ff;
 }
 
-[data-theme='light'] .project-history-file-row code {
+[data-theme='light'] .project-history-file-row code,
+[data-theme='light'] .project-branch-file-select code {
   color: #1f6a33;
 }
 
 [data-theme='light'] .project-history-file-stats {
   color: #55657d;
+}
+
+[data-theme='light'] .project-branch-file-row {
+  background: #ffffff;
+  color: #1f2b40;
+}
+
+[data-theme='light'] .project-branch-file-row:hover {
+  border-color: #5b8cff;
+}
+
+[data-theme='light'] .project-branch-file-row.selected {
+  border-color: #5b8cff;
+  background: #e8f0ff;
+}
+
+[data-theme='light'] .project-branch-file-open {
+  border-left-color: #d7deea;
+  color: #4f6382;
+}
+
+[data-theme='light'] .project-branch-file-open:hover:not(:disabled) {
+  color: #24467f;
+  background: #eef4ff;
 }
 
 [data-theme='light'] .project-sessions-header {

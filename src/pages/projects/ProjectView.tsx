@@ -16,6 +16,8 @@ import {
   getProject,
   getProjectFile,
   generateProjectGitCommitMessage,
+  getProjectGitBranchChanges,
+  getProjectGitBranchFileDiff,
   getProjectGitCommitFileDiff,
   getProjectGitCommitFiles,
   getProjectGitFileDiff,
@@ -82,13 +84,13 @@ import {
 } from '../../lib/workflows';
 
 type MarkdownMode = 'kanban' | 'preview' | 'source';
-type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'meetings' | 'changes' | 'history' | 'settings';
+type ProjectViewTab = 'explorer' | 'tasks' | 'sessions' | 'meetings' | 'changes' | 'branch-changes' | 'history' | 'settings';
 type MeetingSettingsPickerTarget = 'notes' | 'audio' | null;
 type FileSourceSelection = SourceEditorSelection & {
   path: string;
 };
 
-const PROJECT_VIEW_TABS = new Set<ProjectViewTab>(['explorer', 'tasks', 'sessions', 'meetings', 'changes', 'history', 'settings']);
+const PROJECT_VIEW_TABS = new Set<ProjectViewTab>(['explorer', 'tasks', 'sessions', 'meetings', 'changes', 'branch-changes', 'history', 'settings']);
 
 function normalizeProjectViewTab(tab: string | undefined): ProjectViewTab {
   return tab && PROJECT_VIEW_TABS.has(tab as ProjectViewTab) ? (tab as ProjectViewTab) : 'explorer';
@@ -963,6 +965,15 @@ function ProjectView() {
   const [rootFolder, setRootFolder] = useState('');
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [isLoadingGitStatus, setIsLoadingGitStatus] = useState(false);
+  const [gitCurrentBranch, setGitCurrentBranch] = useState('');
+  const [branchChangesAvailable, setBranchChangesAvailable] = useState(false);
+  const [branchChangesBaseBranch, setBranchChangesBaseBranch] = useState('');
+  const [branchChangedFiles, setBranchChangedFiles] = useState<ProjectGitCommitFile[]>([]);
+  const [selectedBranchFilePath, setSelectedBranchFilePath] = useState('');
+  const [selectedBranchFileDiff, setSelectedBranchFileDiff] = useState('');
+  const [isLoadingBranchChanges, setIsLoadingBranchChanges] = useState(false);
+  const [isLoadingBranchFileDiff, setIsLoadingBranchFileDiff] = useState(false);
+  const [branchChangesError, setBranchChangesError] = useState<string | null>(null);
   const [commitRepoPath, setCommitRepoPath] = useState('');
   const [, setCommitRepoLabel] = useState('');
   const [commitDialogFiles, setCommitDialogFiles] = useState<ProjectGitChangedFile[]>([]);
@@ -998,6 +1009,8 @@ function ProjectView() {
   const gitStatusRequestRef = useRef(0);
   const commitDialogFilesRequestRef = useRef(0);
   const gitHistoryRequestRef = useRef(0);
+  const branchChangesRequestRef = useRef(0);
+  const branchFileDiffRequestRef = useRef(0);
   const historyCommitFilesRequestRef = useRef(0);
   const historyFileDiffRequestRef = useRef(0);
   const [gitDiscardPath, setGitDiscardPath] = useState<string | null>(null);
@@ -1186,6 +1199,13 @@ function ProjectView() {
   const loadGitStatus = useCallback(async () => {
     if (!projectId || !rootFolder) {
       setIsGitRepo(false);
+      setGitCurrentBranch('');
+      setBranchChangesAvailable(false);
+      setBranchChangesBaseBranch('');
+      setBranchChangedFiles([]);
+      setSelectedBranchFilePath('');
+      setSelectedBranchFileDiff('');
+      setBranchChangesError(null);
       setGitHistoryBranches([]);
       setGitHistoryCommits([]);
       setSelectedHistoryCommitHash('');
@@ -1203,10 +1223,26 @@ function ProjectView() {
       if (requestID !== gitStatusRequestRef.current) return;
 
       setIsGitRepo(status.has_git);
+      setGitCurrentBranch(status.current_branch || '');
+      setBranchChangesAvailable(Boolean(status.branch_changes_available));
+      setBranchChangesBaseBranch(status.branch_changes_base_branch || '');
+      if (!status.has_git || !status.branch_changes_available) {
+        setBranchChangedFiles([]);
+        setSelectedBranchFilePath('');
+        setSelectedBranchFileDiff('');
+        setBranchChangesError(null);
+      }
     } catch (err) {
       if (requestID !== gitStatusRequestRef.current) return;
       console.error('Failed to load git status:', err);
       setIsGitRepo(false);
+      setGitCurrentBranch('');
+      setBranchChangesAvailable(false);
+      setBranchChangesBaseBranch('');
+      setBranchChangedFiles([]);
+      setSelectedBranchFilePath('');
+      setSelectedBranchFileDiff('');
+      setBranchChangesError(null);
       setError(err instanceof Error ? err.message : 'Failed to load git status');
     } finally {
       if (requestID === gitStatusRequestRef.current) {
@@ -1264,6 +1300,52 @@ function ProjectView() {
     } finally {
       if (requestID === gitHistoryRequestRef.current) {
         setIsLoadingGitHistory(false);
+      }
+    }
+  }, [projectId, rootFolder, isGitRepo, commitRepoPath]);
+
+  const loadBranchChanges = useCallback(async (repoPathOverride?: string) => {
+    const targetRepoPath = repoPathOverride ?? commitRepoPath;
+    if (!projectId || !rootFolder || (!isGitRepo && targetRepoPath.trim() === '')) {
+      setBranchChangedFiles([]);
+      setSelectedBranchFilePath('');
+      setSelectedBranchFileDiff('');
+      setBranchChangesError(null);
+      setBranchChangesAvailable(false);
+      setBranchChangesBaseBranch('');
+      return;
+    }
+
+    const requestID = branchChangesRequestRef.current + 1;
+    branchChangesRequestRef.current = requestID;
+    setIsLoadingBranchChanges(true);
+    setBranchChangesError(null);
+    try {
+      const response = await getProjectGitBranchChanges(projectId, targetRepoPath);
+      if (requestID !== branchChangesRequestRef.current) return;
+      const files = response.files || [];
+      setGitCurrentBranch(response.current_branch || '');
+      setBranchChangesBaseBranch(response.base_branch || '');
+      setBranchChangesAvailable(Boolean(response.available));
+      setBranchChangedFiles(files);
+      setSelectedBranchFilePath((currentPath) => {
+        if (currentPath && files.some((file) => file.path === currentPath)) {
+          return currentPath;
+        }
+        return files[0]?.path || '';
+      });
+      if (!response.available || files.length === 0) {
+        setSelectedBranchFileDiff('');
+      }
+    } catch (branchError) {
+      if (requestID !== branchChangesRequestRef.current) return;
+      setBranchChangedFiles([]);
+      setSelectedBranchFilePath('');
+      setSelectedBranchFileDiff('');
+      setBranchChangesError(branchError instanceof Error ? branchError.message : 'Failed to load branch changes');
+    } finally {
+      if (requestID === branchChangesRequestRef.current) {
+        setIsLoadingBranchChanges(false);
       }
     }
   }, [projectId, rootFolder, isGitRepo, commitRepoPath]);
@@ -2252,6 +2334,10 @@ function ProjectView() {
       if (activeTab === 'changes') {
         await refreshCommitDialogFiles();
       }
+      if (activeTab === 'branch-changes') {
+        await loadBranchChanges();
+      }
+      window.dispatchEvent(new Event('a2gent:project-git-status-changed'));
       setSuccess(`Switched to branch ${branchName}.`);
     } catch (branchError) {
       setError(branchError instanceof Error ? branchError.message : 'Failed to switch branch');
@@ -2340,6 +2426,32 @@ function ProjectView() {
     } finally {
       if (requestID === commitDiffRequestRef.current) {
         setIsLoadingCommitFileDiff(false);
+      }
+    }
+  }, [projectId, commitRepoPath]);
+
+  const loadBranchFileDiff = useCallback(async (path: string, repoPathOverride?: string) => {
+    if (!projectId || path.trim() === '') {
+      setSelectedBranchFileDiff('');
+      return;
+    }
+
+    const requestID = branchFileDiffRequestRef.current + 1;
+    branchFileDiffRequestRef.current = requestID;
+    const targetRepoPath = repoPathOverride ?? commitRepoPath;
+    setIsLoadingBranchFileDiff(true);
+    setBranchChangesError(null);
+    try {
+      const response = await getProjectGitBranchFileDiff(projectId, path, targetRepoPath);
+      if (requestID !== branchFileDiffRequestRef.current) return;
+      setSelectedBranchFileDiff(response.preview || '');
+    } catch (diffError) {
+      if (requestID !== branchFileDiffRequestRef.current) return;
+      setSelectedBranchFileDiff('');
+      setBranchChangesError(diffError instanceof Error ? diffError.message : 'Failed to load branch file diff');
+    } finally {
+      if (requestID === branchFileDiffRequestRef.current) {
+        setIsLoadingBranchFileDiff(false);
       }
     }
   }, [projectId, commitRepoPath]);
@@ -2749,6 +2861,11 @@ function ProjectView() {
     </label>
   ) : null;
   const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
+  const branchChangesTitle = branchChangesAvailable && gitCurrentBranch && branchChangesBaseBranch
+    ? `${gitCurrentBranch} compared with ${branchChangesBaseBranch}`
+    : gitCurrentBranch
+      ? `${gitCurrentBranch} branch changes`
+      : 'Branch changes';
   const activeTodoFilePath = isTodoFilePath(selectedFilePath)
     ? selectedFilePath
     : (knownTodoFilePaths[0] || '');
@@ -2788,6 +2905,24 @@ function ProjectView() {
       return null;
     }
   }, [selectedCommitFileDiff, selectedCommitFilePath]);
+  const parsedBranchDiffFile = useMemo<FileDiffMetadata | null>(() => {
+    if (!selectedBranchFileDiff) return null;
+    try {
+      const parsed = parsePatchFiles(selectedBranchFileDiff);
+      const files = parsed.flatMap((patch) => patch.files || []) as FileDiffMetadata[];
+      if (files.length === 0) return null;
+      if (files.length === 1) return files[0];
+      const normalizedPath = selectedBranchFilePath.replace(/^\.\/+/, '');
+      const byExactPath = files.find((file: FileDiffMetadata) => file.name === normalizedPath || file.prevName === normalizedPath);
+      if (byExactPath) return byExactPath;
+      const bySuffixPath = files.find((file: FileDiffMetadata) =>
+        file.name.endsWith(`/${normalizedPath}`) || (file.prevName || '').endsWith(`/${normalizedPath}`),
+      );
+      return bySuffixPath || files[0];
+    } catch {
+      return null;
+    }
+  }, [selectedBranchFileDiff, selectedBranchFilePath]);
   const selectedHistoryCommit = useMemo(
     () => gitHistoryCommits.find((commit) => commit.hash === selectedHistoryCommitHash) || null,
     [gitHistoryCommits, selectedHistoryCommitHash],
@@ -2930,6 +3065,18 @@ function ProjectView() {
     await openFile(normalizedPath);
   };
 
+  const handleOpenBranchFileSource = async (file: ProjectGitCommitFile) => {
+    const normalizedPath = normalizeMindPath(file.path);
+    if (normalizedPath === '') return;
+    if (file.status.startsWith('D')) {
+      setError('Deleted files do not have source to open on the current branch.');
+      return;
+    }
+    setActiveTab('explorer');
+    await expandTreePath(normalizedPath);
+    await openFile(normalizedPath);
+  };
+
   const ensureTodoTaskFile = async (task: TodoTask, column: TodoColumn): Promise<string> => {
     if (!projectId || !selectedFilePath) {
       throw new Error('Project file is not selected.');
@@ -3053,13 +3200,27 @@ function ProjectView() {
   }, [isKnowledgeBaseProject]);
 
   useEffect(() => {
+    if (activeTab === 'branch-changes') {
+      if (!selectedBranchFilePath) {
+        setSelectedBranchFileDiff('');
+        return;
+      }
+      void loadBranchFileDiff(selectedBranchFilePath);
+      return;
+    }
     if (activeTab !== 'changes') return;
     if (!selectedCommitFilePath) {
       setSelectedCommitFileDiff('');
       return;
     }
     void loadCommitFileDiff(selectedCommitFilePath);
-  }, [activeTab, selectedCommitFilePath, loadCommitFileDiff]);
+  }, [
+    activeTab,
+    selectedBranchFilePath,
+    loadBranchFileDiff,
+    selectedCommitFilePath,
+    loadCommitFileDiff,
+  ]);
 
   useEffect(() => {
     setDraggedTodoTask(null);
@@ -3124,9 +3285,40 @@ function ProjectView() {
     if (commitRepoPath.trim() === '') {
       setCommitRepoLabel(project?.name || 'Project');
     }
-    void refreshCommitDialogFiles();
     void loadGitHistory();
-  }, [activeTab, isProjectContextReady, projectId, rootFolder, isGitRepo, project?.name, commitRepoPath, refreshCommitDialogFiles, loadGitHistory]);
+    void refreshCommitDialogFiles();
+  }, [
+    activeTab,
+    isProjectContextReady,
+    projectId,
+    rootFolder,
+    isGitRepo,
+    project?.name,
+    commitRepoPath,
+    refreshCommitDialogFiles,
+    loadGitHistory,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== 'branch-changes') return;
+    if (!isProjectContextReady) return;
+    if (!projectId || !rootFolder || (!isGitRepo && commitRepoPath.trim() === '')) return;
+    if (commitRepoPath.trim() === '') {
+      setCommitRepoLabel(project?.name || 'Project');
+    }
+    void loadGitHistory();
+    void loadBranchChanges();
+  }, [
+    activeTab,
+    isProjectContextReady,
+    projectId,
+    rootFolder,
+    isGitRepo,
+    project?.name,
+    commitRepoPath,
+    loadBranchChanges,
+    loadGitHistory,
+  ]);
 
   useEffect(() => {
     if (activeTab !== 'history') return;
@@ -4515,6 +4707,107 @@ function ProjectView() {
                   >
                     {isCommitting && isPushing ? 'Committing & pushing...' : 'Commit & Push'}
                   </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {activeTab === 'branch-changes' ? (
+          <div className="project-tab-panel project-git-tab">
+            {!rootFolder ? (
+              <div className="project-files-empty">
+                <p>No folder configured for this project.</p>
+                <button type="button" className="settings-add-btn" onClick={() => void openPicker()}>
+                  Configure folder
+                </button>
+              </div>
+            ) : (!isGitRepo && commitRepoPath.trim() === '') ? (
+              <EmptyState className="sessions-empty">
+                <EmptyStateTitle>This folder is not a Git repository.</EmptyStateTitle>
+                <button type="button" className="settings-save-btn" onClick={openGitInitDialog} disabled={isLoadingGitStatus || isInitializingGit}>
+                  {isInitializingGit ? 'Initializing Git...' : 'Initialize Git'}
+                </button>
+              </EmptyState>
+            ) : !branchChangesAvailable ? (
+              <EmptyState className="sessions-empty">
+                <EmptyStateTitle>No branch comparison available.</EmptyStateTitle>
+                <EmptyStateHint>Switch to a feature branch with a master or main branch to inspect committed branch changes.</EmptyStateHint>
+              </EmptyState>
+            ) : (
+              <div className="project-git-panel">
+                <div className="project-branch-changes-panel">
+                  <div className="project-branch-changes-files">
+                    <div className="project-branch-changes-header">
+                      <h3>{branchChangesTitle}</h3>
+                      <span>
+                        {isLoadingBranchChanges
+                          ? 'Loading changed files...'
+                          : `${branchChangedFiles.length} changed file(s)`}
+                      </span>
+                    </div>
+                    {branchChangesError ? (
+                      <div className="project-history-error">{branchChangesError}</div>
+                    ) : null}
+                    <div className="project-history-files project-branch-file-list">
+                      {isLoadingBranchChanges ? (
+                        <div className="project-history-empty">Loading changed files...</div>
+                      ) : branchChangedFiles.length === 0 ? (
+                        <div className="project-history-empty">No files differ from {branchChangesBaseBranch || 'base branch'}.</div>
+                      ) : (
+                        branchChangedFiles.map((file) => (
+                          <div
+                            key={`${file.status}:${file.path}`}
+                            className={`project-branch-file-row ${selectedBranchFilePath === file.path ? 'selected' : ''}`}
+                          >
+                            <button
+                              type="button"
+                              className="project-branch-file-select"
+                              onClick={() => setSelectedBranchFilePath(file.path)}
+                              onDoubleClick={() => void handleOpenBranchFileSource(file)}
+                              title={`Show diff for ${file.path}`}
+                            >
+                              <code>{file.status || 'M'}</code>
+                              <span className="project-history-file-path">{file.path}</span>
+                              <span className="project-history-file-stats">
+                                {file.binary ? 'binary' : `+${file.additions} -${file.deletions}`}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              className="project-branch-file-open"
+                              onClick={() => void handleOpenBranchFileSource(file)}
+                              disabled={file.status.startsWith('D')}
+                              title={file.status.startsWith('D') ? 'Deleted file has no current source' : 'Open source in Explorer'}
+                              aria-label={`Open ${file.path} in Explorer`}
+                            >
+                              ↗
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <div className="project-commit-diff">
+                    <div className="project-commit-diff-header">
+                      {selectedBranchFilePath || 'Select a file'}
+                    </div>
+                    {isLoadingBranchFileDiff ? (
+                      <div className="project-commit-diff-empty">Loading branch diff...</div>
+                    ) : (
+                      <div className="project-commit-diff-body">
+                        {parsedBranchDiffFile ? (
+                          <FileDiff
+                            fileDiff={parsedBranchDiffFile}
+                            options={commitDiffOptions}
+                            className="project-commit-diff-renderer"
+                          />
+                        ) : (
+                          <div className="project-commit-diff-empty">No diff preview.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

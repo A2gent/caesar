@@ -2170,6 +2170,9 @@ export interface ProjectGitChangedFile {
 export interface ProjectGitStatusResponse {
   root_folder: string;
   has_git: boolean;
+  current_branch?: string;
+  branch_changes_available: boolean;
+  branch_changes_base_branch?: string;
   files: ProjectGitChangedFile[];
 }
 
@@ -2232,6 +2235,21 @@ export interface ProjectGitCommitFilesResponse {
 
 export interface ProjectGitCommitDiffResponse {
   commit: string;
+  path: string;
+  preview: string;
+}
+
+export interface ProjectGitBranchChangesResponse {
+  root_folder: string;
+  current_branch: string;
+  base_branch: string;
+  available: boolean;
+  files: ProjectGitCommitFile[];
+}
+
+export interface ProjectGitBranchDiffResponse {
+  current_branch: string;
+  base_branch: string;
   path: string;
   preview: string;
 }
@@ -2332,6 +2350,32 @@ export async function getProjectGitFileDiff(projectID: string, path: string, rep
   );
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to load file diff');
+  }
+  return response.json();
+}
+
+export async function getProjectGitBranchChanges(projectID: string, repoPath = ''): Promise<ProjectGitBranchChangesResponse> {
+  const repoQuery = repoPath.trim() === '' ? '' : `&repoPath=${encodeURIComponent(repoPath)}`;
+  const response = await fetch(
+    `${getApiBaseUrl()}/projects/git/branch-changes?projectID=${encodeURIComponent(projectID)}${repoQuery}`,
+  );
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load branch changes');
+  }
+  return response.json();
+}
+
+export async function getProjectGitBranchFileDiff(
+  projectID: string,
+  path: string,
+  repoPath = '',
+): Promise<ProjectGitBranchDiffResponse> {
+  const repoQuery = repoPath.trim() === '' ? '' : `&repoPath=${encodeURIComponent(repoPath)}`;
+  const response = await fetch(
+    `${getApiBaseUrl()}/projects/git/branch-diff?projectID=${encodeURIComponent(projectID)}&path=${encodeURIComponent(path)}${repoQuery}`,
+  );
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to load branch file diff');
   }
   return response.json();
 }

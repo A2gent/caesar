@@ -37,11 +37,16 @@ interface NavSection {
   items: NavItem[];
 }
 
-type ProjectSubNavId = 'sessions' | 'explorer' | 'tasks' | 'meetings' | 'changes' | 'history' | 'settings';
+type ProjectSubNavId = 'sessions' | 'explorer' | 'tasks' | 'meetings' | 'changes' | 'branch-changes' | 'history' | 'settings';
 
 interface ProjectSubNavItem {
   id: ProjectSubNavId;
   label: string;
+}
+
+interface ProjectGitNavStatus {
+  hasGit: boolean;
+  branchChangesAvailable: boolean;
 }
 
 // System project IDs - must match backend
@@ -91,6 +96,7 @@ const projectSubNavItems: ProjectSubNavItem[] = [
   { id: 'explorer', label: 'Explorer' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'changes', label: 'Changes' },
+  { id: 'branch-changes', label: 'Branch Changes' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -101,6 +107,7 @@ const knowledgeBaseSubNavItems: ProjectSubNavItem[] = [
   { id: 'tasks', label: 'Tasks' },
   { id: 'meetings', label: 'Meetings' },
   { id: 'changes', label: 'Changes' },
+  { id: 'branch-changes', label: 'Branch Changes' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -179,12 +186,15 @@ function buildChatSessionPath(sessionId: string): string {
   return `/chat/${encodeURIComponent(sessionId)}`;
 }
 
-function getProjectSubNavItems(projectId: string, hasGit: boolean): ProjectSubNavItem[] {
+function getProjectSubNavItems(projectId: string, gitStatus?: ProjectGitNavStatus): ProjectSubNavItem[] {
   const items = projectId === SYSTEM_PROJECT_KB_ID ? knowledgeBaseSubNavItems : projectSubNavItems;
-  if (hasGit) {
-    return items;
+  if (!gitStatus?.hasGit) {
+    return items.filter((item) => item.id !== 'changes' && item.id !== 'branch-changes' && item.id !== 'history');
   }
-  return items.filter((item) => item.id !== 'changes' && item.id !== 'history');
+  if (!gitStatus.branchChangesAvailable) {
+    return items.filter((item) => item.id !== 'branch-changes');
+  }
+  return items;
 }
 
 function normalizeProjectSubNavId(value: string | undefined): ProjectSubNavId {
@@ -281,7 +291,8 @@ function Sidebar({
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [activeProjectIdFromSession, setActiveProjectIdFromSession] = useState<string | null>(null);
-  const [projectGitStatusById, setProjectGitStatusById] = useState<Record<string, boolean>>({});
+  const [projectGitStatusById, setProjectGitStatusById] = useState<Record<string, ProjectGitNavStatus>>({});
+  const [projectGitStatusRefreshTick, setProjectGitStatusRefreshTick] = useState(0);
   const [recentProjectSessions, setRecentProjectSessions] = useState<Session[]>([]);
   const activeProjectIdFromRoute = getProjectIdFromPath(location.pathname);
   const activeProjectId = activeProjectIdFromRoute || activeProjectIdFromSession;
@@ -323,6 +334,16 @@ function Sidebar({
   useEffect(() => {
     loadProjects();
   }, [loadProjects, refreshKey]);
+
+  useEffect(() => {
+    const handleProjectGitStatusChanged = () => {
+      setProjectGitStatusRefreshTick((value) => value + 1);
+    };
+    window.addEventListener('a2gent:project-git-status-changed', handleProjectGitStatusChanged);
+    return () => {
+      window.removeEventListener('a2gent:project-git-status-changed', handleProjectGitStatusChanged);
+    };
+  }, []);
 
   useEffect(() => {
     const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
@@ -405,13 +426,19 @@ function Sidebar({
       }
 
       const entries = await Promise.all(
-        folderProjects.map(async (project): Promise<[string, boolean]> => {
+        folderProjects.map(async (project): Promise<[string, ProjectGitNavStatus]> => {
           try {
             const status = await getProjectGitStatus(project.id);
-            return [project.id, Boolean(status.has_git)];
+            return [
+              project.id,
+              {
+                hasGit: Boolean(status.has_git),
+                branchChangesAvailable: Boolean(status.branch_changes_available),
+              },
+            ];
           } catch (err) {
             console.error(`Failed to load git status for project ${project.id}:`, err);
-            return [project.id, false];
+            return [project.id, { hasGit: false, branchChangesAvailable: false }];
           }
         }),
       );
@@ -425,7 +452,7 @@ function Sidebar({
     return () => {
       cancelled = true;
     };
-  }, [projects]);
+  }, [projects, projectGitStatusRefreshTick]);
 
   const handleAgentChange = async (nextUrl: string) => {
     if (nextUrl === '' || nextUrl === activeBaseUrl || isSwitchingAgent) {
@@ -514,7 +541,7 @@ function Sidebar({
     }
 
     const activeSubNavId = getActiveProjectSubNavId(location.pathname, projectId, activeProjectIdFromSession) || 'explorer';
-    const items = getProjectSubNavItems(projectId, projectGitStatusById[projectId] === true);
+    const items = getProjectSubNavItems(projectId, projectGitStatusById[projectId]);
 
     return (
       <ul className="nav-submenu project-subnav-list" aria-label={`${projectName} project views`}>
