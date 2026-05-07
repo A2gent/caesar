@@ -8662,15 +8662,73 @@ input[type="checkbox"]:disabled {
   border-radius: 0;
 }
 
-.project-branch-file-row {
+.project-branch-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.project-branch-tree-node,
+.project-branch-tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.project-branch-tree-directory {
+  --tree-depth: 0;
+  min-width: 0;
+  margin-left: calc(var(--tree-depth) * 16px);
+  padding: 3px 7px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 5px;
+  color: #9fb2d1;
+  display: grid;
+  grid-template-columns: 14px 16px minmax(0, 1fr) auto;
+  gap: 5px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.project-branch-tree-guide {
+  color: #6f84a7;
+  font-size: 10px;
+}
+
+.project-branch-tree-folder {
+  font-size: 12px;
+  filter: saturate(0.8);
+}
+
+.project-branch-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #c7d4e8;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.project-branch-tree-summary {
+  min-width: 0;
+  color: #7f91ad;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.project-branch-file-row {
+  --tree-depth: 0;
+  margin-left: calc(var(--tree-depth) * 16px);
+  border: 1px solid transparent;
+  border-radius: 5px;
   background: #121925;
   color: #d5dfef;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  gap: 3px;
   align-items: stretch;
+  overflow: hidden;
 }
 
 .project-branch-file-row:hover {
@@ -8682,18 +8740,74 @@ input[type="checkbox"]:disabled {
   background: #1a2640;
 }
 
+.project-branch-file-row-added {
+  border-left-color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.project-branch-file-row-deleted {
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.project-branch-file-row-changed {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+
 .project-branch-file-select {
   min-width: 0;
   border: 0;
   background: transparent;
   color: inherit;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 6px;
   align-items: center;
-  padding: 6px 7px;
+  padding: 3px 6px;
   text-align: left;
   cursor: pointer;
+}
+
+.project-branch-change-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.project-branch-change-added {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.project-branch-change-deleted {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.project-branch-change-changed {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.project-branch-file-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.project-branch-change-badge {
+  border-radius: 999px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
 }
 
 .project-branch-file-select code {
@@ -11485,9 +11599,56 @@ button.session-provider-chip:hover {
   color: #55657d;
 }
 
+[data-theme='light'] .project-branch-tree-directory {
+  background: #f0f5fb;
+  color: #55657d;
+}
+
+[data-theme='light'] .project-branch-tree-guide {
+  color: #7a8ca8;
+}
+
+[data-theme='light'] .project-branch-tree-name {
+  color: #28405f;
+}
+
+[data-theme='light'] .project-branch-tree-summary {
+  color: #687894;
+}
+
 [data-theme='light'] .project-branch-file-row {
   background: #ffffff;
   color: #1f2b40;
+}
+
+[data-theme='light'] .project-branch-file-row-added {
+  border-left-color: #16a34a;
+  background: #edfdf3;
+}
+
+[data-theme='light'] .project-branch-file-row-deleted {
+  border-left-color: #dc2626;
+  background: #fff0f0;
+}
+
+[data-theme='light'] .project-branch-file-row-changed {
+  border-left-color: #d97706;
+  background: #fff8e8;
+}
+
+[data-theme='light'] .project-branch-change-added {
+  color: #166534;
+  background: #dcfce7;
+}
+
+[data-theme='light'] .project-branch-change-deleted {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+[data-theme='light'] .project-branch-change-changed {
+  color: #92400e;
+  background: #fef3c7;
 }
 
 [data-theme='light'] .project-branch-file-row:hover {

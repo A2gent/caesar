@@ -203,6 +203,123 @@ function buildGitFileStatusTooltip(file: ProjectGitChangedFile): string {
   ].join('\n');
 }
 
+type BranchChangeKind = 'added' | 'deleted' | 'changed';
+
+type BranchChangedFileTreeNode = {
+  name: string;
+  path: string;
+  children: BranchChangedFileTreeNode[];
+  file: ProjectGitCommitFile | null;
+  addedCount: number;
+  deletedCount: number;
+  changedCount: number;
+};
+
+function getBranchChangeKind(file: ProjectGitCommitFile): BranchChangeKind {
+  const status = (file.status || '').trim().toUpperCase();
+  if (status.startsWith('A') || status.includes('A')) {
+    return 'added';
+  }
+  if (status.startsWith('D') || status.includes('D')) {
+    return 'deleted';
+  }
+  return 'changed';
+}
+
+function getBranchChangeLabel(file: ProjectGitCommitFile): string {
+  const kind = getBranchChangeKind(file);
+  if (kind === 'added') return 'Added';
+  if (kind === 'deleted') return 'Deleted';
+  return 'Changed';
+}
+
+function getBranchChangeIcon(file: ProjectGitCommitFile): string {
+  const kind = getBranchChangeKind(file);
+  if (kind === 'added') return '+';
+  if (kind === 'deleted') return '−';
+  return '•';
+}
+
+function incrementBranchTreeCounts(node: BranchChangedFileTreeNode, kind: BranchChangeKind): void {
+  if (kind === 'added') {
+    node.addedCount += 1;
+  } else if (kind === 'deleted') {
+    node.deletedCount += 1;
+  } else {
+    node.changedCount += 1;
+  }
+}
+
+function createBranchTreeNode(name: string, path: string, file: ProjectGitCommitFile | null = null): BranchChangedFileTreeNode {
+  return {
+    name,
+    path,
+    children: [],
+    file,
+    addedCount: 0,
+    deletedCount: 0,
+    changedCount: 0,
+  };
+}
+
+function buildBranchChangedFileTree(files: ProjectGitCommitFile[]): BranchChangedFileTreeNode[] {
+  const root = createBranchTreeNode('', '');
+  const childMaps = new WeakMap<BranchChangedFileTreeNode, Map<string, BranchChangedFileTreeNode>>();
+  childMaps.set(root, new Map());
+
+  for (const file of files) {
+    const normalizedPath = normalizeMindPath(file.path);
+    const parts = normalizedPath.split('/').filter(Boolean);
+    if (parts.length === 0) continue;
+
+    const kind = getBranchChangeKind(file);
+    incrementBranchTreeCounts(root, kind);
+    let parent = root;
+
+    parts.forEach((part, index) => {
+      const isLeaf = index === parts.length - 1;
+      const nodePath = parts.slice(0, index + 1).join('/');
+      let siblings = childMaps.get(parent);
+      if (!siblings) {
+        siblings = new Map();
+        childMaps.set(parent, siblings);
+      }
+
+      let node = siblings.get(part);
+      if (!node) {
+        node = createBranchTreeNode(part, nodePath, isLeaf ? file : null);
+        siblings.set(part, node);
+        parent.children.push(node);
+        childMaps.set(node, new Map());
+      } else if (isLeaf) {
+        node.file = file;
+      }
+
+      incrementBranchTreeCounts(node, kind);
+      parent = node;
+    });
+  }
+
+  const sortNodes = (nodes: BranchChangedFileTreeNode[]) => {
+    nodes.sort((a, b) => {
+      if (Boolean(a.file) !== Boolean(b.file)) return a.file ? 1 : -1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+    nodes.forEach((node) => sortNodes(node.children));
+  };
+
+  sortNodes(root.children);
+  return root.children;
+}
+
+function formatBranchTreeSummary(node: BranchChangedFileTreeNode): string {
+  return [
+    node.addedCount > 0 ? `${node.addedCount} added` : '',
+    node.changedCount > 0 ? `${node.changedCount} changed` : '',
+    node.deletedCount > 0 ? `${node.deletedCount} deleted` : '',
+  ].filter(Boolean).join(', ');
+}
+
 function isTodoFilePath(path: string): boolean {
   const base = path.split('/').filter(Boolean).pop()?.toLowerCase() || '';
   return TODO_FILE_NAMES.has(base);
@@ -2866,6 +2983,11 @@ function ProjectView() {
     : gitCurrentBranch
       ? `${gitCurrentBranch} branch changes`
       : 'Branch changes';
+  const branchChangedFileTree = useMemo(
+    () => buildBranchChangedFileTree(branchChangedFiles),
+    [branchChangedFiles],
+  );
+  const branchTreeDepthStyle = useCallback((depth: number): CSSProperties => ({ '--tree-depth': depth } as CSSProperties), []);
   const activeTodoFilePath = isTodoFilePath(selectedFilePath)
     ? selectedFilePath
     : (knownTodoFilePaths[0] || '');
@@ -3807,6 +3929,63 @@ function ProjectView() {
   const hasSearchHits = fileNameSearchMatches.length > 0 || contentSearchMatches.length > 0;
   const viewerPlaceholder = getProjectViewerPlaceholder(project);
   const showSessionComposer = activeTab === 'explorer' || activeTab === 'sessions';
+
+  const renderBranchChangedFileTreeNode = (node: BranchChangedFileTreeNode, depth = 0): ReactElement => {
+    if (node.file) {
+      const file = node.file;
+      const kind = getBranchChangeKind(file);
+      const label = getBranchChangeLabel(file);
+      const stats = file.binary ? 'binary' : `+${file.additions} -${file.deletions}`;
+      return (
+        <div
+          key={`file:${file.status}:${file.path}`}
+          className={`project-branch-file-row project-branch-file-row-${kind} ${selectedBranchFilePath === file.path ? 'selected' : ''}`}
+          style={branchTreeDepthStyle(depth)}
+        >
+          <button
+            type="button"
+            className="project-branch-file-select"
+            onClick={() => setSelectedBranchFilePath(file.path)}
+            onDoubleClick={() => void handleOpenBranchFileSource(file)}
+            title={`Show diff for ${file.path}`}
+          >
+            <span className={`project-branch-change-icon project-branch-change-${kind}`} aria-hidden="true">
+              {getBranchChangeIcon(file)}
+            </span>
+            <span className="project-history-file-path">{node.name}</span>
+            <span className="project-branch-file-meta">
+              <span className={`project-branch-change-badge project-branch-change-${kind}`}>{label}</span>
+              <span className="project-history-file-stats">{stats}</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="project-branch-file-open"
+            onClick={() => void handleOpenBranchFileSource(file)}
+            disabled={file.status.startsWith('D')}
+            title={file.status.startsWith('D') ? 'Deleted file has no current source' : 'Open source in Explorer'}
+            aria-label={`Open ${file.path} in Explorer`}
+          >
+            ↗
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div key={`dir:${node.path}`} className="project-branch-tree-node">
+        <div className="project-branch-tree-directory" style={branchTreeDepthStyle(depth)} title={formatBranchTreeSummary(node)}>
+          <span className="project-branch-tree-guide" aria-hidden="true">▾</span>
+          <span className="project-branch-tree-folder" aria-hidden="true">📁</span>
+          <span className="project-branch-tree-name">{node.name}</span>
+          <span className="project-branch-tree-summary">{formatBranchTreeSummary(node)}</span>
+        </div>
+        <div className="project-branch-tree-children">
+          {node.children.map((child) => renderBranchChangedFileTreeNode(child, depth + 1))}
+        </div>
+      </div>
+    );
+  };
 
   const sessionsListBlock = (
     <>
@@ -4755,36 +4934,9 @@ function ProjectView() {
                       ) : branchChangedFiles.length === 0 ? (
                         <div className="project-history-empty">No files differ from {branchChangesBaseBranch || 'base branch'}.</div>
                       ) : (
-                        branchChangedFiles.map((file) => (
-                          <div
-                            key={`${file.status}:${file.path}`}
-                            className={`project-branch-file-row ${selectedBranchFilePath === file.path ? 'selected' : ''}`}
-                          >
-                            <button
-                              type="button"
-                              className="project-branch-file-select"
-                              onClick={() => setSelectedBranchFilePath(file.path)}
-                              onDoubleClick={() => void handleOpenBranchFileSource(file)}
-                              title={`Show diff for ${file.path}`}
-                            >
-                              <code>{file.status || 'M'}</code>
-                              <span className="project-history-file-path">{file.path}</span>
-                              <span className="project-history-file-stats">
-                                {file.binary ? 'binary' : `+${file.additions} -${file.deletions}`}
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              className="project-branch-file-open"
-                              onClick={() => void handleOpenBranchFileSource(file)}
-                              disabled={file.status.startsWith('D')}
-                              title={file.status.startsWith('D') ? 'Deleted file has no current source' : 'Open source in Explorer'}
-                              aria-label={`Open ${file.path} in Explorer`}
-                            >
-                              ↗
-                            </button>
-                          </div>
-                        ))
+                        <div className="project-branch-tree">
+                          {branchChangedFileTree.map((node) => renderBranchChangedFileTreeNode(node))}
+                        </div>
                       )}
                     </div>
                   </div>
