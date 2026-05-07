@@ -1359,6 +1359,7 @@ function ProjectView() {
   const [branchChangedFiles, setBranchChangedFiles] = useState<ProjectGitCommitFile[]>([]);
   const [selectedBranchFilePath, setSelectedBranchFilePath] = useState('');
   const [selectedBranchFileDiff, setSelectedBranchFileDiff] = useState('');
+  const [selectedBranchDiffText, setSelectedBranchDiffText] = useState('');
   const [isLoadingBranchChanges, setIsLoadingBranchChanges] = useState(false);
   const [isLoadingBranchFileDiff, setIsLoadingBranchFileDiff] = useState(false);
   const [branchChangesError, setBranchChangesError] = useState<string | null>(null);
@@ -1599,6 +1600,7 @@ function ProjectView() {
       setBranchChangedFiles([]);
       setSelectedBranchFilePath('');
       setSelectedBranchFileDiff('');
+      setSelectedBranchDiffText('');
       setBranchChangesError(null);
       setGitHistoryBranches([]);
       setGitHistoryCommits([]);
@@ -1623,6 +1625,7 @@ function ProjectView() {
       if (!status.has_git || !status.branch_changes_available) {
         setBranchChangedFiles([]);
         setSelectedBranchFilePath('');
+        setSelectedBranchDiffText('');
         setSelectedBranchFileDiff('');
         setBranchChangesError(null);
       }
@@ -1635,6 +1638,7 @@ function ProjectView() {
       setBranchChangesBaseBranch('');
       setBranchChangedFiles([]);
       setSelectedBranchFilePath('');
+      setSelectedBranchDiffText('');
       setSelectedBranchFileDiff('');
       setBranchChangesError(null);
       setError(err instanceof Error ? err.message : 'Failed to load git status');
@@ -1704,6 +1708,7 @@ function ProjectView() {
       setBranchChangedFiles([]);
       setSelectedBranchFilePath('');
       setSelectedBranchFileDiff('');
+      setSelectedBranchDiffText('');
       setBranchChangesError(null);
       setBranchChangesAvailable(false);
       setBranchChangesBaseBranch('');
@@ -1730,12 +1735,14 @@ function ProjectView() {
       });
       if (!response.available || files.length === 0) {
         setSelectedBranchFileDiff('');
+        setSelectedBranchDiffText('');
       }
     } catch (branchError) {
       if (requestID !== branchChangesRequestRef.current) return;
       setBranchChangedFiles([]);
       setSelectedBranchFilePath('');
       setSelectedBranchFileDiff('');
+      setSelectedBranchDiffText('');
       setBranchChangesError(branchError instanceof Error ? branchError.message : 'Failed to load branch changes');
     } finally {
       if (requestID === branchChangesRequestRef.current) {
@@ -2996,12 +3003,14 @@ function ProjectView() {
   const loadBranchFileDiff = useCallback(async (path: string, repoPathOverride?: string) => {
     if (!projectId || path.trim() === '') {
       setSelectedBranchFileDiff('');
+      setSelectedBranchDiffText('');
       return;
     }
 
     const requestID = branchFileDiffRequestRef.current + 1;
     branchFileDiffRequestRef.current = requestID;
     const targetRepoPath = repoPathOverride ?? commitRepoPath;
+    setSelectedBranchDiffText('');
     setIsLoadingBranchFileDiff(true);
     setBranchChangesError(null);
     try {
@@ -3011,6 +3020,7 @@ function ProjectView() {
     } catch (diffError) {
       if (requestID !== branchFileDiffRequestRef.current) return;
       setSelectedBranchFileDiff('');
+      setSelectedBranchDiffText('');
       setBranchChangesError(diffError instanceof Error ? diffError.message : 'Failed to load branch file diff');
     } finally {
       if (requestID === branchFileDiffRequestRef.current) {
@@ -3297,6 +3307,7 @@ function ProjectView() {
     setInlineSession(null);
     setInlineMessages([]);
     setIsInlineSessionLoading(false);
+    setSelectedBranchDiffText('');
     setTimeout(() => {
       const sessionsComposer = document.querySelector('.project-sessions-composer');
       if (sessionsComposer) {
@@ -3329,6 +3340,32 @@ function ProjectView() {
 
     openSessionComposer(label, appendContext, 'navigate');
   };
+  const captureSelectedBranchDiffText = () => {
+    if (typeof window === 'undefined') return '';
+    const selection = window.getSelection();
+    const selectedText = selection?.toString().trim() || '';
+    if (selectedText === '') return '';
+    const anchorNode = selection?.anchorNode;
+    const focusNode = selection?.focusNode;
+    const diffBody = document.querySelector('.project-branch-diff-body');
+    if (!diffBody) return '';
+    const selectionIsInsideDiff = (node: Node | null | undefined) => Boolean(node && diffBody.contains(node));
+    if (!selectionIsInsideDiff(anchorNode) && !selectionIsInsideDiff(focusNode)) return '';
+    setSelectedBranchDiffText(selectedText);
+    return selectedText;
+  };
+
+  const handleBranchDiffSelectionChange = () => {
+    const selectedText = captureSelectedBranchDiffText();
+    if (selectedText === '') {
+      setSelectedBranchDiffText('');
+    }
+  };
+
+  const handleBranchDiffSessionClick = () => {
+    captureSelectedBranchDiffText();
+    openBranchFileSessionComposer('inline');
+  };
 
   const openBranchFileSessionComposer = (mode: SessionComposerMode = 'inline') => {
     if (!selectedBranchFilePath) return;
@@ -3336,18 +3373,25 @@ function ProjectView() {
     const stats = selectedBranchFile
       ? `${getBranchChangeLabel(selectedBranchFile)} · +${selectedBranchFile.additions} -${selectedBranchFile.deletions}`
       : 'Changed file';
+    const focusedDiff = selectedBranchDiffText.trim();
     const contextLines = [
       `Branch changes file: ${selectedBranchFilePath}`,
       `Absolute path: ${fullPath}`,
       gitCurrentBranch && branchChangesBaseBranch ? `Comparison: ${gitCurrentBranch} compared with ${branchChangesBaseBranch}` : '',
       `Status: ${stats}`,
-      '',
-      'Diff:',
+      focusedDiff !== '' ? '' : '',
+      focusedDiff !== '' ? 'Selected diff lines:' : 'Diff:',
       '```diff',
-      selectedBranchFileDiff || '(No diff loaded.)',
+      focusedDiff || selectedBranchFileDiff || '(No diff loaded.)',
       '```',
+      focusedDiff !== '' ? '' : '',
+      focusedDiff !== '' ? 'Full file diff is available in the branch changes view if more surrounding context is needed.' : '',
     ].filter((line) => line !== '');
-    openSessionComposer(`branch changes for "${selectedBranchFilePath}"`, contextLines.join('\n'), mode);
+    openSessionComposer(
+      focusedDiff !== '' ? `selected diff lines in "${selectedBranchFilePath}"` : `branch changes for "${selectedBranchFilePath}"`,
+      contextLines.join('\n'),
+      mode,
+    );
   };
 
 
@@ -3777,6 +3821,7 @@ function ProjectView() {
     if (activeTab === 'branch-changes') {
       if (!selectedBranchFilePath) {
         setSelectedBranchFileDiff('');
+        setSelectedBranchDiffText('');
         return;
       }
       void loadBranchFileDiff(selectedBranchFilePath);
@@ -4397,7 +4442,10 @@ function ProjectView() {
           <button
             type="button"
             className="project-branch-file-select"
-            onClick={() => setSelectedBranchFilePath(file.path)}
+            onClick={() => {
+              setSelectedBranchDiffText('');
+              setSelectedBranchFilePath(file.path);
+            }}
             onDoubleClick={() => void handleOpenBranchFileSource(file)}
             title={`Show diff for ${file.path}`}
           >
@@ -5406,18 +5454,24 @@ function ProjectView() {
                         <button
                           type="button"
                           className="mind-create-session-btn"
-                          onClick={() => openBranchFileSessionComposer('inline')}
+                          onClick={handleBranchDiffSessionClick}
                           disabled={isLoadingBranchFileDiff}
-                          title="Ask about this branch diff without leaving this view"
+                          title={selectedBranchDiffText.trim() !== ''
+                            ? 'Ask about the selected diff lines without leaving this view'
+                            : 'Ask about this branch diff without leaving this view'}
                         >
-                          💭 Session
+                          {selectedBranchDiffText.trim() !== '' ? '💭 Selection' : '💭 Session'}
                         </button>
                       ) : null}
                     </div>
                     {isLoadingBranchFileDiff ? (
                       <div className="project-commit-diff-empty">Loading branch diff...</div>
                     ) : (
-                      <div className="project-commit-diff-body">
+                      <div
+                        className="project-commit-diff-body project-branch-diff-body"
+                        onMouseUp={handleBranchDiffSelectionChange}
+                        onKeyUp={handleBranchDiffSelectionChange}
+                      >
                         {parsedBranchDiffFile ? (
                           <FileDiff
                             fileDiff={parsedBranchDiffFile}

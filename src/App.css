@@ -7841,6 +7841,32 @@ input[type="checkbox"]:disabled {
   background: transparent;
 }
 
+.session-creation-panel.with-inline-session .chat-input-container {
+  position: relative;
+}
+
+.session-creation-panel.with-inline-session .chat-textarea {
+  min-height: 48px;
+  padding-right: 104px;
+  padding-bottom: 10px;
+}
+
+.session-creation-panel.with-inline-session .chat-input-actions {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  margin-top: 0;
+  gap: 6px;
+}
+
+.session-creation-panel.with-inline-session .image-button,
+.session-creation-panel.with-inline-session .send-button,
+.session-creation-panel.with-inline-session .voice-button,
+.session-creation-panel.with-inline-session .queue-button {
+  width: 32px;
+  height: 32px;
+}
+
 /* Thinking */
 .thinking-content {
   max-width: 860px;
