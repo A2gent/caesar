@@ -8046,7 +8046,7 @@ input[type="checkbox"]:disabled {
   align-items: center;
 }
 
-.project-branch-select-wrap {
+.project-branch-combobox-wrap {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -8056,31 +8056,146 @@ input[type="checkbox"]:disabled {
   white-space: nowrap;
 }
 
-.project-branch-select {
-  min-width: 170px;
-  max-width: 260px;
+.project-branch-combobox {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.project-branch-combobox-input {
+  width: 100%;
+  min-width: 0;
   border: 1px solid #3f4757;
   border-radius: 8px;
   background: #141922;
   color: #e4eaf4;
   font-size: 13px;
   line-height: 1.35;
-  padding: 8px 10px;
+  padding: 8px 34px 8px 10px;
+  box-sizing: border-box;
 }
 
-.project-branch-select:focus {
+.project-branch-combobox-input:focus {
   outline: none;
   border-color: #5b8cff;
   box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.2);
 }
 
-.project-branch-select:disabled {
+.project-branch-combobox-input:disabled {
   opacity: 0.65;
   cursor: not-allowed;
 }
 
-.project-branch-select-loading:disabled {
+.project-branch-combobox-loading .project-branch-combobox-input:disabled {
   cursor: wait;
+}
+
+.project-branch-combobox-toggle {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 30px;
+  border: 0;
+  border-left: 1px solid #2b3341;
+  border-radius: 0 7px 7px 0;
+  background: transparent;
+  color: #aeb8c7;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.project-branch-combobox-toggle:hover:not(:disabled) {
+  background: #1d2532;
+  color: #fff;
+}
+
+.project-branch-combobox-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.project-branch-combobox-menu {
+  position: absolute;
+  z-index: 1200;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+  border: 1px solid #3f4757;
+  border-radius: 10px;
+  background: #101620;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.42);
+  padding: 6px;
+}
+
+.project-branch-combobox-empty {
+  padding: 12px;
+  color: #9aa7b8;
+  font-size: 13px;
+  white-space: normal;
+}
+
+.project-branch-combobox-group + .project-branch-combobox-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #273142;
+}
+
+.project-branch-combobox-group-label {
+  padding: 5px 8px;
+  color: #7f8da3;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.project-branch-combobox-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #dde6f3;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  padding: 7px 8px;
+}
+
+.project-branch-combobox-option:hover,
+.project-branch-combobox-option.active {
+  background: #243048;
+  color: #fff;
+}
+
+.project-branch-combobox-option.current {
+  color: #dce8ff;
+}
+
+.project-branch-combobox-option.special .project-branch-combobox-option-name {
+  color: #ffd166;
+}
+
+.project-branch-combobox-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-branch-combobox-option-meta {
+  flex-shrink: 0;
+  color: #8ea2c2;
+  font-size: 11px;
 }
 
 .project-commit-dialog {
@@ -8369,30 +8484,32 @@ input[type="checkbox"]:disabled {
   --diffs-dark: #d7deea;
 }
 
-.project-delete-btn {
-  border: 1px solid #444;
-  background: #2f2f2f;
-  color: #bdbdbd;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  border-radius: 4px;
-  padding: 8px 16px;
-  min-height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
+.project-settings-description {
+  margin: 0;
+  color: #9ca3af;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-.project-delete-btn:hover:not(:disabled) {
+.project-danger-zone {
+  border-color: rgba(244, 67, 54, 0.35);
+}
+
+.project-danger-zone h2 {
+  color: #ffb4ad;
+}
+
+.project-danger-zone .settings-remove-btn {
+  border-color: #f44336;
+  color: #ffb4ad;
+}
+
+.project-danger-zone .settings-remove-btn:hover:not(:disabled) {
   background-color: #f44336;
   color: white;
-  border-color: #f44336;
 }
 
-.project-delete-btn:disabled {
+.project-danger-zone .settings-remove-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -9449,9 +9566,10 @@ input[type="checkbox"]:disabled {
   }
 
 
-  .project-branch-select-wrap,
-  .project-branch-select {
+  .project-branch-combobox-wrap,
+  .project-branch-combobox {
     width: 100%;
+    max-width: none;
   }
   .project-commit-message-row {
     flex-direction: column;

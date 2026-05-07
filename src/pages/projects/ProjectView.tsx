@@ -320,6 +320,270 @@ function formatBranchTreeSummary(node: BranchChangedFileTreeNode): string {
   ].filter(Boolean).join(', ');
 }
 
+const SPECIAL_GIT_BRANCH_NAME = 'master';
+const SPECIAL_GIT_BRANCH_MARKER = '★';
+
+type GitBranchOptionGroups = {
+  recent: ProjectGitBranch[];
+  alphabetical: ProjectGitBranch[];
+};
+
+type GitBranchSelectorProps = {
+  groups: GitBranchOptionGroups;
+  value: string;
+  disabled: boolean;
+  loading: boolean;
+  hasOptions: boolean;
+  placeholder: string;
+  onChange: (branchName: string) => void;
+};
+
+function isSpecialGitBranch(branchName: string): boolean {
+  return branchName === SPECIAL_GIT_BRANCH_NAME;
+}
+
+function formatGitBranchOptionLabel(branch: ProjectGitBranch | string): string {
+  const name = typeof branch === 'string' ? branch : branch.name;
+  const isCurrent = typeof branch === 'string' ? false : branch.current;
+  return [
+    isCurrent ? '✓' : '',
+    isSpecialGitBranch(name) ? SPECIAL_GIT_BRANCH_MARKER : '',
+    name,
+  ].filter(Boolean).join(' ');
+}
+
+function branchMatchesQuery(branchName: string, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery === '') return true;
+  return branchName.toLowerCase().includes(normalizedQuery);
+}
+
+function GitBranchSelector({ groups, value, disabled, loading, hasOptions, placeholder, onChange }: GitBranchSelectorProps): ReactElement {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [activeBranchName, setActiveBranchName] = useState('');
+  const rootRef = useRef<HTMLLabelElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const listboxID = 'project-git-branch-listbox';
+
+  const branchByName = useMemo(() => {
+    const map = new Map<string, ProjectGitBranch>();
+    for (const branch of [...groups.recent, ...groups.alphabetical]) {
+      if (!map.has(branch.name)) {
+        map.set(branch.name, branch);
+      }
+    }
+    return map;
+  }, [groups]);
+
+  const filteredGroups = useMemo<GitBranchOptionGroups>(() => ({
+    recent: groups.recent.filter((branch) => branchMatchesQuery(branch.name, query)),
+    alphabetical: groups.alphabetical.filter((branch) => branchMatchesQuery(branch.name, query)),
+  }), [groups, query]);
+
+  const visibleBranches = useMemo(
+    () => [...filteredGroups.recent, ...filteredGroups.alphabetical],
+    [filteredGroups],
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setActiveBranchName((current) => {
+      if (current && visibleBranches.some((branch) => branch.name === current)) {
+        return current;
+      }
+      return visibleBranches[0]?.name || '';
+    });
+  }, [isOpen, visibleBranches]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      const root = rootRef.current;
+      if (root && !root.contains(event.target as Node)) {
+        setIsOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isOpen]);
+
+  const chooseBranch = (branchName: string) => {
+    if (disabled || branchName.trim() === '') return;
+    setIsOpen(false);
+    setQuery('');
+    onChange(branchName);
+    inputRef.current?.blur();
+  };
+
+  const moveActiveBranch = (direction: 1 | -1) => {
+    if (visibleBranches.length === 0) return;
+    const currentIndex = visibleBranches.findIndex((branch) => branch.name === activeBranchName);
+    const nextIndex = currentIndex === -1
+      ? (direction === 1 ? 0 : visibleBranches.length - 1)
+      : (currentIndex + direction + visibleBranches.length) % visibleBranches.length;
+    setActiveBranchName(visibleBranches[nextIndex]?.name || '');
+  };
+
+  const exactQueryBranchName = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery === '') return '';
+    return visibleBranches.find((branch) => branch.name.toLowerCase() === normalizedQuery)?.name || '';
+  }, [query, visibleBranches]);
+
+  const inputValue = isOpen ? query : (value ? formatGitBranchOptionLabel(branchByName.get(value) || value) : '');
+  const activeDescendant = activeBranchName ? `project-git-branch-option-${activeBranchName.replace(/[^a-zA-Z0-9_-]/g, '-')}` : undefined;
+  const noMatches = hasOptions && visibleBranches.length === 0;
+
+  return (
+    <label className="project-branch-combobox-wrap" title="Switch Git branch" ref={rootRef}>
+      <span>Branch</span>
+      <div className={`project-branch-combobox${loading ? ' project-branch-combobox-loading' : ''}${isOpen ? ' open' : ''}`}>
+        <input
+          ref={inputRef}
+          className="project-branch-combobox-input"
+          type="text"
+          value={inputValue}
+          disabled={disabled}
+          placeholder={placeholder}
+          role="combobox"
+          aria-busy={loading}
+          aria-expanded={isOpen}
+          aria-controls={listboxID}
+          aria-activedescendant={isOpen ? activeDescendant : undefined}
+          aria-autocomplete="list"
+          aria-label="Git branch"
+          autoComplete="off"
+          spellCheck={false}
+          onFocus={(event) => {
+            if (disabled) return;
+            setQuery(value);
+            setIsOpen(true);
+            window.requestAnimationFrame(() => event.currentTarget.select());
+          }}
+          onClick={() => {
+            if (!disabled) setIsOpen(true);
+          }}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setIsOpen(true);
+          }}
+          onPaste={(event) => {
+            const pastedBranch = event.clipboardData.getData('text').trim();
+            if (branchByName.has(pastedBranch)) {
+              event.preventDefault();
+              chooseBranch(pastedBranch);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setIsOpen(true);
+              moveActiveBranch(1);
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setIsOpen(true);
+              moveActiveBranch(-1);
+            } else if (event.key === 'Enter') {
+              event.preventDefault();
+              const branchName = exactQueryBranchName || activeBranchName || visibleBranches[0]?.name || '';
+              if (branchName) chooseBranch(branchName);
+            } else if (event.key === 'Escape') {
+              setIsOpen(false);
+              setQuery('');
+              event.currentTarget.blur();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="project-branch-combobox-toggle"
+          disabled={disabled}
+          aria-label={isOpen ? 'Close branch list' : 'Open branch list'}
+          onClick={() => {
+            if (disabled) return;
+            setIsOpen((open) => !open);
+            inputRef.current?.focus();
+          }}
+        >
+          ▾
+        </button>
+        {isOpen ? (
+          <div className="project-branch-combobox-menu" id={listboxID} role="listbox">
+            {!hasOptions ? (
+              <div className="project-branch-combobox-empty">{placeholder}</div>
+            ) : noMatches ? (
+              <div className="project-branch-combobox-empty">No branches match “{query.trim()}”</div>
+            ) : (
+              <>
+                {filteredGroups.recent.length > 0 ? (
+                  <GitBranchSelectorGroup
+                    label="Recent"
+                    branches={filteredGroups.recent}
+                    activeBranchName={activeBranchName}
+                    onHover={setActiveBranchName}
+                    onSelect={chooseBranch}
+                  />
+                ) : null}
+                {filteredGroups.alphabetical.length > 0 ? (
+                  <GitBranchSelectorGroup
+                    label="All branches"
+                    branches={filteredGroups.alphabetical}
+                    activeBranchName={activeBranchName}
+                    onHover={setActiveBranchName}
+                    onSelect={chooseBranch}
+                  />
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </label>
+  );
+}
+
+type GitBranchSelectorGroupProps = {
+  label: string;
+  branches: ProjectGitBranch[];
+  activeBranchName: string;
+  onHover: (branchName: string) => void;
+  onSelect: (branchName: string) => void;
+};
+
+function GitBranchSelectorGroup({ label, branches, activeBranchName, onHover, onSelect }: GitBranchSelectorGroupProps): ReactElement {
+  return (
+    <div className="project-branch-combobox-group">
+      <div className="project-branch-combobox-group-label">{label}</div>
+      {branches.map((branch) => {
+        const isActive = branch.name === activeBranchName;
+        const optionID = `project-git-branch-option-${branch.name.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+        return (
+          <button
+            key={`${label}:${branch.name}`}
+            id={optionID}
+            type="button"
+            role="option"
+            aria-selected={isActive}
+            className={`project-branch-combobox-option${isActive ? ' active' : ''}${branch.current ? ' current' : ''}${isSpecialGitBranch(branch.name) ? ' special' : ''}`}
+            onMouseEnter={() => onHover(branch.name)}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onSelect(branch.name)}
+          >
+            <span className="project-branch-combobox-option-name">{formatGitBranchOptionLabel(branch)}</span>
+            {branch.ahead > 0 || branch.behind > 0 ? (
+              <span className="project-branch-combobox-option-meta">
+                {branch.ahead > 0 ? `↑${branch.ahead}` : ''}{branch.ahead > 0 && branch.behind > 0 ? ' ' : ''}{branch.behind > 0 ? `↓${branch.behind}` : ''}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function isTodoFilePath(path: string): boolean {
   const base = path.split('/').filter(Boolean).pop()?.toLowerCase() || '';
   return TODO_FILE_NAMES.has(base);
@@ -2943,39 +3207,15 @@ function ProjectView() {
   const hasGitBranchOptions = orderedGitBranchOptions.recent.length > 0 || orderedGitBranchOptions.alphabetical.length > 0;
   const isBranchSelectorLoading = isLoadingGitStatus || isLoadingGitHistory || isCheckingOutBranch;
   const gitBranchSelector = rootFolder && (isGitRepo || isLoadingGitStatus || isLoadingGitHistory || hasGitBranchOptions) ? (
-    <label className="project-branch-select-wrap" title="Switch Git branch">
-      <span>Branch</span>
-      <select
-        className={`project-branch-select${isBranchSelectorLoading ? ' project-branch-select-loading' : ''}`}
-        value={selectedGitBranchName}
-        onChange={(event) => void handleGitBranchChange(event.target.value)}
-        disabled={isCheckingOutBranch || isLoadingGitHistory || !hasGitBranchOptions}
-        aria-busy={isBranchSelectorLoading}
-        aria-label="Git branch"
-      >
-        {!hasGitBranchOptions ? (
-          <option value="">{isLoadingGitStatus || isLoadingGitHistory ? 'Loading branches...' : 'No branches'}</option>
-        ) : null}
-        {orderedGitBranchOptions.recent.length > 0 ? (
-          <optgroup label="Recent">
-            {orderedGitBranchOptions.recent.map((branch) => (
-              <option key={`recent:${branch.name}`} value={branch.name}>
-                {branch.current ? `✓ ${branch.name}` : branch.name}
-              </option>
-            ))}
-          </optgroup>
-        ) : null}
-        {orderedGitBranchOptions.alphabetical.length > 0 ? (
-          <optgroup label="All branches">
-            {orderedGitBranchOptions.alphabetical.map((branch) => (
-              <option key={`all:${branch.name}`} value={branch.name}>
-                {branch.current ? `✓ ${branch.name}` : branch.name}
-              </option>
-            ))}
-          </optgroup>
-        ) : null}
-      </select>
-    </label>
+    <GitBranchSelector
+      groups={orderedGitBranchOptions}
+      value={selectedGitBranchName}
+      disabled={isCheckingOutBranch || isLoadingGitHistory || !hasGitBranchOptions}
+      loading={isBranchSelectorLoading}
+      hasOptions={hasGitBranchOptions}
+      placeholder={isLoadingGitStatus || isLoadingGitHistory ? 'Loading branches...' : 'No branches'}
+      onChange={(branchName) => void handleGitBranchChange(branchName)}
+    />
   ) : null;
   const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
   const branchChangesTitle = branchChangesAvailable && gitCurrentBranch && branchChangesBaseBranch
@@ -4220,20 +4460,6 @@ function ProjectView() {
             ) : null}
           </div>
         ) : null}
-        <div className="project-header-actions">
-          {!project.is_system && (
-            <button
-              type="button"
-              className="project-delete-btn"
-              onClick={handleDeleteProject}
-              disabled={isDeletingProject}
-              title="Delete project"
-              aria-label={`Delete project ${project.name}`}
-            >
-              {isDeletingProject ? 'Deleting...' : 'Delete Project'}
-            </button>
-          )}
-        </div>
       </div>
 
       {error ? (
@@ -4708,6 +4934,27 @@ function ProjectView() {
                 <div className="project-settings-actions">
                   <button type="button" className="settings-save-btn" onClick={() => void handleSaveMeetingSettings()} disabled={isSavingMeetingSettings}>
                     {isSavingMeetingSettings ? 'Saving...' : 'Save meeting settings'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {!project.is_system ? (
+              <div className="project-settings-panel project-danger-zone">
+                <h2>Danger Zone</h2>
+                <p className="project-settings-description">
+                  Delete this project and all associated sessions. This action cannot be undone.
+                </p>
+                <div className="project-settings-actions">
+                  <button
+                    type="button"
+                    className="settings-remove-btn"
+                    onClick={handleDeleteProject}
+                    disabled={isDeletingProject}
+                    title="Delete project"
+                    aria-label={`Delete project ${project.name}`}
+                  >
+                    {isDeletingProject ? 'Deleting...' : 'Delete Project'}
                   </button>
                 </div>
               </div>
