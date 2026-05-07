@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import ChatInput from './ChatInput';
+import ChatInput from './components/chat/ChatInput';
 import {
   createSession,
   deleteSession,
@@ -15,8 +15,8 @@ import {
   type ProviderConfig,
   type Session,
 } from './api';
-import { EmptyState, EmptyStateTitle, EmptyStateHint } from './EmptyState';
-import { TaskProgressModal } from './TaskProgressModal';
+import { EmptyState, EmptyStateTitle, EmptyStateHint } from './components/common/EmptyState';
+import { TaskProgressModal } from './components/chat/TaskProgressModal';
 
 const LAST_PROVIDER_STORAGE_KEY = 'a2gent.sessions.lastProvider';
 

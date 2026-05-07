@@ -1,32 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import Sidebar from './Sidebar';
-import JobsList from './JobsList';
-import JobEdit from './JobEdit';
-import JobDetail from './JobDetail';
-import ChatView from './ChatView';
-import IntegrationsView from './IntegrationsView';
-import MCPServersView from './MCPServersView';
-import ProviderEditView from './ProviderEditView';
-import ProvidersView from './ProvidersView';
-import FallbackAggregateCreateView from './FallbackAggregateCreateView';
-import SettingsView from './SettingsView';
-import ProjectView from './ProjectView';
-import ThinkingView from './ThinkingView';
-import SkillsView from './SkillsView';
-import ToolsView from './ToolsView';
-import SubAgentsView from './SubAgentsView';
-import NotificationsView from './NotificationsView';
-import A2ARegistryView from './A2ARegistryView';
-import A2ARegistrySettingsView from './A2ARegistrySettingsView';
-import A2AMyAgentView from './A2AMyAgentView';
-import A2AContactView from './A2AContactView';
-import A2ALocalAgentsView from './A2ALocalAgentsView';
-import A2ACreateLocalAgentView from './A2ACreateLocalAgentView';
-import A2ACreateBatchAgentsView from './A2ACreateBatchAgentsView';
-import WorkflowsView from './WorkflowsView';
-import WorkflowEditView from './WorkflowEditView';
+import Sidebar from './components/layout/Sidebar';
+import JobsList from './pages/jobs/JobsList';
+import JobEdit from './pages/jobs/JobEdit';
+import JobDetail from './pages/jobs/JobDetail';
+import ChatView from './pages/chat/ChatView';
+import IntegrationsView from './pages/integrations/IntegrationsView';
+import MCPServersView from './pages/settings/MCPServersView';
+import ProviderEditView from './pages/providers/ProviderEditView';
+import ProvidersView from './pages/providers/ProvidersView';
+import FallbackAggregateCreateView from './pages/providers/FallbackAggregateCreateView';
+import SettingsView from './pages/settings/SettingsView';
+import ProjectView from './pages/projects/ProjectView';
+import ThinkingView from './pages/thinking/ThinkingView';
+import SkillsView from './pages/skills/SkillsView';
+import ToolsView from './pages/tools/ToolsView';
+import SubAgentsView from './pages/agents/SubAgentsView';
+import NotificationsView from './pages/notifications/NotificationsView';
+import A2ARegistryView from './pages/a2a/A2ARegistryView';
+import A2ARegistrySettingsView from './pages/a2a/A2ARegistrySettingsView';
+import A2AMyAgentView from './pages/a2a/A2AMyAgentView';
+import A2AContactView from './pages/a2a/A2AContactView';
+import A2ALocalAgentsView from './pages/a2a/A2ALocalAgentsView';
+import A2ACreateLocalAgentView from './pages/a2a/A2ACreateLocalAgentView';
+import A2ACreateBatchAgentsView from './pages/a2a/A2ACreateBatchAgentsView';
+import WorkflowsView from './pages/workflows/WorkflowsView';
+import WorkflowEditView from './pages/workflows/WorkflowEditView';
 import {
   addApiBaseUrlToHistory,
   buildImageAssetUrl,
@@ -40,13 +40,13 @@ import {
   setApiBaseUrl,
   setParentApiBaseUrl,
 } from './api';
-import { THINKING_PROJECT_ID } from './thinking';
-import { SYSTEM_PROJECT_KB_ID, SYSTEM_PROJECT_AGENT_ID } from './Sidebar';
-import { readWebAppNotification } from './toolResultEvents';
-import { webAppNotificationEventName, type WebAppNotificationEventDetail } from './webappNotifications';
-import { AvatarAudioProvider } from './AvatarAudioProvider';
-import { useAvatarAudio } from './avatarAudio';
-import GlobalAvatarVoiceSession from './GlobalAvatarVoiceSession';
+import { THINKING_PROJECT_ID } from './lib/thinking';
+import { SYSTEM_PROJECT_KB_ID, SYSTEM_PROJECT_AGENT_ID } from './components/layout/Sidebar';
+import { readWebAppNotification } from './lib/toolResultEvents';
+import { webAppNotificationEventName, type WebAppNotificationEventDetail } from './lib/webappNotifications';
+import { AvatarAudioProvider } from './components/avatar/AvatarAudioProvider';
+import { useAvatarAudio } from './lib/avatarAudio';
+import GlobalAvatarVoiceSession from './components/avatar/GlobalAvatarVoiceSession';
 import './App.css';
 
 const MOBILE_BREAKPOINT = 900;

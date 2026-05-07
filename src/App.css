@@ -8104,7 +8104,14 @@ input[type="checkbox"]:disabled {
   box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.2);
 }
 
+.project-commit-files-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .project-commit-files {
+  flex: 1;
   max-height: none;
   overflow: auto;
   border: 1px solid #2c3443;
