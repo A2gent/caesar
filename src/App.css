@@ -5020,6 +5020,33 @@ body.mind-resizing * {
   font-size: 14px;
 }
 
+.settings-grid-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ddd;
+  font-size: 14px;
+}
+
+.settings-checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #646cff;
+}
+
+@media (max-width: 720px) {
+  .settings-grid-two {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-field-label-row {
   display: flex;
   justify-content: space-between;

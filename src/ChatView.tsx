@@ -19,6 +19,8 @@ import {
   answerQuestion,
   createSession,
   listSubAgents,
+  attachToolCallsToCurrentAssistant,
+  mergeStreamMessage,
   type LLMProviderType,
   type ProviderConfig,
   type SubAgent,
@@ -273,7 +275,10 @@ function normalizeFailureReason(raw: string): string {
     lower.includes('dial tcp') ||
     lower.includes('timeout') ||
     lower.includes('failed to connect') ||
-    lower.includes('request failed')
+    lower.includes('request failed') ||
+    lower.includes('stream error') ||
+    lower.includes('internal_error') ||
+    lower.includes('received from peer')
   ) {
     return `Provider is unreachable: ${cleaned}`;
   }
@@ -471,7 +476,10 @@ function classifyProviderFailureReason(reason: string): 'billing' | 'auth' | 'ra
     text.includes('no such host') ||
     text.includes('connection reset') ||
     text.includes('broken pipe') ||
-    text.includes('tls')
+    text.includes('tls') ||
+    text.includes('stream error') ||
+    text.includes('internal_error') ||
+    text.includes('received from peer')
   ) {
     return 'network';
   }
@@ -928,15 +936,16 @@ function ChatView() {
     }
 
     if (event.type === 'tool_executing') {
-      // Tool calls are now being executed - update messages with tool calls
-      // The actual tool call data is in the event, but we'll wait for tool_completed
-      // to get the full updated messages including results
+      setMessages(prev => attachToolCallsToCurrentAssistant(prev, event.tool_calls || [], event.message));
       return;
     }
 
     if (event.type === 'tool_completed') {
-      // Update messages with tool calls and results
-      setMessages(event.messages);
+      if (event.messages) {
+        setMessages(event.messages);
+      } else {
+        setMessages(prev => mergeStreamMessage(prev, event.message));
+      }
       setSession(prev => (prev && prev.id === targetSessionId ? { ...prev, status: event.status } : prev));
       return;
     }
@@ -1141,6 +1150,7 @@ function ChatView() {
   const isActiveRequest = Boolean(session && activeRequestSessionId === session.id);
   const showStopButton = Boolean(session && (isActiveRequest || isCancelableSessionStatus(session.status)));
   const inputDisabled = isLoading && !session;
+  const isInitialSessionLoad = Boolean(activeSessionId && isLoading && !session);
   const linkedPromptForSelectedType = session ? linkedSessionDefaultPrompt(linkedSessionType, session) : '';
 
   const handleSelectLinkedType = (nextType: 'review' | 'continuation') => {
@@ -1197,6 +1207,9 @@ function ChatView() {
     if (pendingQuestion) {
       return 'Type your answer or select an option above...';
     }
+    if (isInitialSessionLoad) {
+      return 'Loading session...';
+    }
     if (!session) {
       return undefined;
     }
@@ -1205,7 +1218,7 @@ function ChatView() {
     }
     const modeLabel = linkedSessionType === 'review' ? 'review' : 'continuation';
     return `Start a new chat (${modeLabel} via ${selectedLinkedAgentName})...`;
-  }, [linkedSessionType, pendingQuestion, selectedLinkedAgentName, session, workflowState?.workflowName]);
+  }, [isInitialSessionLoad, linkedSessionType, pendingQuestion, selectedLinkedAgentName, session, workflowState?.workflowName]);
 
   const sessionSlashCommands = useMemo<SlashCommand[]>(() => {
     if (!session || pendingQuestion) {
@@ -1542,6 +1555,8 @@ function ChatView() {
               ) : null}
               </div>
             </>
+          ) : isInitialSessionLoad ? (
+            <span className="session-title">Loading session...</span>
           ) : (
             <span className="session-title">New Session</span>
           )}
@@ -1569,6 +1584,11 @@ function ChatView() {
             subAgents={subAgents}
           />
           </>
+        ) : isInitialSessionLoad ? (
+          <EmptyState>
+            <EmptyStateTitle>Loading session</EmptyStateTitle>
+            <EmptyStateHint>Fetching the latest transcript.</EmptyStateHint>
+          </EmptyState>
         ) : (
           <EmptyState>
             <EmptyStateTitle>Start a conversation</EmptyStateTitle>

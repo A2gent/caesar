@@ -19,6 +19,8 @@ import {
   renameMindEntry,
   saveMindFile,
   sendMessageStream,
+  attachToolCallsToCurrentAssistant,
+  mergeStreamMessage,
   type ChatStreamEvent,
   type LLMProviderType,
   type Message,
@@ -1051,6 +1053,26 @@ function MyMindView() {
     }
 
     if (event.type === 'status') {
+      setInlineSession((prev) => {
+        if (!prev || prev.id !== targetSessionId) {
+          return prev;
+        }
+        return { ...prev, status: event.status || prev.status };
+      });
+      return;
+    }
+
+    if (event.type === 'tool_executing') {
+      setInlineMessages((prev) => attachToolCallsToCurrentAssistant(prev, event.tool_calls || [], event.message));
+      return;
+    }
+
+    if (event.type === 'tool_completed') {
+      if (event.messages) {
+        setInlineMessages(event.messages);
+      } else {
+        setInlineMessages((prev) => mergeStreamMessage(prev, event.message));
+      }
       setInlineSession((prev) => {
         if (!prev || prev.id !== targetSessionId) {
           return prev;
