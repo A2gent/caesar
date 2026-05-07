@@ -2196,6 +2196,7 @@ export interface ProjectGitBranch {
   remote: boolean;
   ahead: number;
   behind: number;
+  updated_at?: string;
 }
 
 export interface ProjectGitHistoryCommit {
@@ -2422,6 +2423,21 @@ export async function pullProjectGit(projectID: string, repoPath = '', mergeStra
   );
   if (!response.ok) {
     throw await buildApiError(response, 'Failed to pull');
+  }
+  const data = await response.json() as { output?: string };
+  return (data.output || '').trim();
+}
+
+export async function checkoutProjectGitBranch(projectID: string, branch: string, repoPath = ''): Promise<string> {
+  const response = await fetch(`${getApiBaseUrl()}/projects/git/checkout?projectID=${encodeURIComponent(projectID)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ branch, repo_path: repoPath }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to checkout branch');
   }
   const data = await response.json() as { output?: string };
   return (data.output || '').trim();

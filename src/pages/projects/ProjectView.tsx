@@ -34,6 +34,7 @@ import {
   renameProjectEntry,
   saveProjectFile,
   searchProject,
+  checkoutProjectGitBranch,
   stageAllProjectGitFiles,
   stageProjectGitFile,
   startSession,
@@ -981,6 +982,8 @@ function ProjectView() {
   const [isInitializingGit, setIsInitializingGit] = useState(false);
   const [isGitInitDialogOpen, setIsGitInitDialogOpen] = useState(false);
   const [gitInitRemoteURL, setGitInitRemoteURL] = useState('');
+  const [selectedGitBranchName, setSelectedGitBranchName] = useState('');
+  const [isCheckingOutBranch, setIsCheckingOutBranch] = useState(false);
   const [gitHistoryBranches, setGitHistoryBranches] = useState<ProjectGitBranch[]>([]);
   const [gitHistoryCommits, setGitHistoryCommits] = useState<ProjectGitHistoryCommit[]>([]);
   const [isLoadingGitHistory, setIsLoadingGitHistory] = useState(false);
@@ -1100,6 +1103,8 @@ function ProjectView() {
     setCommitRepoLabel('');
     setCommitDialogFiles([]);
     setCommitMessage('');
+    setSelectedGitBranchName('');
+    setIsCheckingOutBranch(false);
     setSelectedCommitFilePath('');
     setSelectedCommitFileDiff('');
     setGitHistoryBranches([]);
@@ -1231,7 +1236,10 @@ function ProjectView() {
       const response = await getProjectGitHistory(projectId, targetRepoPath, 160);
       if (requestID !== gitHistoryRequestRef.current) return;
       const commits = response.commits || [];
-      setGitHistoryBranches(response.branches || []);
+      const branches = response.branches || [];
+      setGitHistoryBranches(branches);
+      const currentBranchName = branches.find((branch) => branch.current && !branch.remote)?.name || response.current_branch || '';
+      setSelectedGitBranchName(currentBranchName);
       setGitHistoryCommits(commits);
       setSelectedHistoryCommitHash((current) => {
         if (current && commits.some((commit) => commit.hash === current)) {
@@ -1263,6 +1271,11 @@ function ProjectView() {
   useEffect(() => {
     void loadGitStatus();
   }, [loadGitStatus]);
+
+  useEffect(() => {
+    if (!projectId || !rootFolder || !isGitRepo) return;
+    void loadGitHistory();
+  }, [projectId, rootFolder, isGitRepo, loadGitHistory]);
 
   const visibleDirectoryPaths = useMemo(() => {
     const visible: string[] = [];
@@ -2205,6 +2218,49 @@ function ProjectView() {
     }
   };
 
+  const refreshProjectTree = useCallback(() => {
+    setTreeEntries({});
+    setLoadingDirs(new Set());
+    if (rootFolder) {
+      void loadTree('');
+      Array.from(expandedDirs)
+        .filter((path) => path !== '')
+        .forEach((path) => void loadTree(path));
+    }
+  }, [expandedDirs, loadTree, rootFolder]);
+
+  const handleGitBranchChange = async (branchName: string) => {
+    if (!projectId || branchName.trim() === '' || branchName === selectedGitBranchName) return;
+    if (hasUnsavedChanges && !window.confirm('Switch branches? Unsaved file edits in the explorer will be discarded.')) {
+      return;
+    }
+    setIsCheckingOutBranch(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await checkoutProjectGitBranch(projectId, branchName, commitRepoPath);
+      setSelectedGitBranchName(branchName);
+      setSelectedFilePath('');
+      setSelectedFileContent('');
+      setSavedFileContent('');
+      setSourceSelectionRange(null);
+      writeStoredSelectedFile(projectId, '');
+      refreshProjectTree();
+      invalidateFolderGitStatusCache();
+      await loadGitStatus();
+      await loadGitHistory();
+      if (activeTab === 'changes') {
+        await refreshCommitDialogFiles();
+      }
+      setSuccess(`Switched to branch ${branchName}.`);
+    } catch (branchError) {
+      setError(branchError instanceof Error ? branchError.message : 'Failed to switch branch');
+      await loadGitHistory();
+    } finally {
+      setIsCheckingOutBranch(false);
+    }
+  };
+
   const openGitInitDialog = () => {
     if (!projectId) return;
     setGitInitRemoteURL('');
@@ -2634,10 +2690,68 @@ function ProjectView() {
     }
     return Array.from(found).sort();
   }, [treeEntries]);
+  const orderedGitBranchOptions = useMemo(() => {
+    const byName = new Map<string, ProjectGitBranch>();
+    for (const branch of gitHistoryBranches) {
+      if (!byName.has(branch.name)) {
+        byName.set(branch.name, branch);
+      }
+    }
+    const uniqueBranches = Array.from(byName.values());
+    const timestamp = (branch: ProjectGitBranch) => {
+      const time = branch.updated_at ? new Date(branch.updated_at).getTime() : 0;
+      return Number.isNaN(time) ? 0 : time;
+    };
+    const recent = [...uniqueBranches]
+      .sort((left, right) => timestamp(right) - timestamp(left) || left.name.localeCompare(right.name))
+      .slice(0, 3);
+    const recentNames = new Set(recent.map((branch) => branch.name));
+    const alphabetical = uniqueBranches
+      .filter((branch) => !recentNames.has(branch.name))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    return { recent, alphabetical };
+  }, [gitHistoryBranches]);
+  const hasGitBranchOptions = orderedGitBranchOptions.recent.length > 0 || orderedGitBranchOptions.alphabetical.length > 0;
+  const isBranchSelectorLoading = isLoadingGitStatus || isLoadingGitHistory || isCheckingOutBranch;
+  const gitBranchSelector = rootFolder && (isGitRepo || isLoadingGitStatus || isLoadingGitHistory || hasGitBranchOptions) ? (
+    <label className="project-branch-select-wrap" title="Switch Git branch">
+      <span>Branch</span>
+      <select
+        className={`project-branch-select${isBranchSelectorLoading ? ' project-branch-select-loading' : ''}`}
+        value={selectedGitBranchName}
+        onChange={(event) => void handleGitBranchChange(event.target.value)}
+        disabled={isCheckingOutBranch || isLoadingGitHistory || !hasGitBranchOptions}
+        aria-busy={isBranchSelectorLoading}
+        aria-label="Git branch"
+      >
+        {!hasGitBranchOptions ? (
+          <option value="">{isLoadingGitStatus || isLoadingGitHistory ? 'Loading branches...' : 'No branches'}</option>
+        ) : null}
+        {orderedGitBranchOptions.recent.length > 0 ? (
+          <optgroup label="Recent">
+            {orderedGitBranchOptions.recent.map((branch) => (
+              <option key={`recent:${branch.name}`} value={branch.name}>
+                {branch.current ? `✓ ${branch.name}` : branch.name}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+        {orderedGitBranchOptions.alphabetical.length > 0 ? (
+          <optgroup label="All branches">
+            {orderedGitBranchOptions.alphabetical.map((branch) => (
+              <option key={`all:${branch.name}`} value={branch.name}>
+                {branch.current ? `✓ ${branch.name}` : branch.name}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+      </select>
+    </label>
+  ) : null;
+  const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
   const activeTodoFilePath = isTodoFilePath(selectedFilePath)
     ? selectedFilePath
     : (knownTodoFilePaths[0] || '');
-  const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
   const currentGitBranch = useMemo(
     () => gitHistoryBranches.find((branch) => branch.current && !branch.remote) || null,
     [gitHistoryBranches],
@@ -3655,6 +3769,7 @@ function ProjectView() {
             ) : null}
           </h1>
         </div>
+        {gitBranchSelector}
         {rootFolder ? (
           <div className="project-header-search">
             <div className="project-search-input-wrap">

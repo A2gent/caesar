@@ -8046,6 +8046,43 @@ input[type="checkbox"]:disabled {
   align-items: center;
 }
 
+.project-branch-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #9aa7b8;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.project-branch-select {
+  min-width: 170px;
+  max-width: 260px;
+  border: 1px solid #3f4757;
+  border-radius: 8px;
+  background: #141922;
+  color: #e4eaf4;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 8px 10px;
+}
+
+.project-branch-select:focus {
+  outline: none;
+  border-color: #5b8cff;
+  box-shadow: 0 0 0 2px rgba(91, 140, 255, 0.2);
+}
+
+.project-branch-select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.project-branch-select-loading:disabled {
+  cursor: wait;
+}
+
 .project-commit-dialog {
   width: min(1240px, 96vw);
   max-height: min(88vh, 980px);
@@ -9192,6 +9229,11 @@ input[type="checkbox"]:disabled {
     flex-wrap: nowrap;
   }
 
+
+  .project-branch-select-wrap,
+  .project-branch-select {
+    width: 100%;
+  }
   .project-commit-message-row {
     flex-direction: column;
   }

@@ -5,6 +5,7 @@ import {
   getParentApiBaseUrl,
   getStoredAgentEndpoints,
   getSession,
+  getProjectGitStatus,
   listSessions,
   listProjects,
   createProject,
@@ -178,8 +179,12 @@ function buildChatSessionPath(sessionId: string): string {
   return `/chat/${encodeURIComponent(sessionId)}`;
 }
 
-function getProjectSubNavItems(projectId: string): ProjectSubNavItem[] {
-  return projectId === SYSTEM_PROJECT_KB_ID ? knowledgeBaseSubNavItems : projectSubNavItems;
+function getProjectSubNavItems(projectId: string, hasGit: boolean): ProjectSubNavItem[] {
+  const items = projectId === SYSTEM_PROJECT_KB_ID ? knowledgeBaseSubNavItems : projectSubNavItems;
+  if (hasGit) {
+    return items;
+  }
+  return items.filter((item) => item.id !== 'changes' && item.id !== 'history');
 }
 
 function normalizeProjectSubNavId(value: string | undefined): ProjectSubNavId {
@@ -276,6 +281,7 @@ function Sidebar({
   const [newProjectName, setNewProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [activeProjectIdFromSession, setActiveProjectIdFromSession] = useState<string | null>(null);
+  const [projectGitStatusById, setProjectGitStatusById] = useState<Record<string, boolean>>({});
   const [recentProjectSessions, setRecentProjectSessions] = useState<Session[]>([]);
   const activeProjectIdFromRoute = getProjectIdFromPath(location.pathname);
   const activeProjectId = activeProjectIdFromRoute || activeProjectIdFromSession;
@@ -388,6 +394,39 @@ function Sidebar({
     };
   }, [activeProjectId, location.pathname, refreshKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProjectGitStatuses = async () => {
+      const folderProjects = projects.filter((project) => (project.folder || '').trim() !== '');
+      if (folderProjects.length === 0) {
+        setProjectGitStatusById({});
+        return;
+      }
+
+      const entries = await Promise.all(
+        folderProjects.map(async (project): Promise<[string, boolean]> => {
+          try {
+            const status = await getProjectGitStatus(project.id);
+            return [project.id, Boolean(status.has_git)];
+          } catch (err) {
+            console.error(`Failed to load git status for project ${project.id}:`, err);
+            return [project.id, false];
+          }
+        }),
+      );
+
+      if (cancelled) return;
+      setProjectGitStatusById(Object.fromEntries(entries));
+    };
+
+    void loadProjectGitStatuses();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projects]);
+
   const handleAgentChange = async (nextUrl: string) => {
     if (nextUrl === '' || nextUrl === activeBaseUrl || isSwitchingAgent) {
       return;
@@ -475,7 +514,7 @@ function Sidebar({
     }
 
     const activeSubNavId = getActiveProjectSubNavId(location.pathname, projectId, activeProjectIdFromSession) || 'explorer';
-    const items = getProjectSubNavItems(projectId);
+    const items = getProjectSubNavItems(projectId, projectGitStatusById[projectId] === true);
 
     return (
       <ul className="nav-submenu project-subnav-list" aria-label={`${projectName} project views`}>
