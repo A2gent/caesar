@@ -15,6 +15,7 @@ import {
   listProviders,
   getProject,
   sendMessageStream,
+  injectSessionMessage,
   getPendingQuestion,
   answerQuestion,
   createSession,
@@ -1083,8 +1084,44 @@ function ChatView() {
     if (!session) {
       return;
     }
+
+    if (showStopButton && !pendingQuestion) {
+      await handleInjectSessionMessage(message, images);
+      return;
+    }
     
     await sendMessageWithStreaming(session.id, message, images);
+  };
+
+  const handleInjectSessionMessage = async (message: string, images: MessageImage[] = []) => {
+    if (!session) {
+      return;
+    }
+
+    try {
+      const injectedAt = new Date().toISOString();
+      const optimisticMessage: Message = {
+        role: 'user',
+        content: message,
+        images,
+        metadata: { injected_during_run: true },
+        timestamp: injectedAt,
+      };
+      updateMessagesForSession(session.id, (prev) => [...prev, optimisticMessage]);
+      const fresh = await injectSessionMessage(session.id, message, images);
+      if (!isViewingSession(session.id)) {
+        return;
+      }
+      setSession(fresh);
+      setMessages(fresh.messages || []);
+      setComposerValue('');
+      setError(null);
+    } catch (err) {
+      if (isViewingSession(session.id)) {
+        console.error('Failed to inject message:', err);
+        setError(err instanceof Error ? err.message : 'Failed to inject message');
+      }
+    }
   };
 
   const handleCancelSession = async () => {

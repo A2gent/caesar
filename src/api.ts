@@ -1429,6 +1429,21 @@ export async function sendMessage(sessionId: string, message: string, images: Me
   return response.json();
 }
 
+export async function injectSessionMessage(sessionId: string, message: string, images: MessageImage[] = []): Promise<Session> {
+  const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/inject`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message, images }),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, 'Failed to inject message');
+  }
+  const data = await response.json() as { session: Session };
+  return data.session;
+}
+
 export async function updateSessionProject(sessionId: string, projectId?: string): Promise<Session> {
   const response = await fetch(`${getApiBaseUrl()}/sessions/${sessionId}/project`, {
     method: 'PUT',

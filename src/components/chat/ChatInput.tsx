@@ -726,9 +726,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
         return;
       }
       event.preventDefault();
-      if (showStopButton) {
-        return;
-      }
       handleSend();
       return;
     }
@@ -907,6 +904,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
             )}
           </button>
         ) : null}
+        <button
+          type="button"
+          className="send-button"
+          onClick={handleSend}
+          disabled={disabled || !hasSendableContent}
+          title={showStopButton ? 'Add note to running session' : 'Send message'}
+          aria-label={showStopButton ? 'Add note to running session' : 'Send message'}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" className="send-icon" aria-hidden="true">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+          </svg>
+        </button>
         {showStopButton ? (
           <button
             type="button"
@@ -921,35 +930,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
             </svg>
           </button>
         ) : (
-          <>
-            {showQueueButton && (
-              <button
-                type="button"
-                className="queue-button"
-                onClick={handleQueue}
-                disabled={disabled || !hasSendableContent}
-                title="Queue for later (create without starting)"
-                aria-label="Queue for later"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="send-icon" aria-hidden="true">
-                  <rect x="6" y="4" width="4" height="16" fill="currentColor" />
-                  <rect x="14" y="4" width="4" height="16" fill="currentColor" />
-                </svg>
-              </button>
-            )}
+          showQueueButton && (
             <button
               type="button"
-              className="send-button"
-              onClick={handleSend}
+              className="queue-button"
+              onClick={handleQueue}
               disabled={disabled || !hasSendableContent}
-              title="Send message"
-              aria-label="Send message"
+              title="Queue for later (create without starting)"
+              aria-label="Queue for later"
             >
-              <svg viewBox="0 0 24 24" fill="currentColor" className="send-icon" aria-hidden="true">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="send-icon" aria-hidden="true">
+                <rect x="6" y="4" width="4" height="16" fill="currentColor" />
+                <rect x="14" y="4" width="4" height="16" fill="currentColor" />
               </svg>
             </button>
-          </>
+          )
         )}
       </div>
     </div>

@@ -730,11 +730,28 @@ function AppLayout() {
             key={notification.id}
             className={`toast-notification ${notification.id === newestNotificationID ? 'is-new' : ''}`}
             style={{ '--toast-index': index } as CSSProperties}
+            role={notification.sessionId ? 'button' : undefined}
+            tabIndex={notification.sessionId ? 0 : undefined}
+            title={notification.sessionId ? 'Open notification session' : undefined}
+            onClick={() => {
+              if (!notification.sessionId) return;
+              openNotificationSession(notification.sessionId);
+              dismissToast(notification.id);
+            }}
+            onKeyDown={(event) => {
+              if (!notification.sessionId || (event.key !== 'Enter' && event.key !== ' ')) return;
+              event.preventDefault();
+              openNotificationSession(notification.sessionId);
+              dismissToast(notification.id);
+            }}
           >
             <button
               type="button"
               className="toast-dismiss-btn"
-              onClick={() => dismissToast(notification.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                dismissToast(notification.id);
+              }}
               aria-label="Dismiss notification"
             >
               ×
@@ -742,9 +759,11 @@ function AppLayout() {
             <div className="toast-content">
               <div className="toast-title-row">
                 <strong className="toast-title">{notification.title}</strong>
-                <span className={`toast-status status-${notification.status}`}>
-                  {notification.status}
-                </span>
+                <span
+                  className={`toast-status status-${notification.status}`}
+                  aria-label={`Status: ${notification.status}`}
+                  title={notification.status}
+                />
               </div>
               {notification.message ? (
                 <div className="toast-message">{notification.message}</div>
@@ -757,29 +776,21 @@ function AppLayout() {
                   loading="lazy" 
                 />
               ) : null}
-              <div className="toast-actions">
-                {notification.sessionId ? (
-                  <button 
-                    type="button" 
-                    className="toast-action-btn"
-                    onClick={() => {
-                      openNotificationSession(notification.sessionId);
-                      dismissToast(notification.id);
-                    }}
-                  >
-                    Open
-                  </button>
-                ) : null}
-                {notification.audioClipId ? (
+              {notification.audioClipId ? (
+                <div className="toast-actions">
                   <button
                     type="button"
                     className="toast-action-btn"
-                    onClick={() => void playNotificationAudio(notification.id, notification.audioClipId || '')}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void playNotificationAudio(notification.id, notification.audioClipId || '');
+                    }}
+                    aria-label="Play notification audio"
                   >
                     ▶
                   </button>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </div>
           </div>
         ))}
