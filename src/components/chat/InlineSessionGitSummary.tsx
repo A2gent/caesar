@@ -6,6 +6,7 @@ import {
   generateProjectGitCommitMessage,
   getProjectGitFileDiff,
   getProjectGitStatus,
+  pushProjectGit,
   stageProjectGitFile,
   unstageProjectGitFile,
   type ProjectGitChangedFile,
@@ -71,14 +72,17 @@ export default function InlineSessionGitSummary(props: InlineSessionGitSummaryPr
   const [diffs, setDiffs] = useState<Record<string, FileDiffState>>({});
   const [commitMessage, setCommitMessage] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [commitError, setCommitError] = useState('');
   const [commitSuccess, setCommitSuccess] = useState('');
   const requestRef = useRef(0);
 
-  const canShow = useMemo(() => {
+  const canLoad = useMemo(() => {
     return Boolean(projectId && isTerminalSessionStatusValue(sessionStatus));
   }, [projectId, sessionStatus]);
+
+  const canShow = canLoad && (error !== '' || files.length > 0);
 
   const stagedCount = useMemo(() => files.filter((f) => f.staged).length, [files]);
 
@@ -102,10 +106,24 @@ export default function InlineSessionGitSummary(props: InlineSessionGitSummaryPr
   }, [projectId]);
 
   useEffect(() => {
-    if (expanded) {
+    if (canLoad) {
+      void loadStatus();
+    } else {
+      requestRef.current += 1;
+      setFiles([]);
+      setExpanded(false);
+      setLoading(false);
+      setError('');
+      setCommitError('');
+      setCommitSuccess('');
+    }
+  }, [canLoad, loadStatus]);
+
+  useEffect(() => {
+    if (expanded && canLoad) {
       void loadStatus();
     }
-  }, [expanded, loadStatus]);
+  }, [expanded, canLoad, loadStatus]);
 
   const toggleExpanded = useCallback(async () => {
     setExpanded((prev) => !prev);
@@ -173,10 +191,51 @@ export default function InlineSessionGitSummary(props: InlineSessionGitSummaryPr
       setOpenDiffs({});
       setDiffs({});
       await loadStatus();
+      window.dispatchEvent(new Event('a2gent:project-git-status-changed'));
     } catch (e) {
       setCommitError(e instanceof Error ? e.message : 'Failed to commit changes');
     } finally {
       setIsCommitting(false);
+    }
+  }, [projectId, commitMessage, loadStatus]);
+
+  const handleCommitAndPush = useCallback(async () => {
+    if (!projectId) return;
+    const message = commitMessage.trim();
+    if (!message) {
+      setCommitError('Commit message is required');
+      return;
+    }
+    setIsCommitting(true);
+    setIsPushing(true);
+    setCommitError('');
+    setCommitSuccess('');
+    try {
+      const result = await commitProjectGit(projectId, message);
+      await pushProjectGit(projectId);
+      setCommitSuccess(`Committed ${result.files_committed} file(s) and pushed: ${result.commit}`);
+      setCommitMessage('');
+      setOpenDiffs({});
+      setDiffs({});
+      await loadStatus();
+      window.dispatchEvent(new Event('a2gent:project-git-status-changed'));
+    } catch (e) {
+      const messageText = e instanceof Error ? e.message : 'Failed to commit and push changes';
+      if (messageText.toLowerCase().includes('no staged files to commit')) {
+        try {
+          const pushOutput = await pushProjectGit(projectId);
+          setCommitSuccess(pushOutput ? `No new commit. Push completed: ${pushOutput}` : 'No new commit. Push completed.');
+          await loadStatus();
+          window.dispatchEvent(new Event('a2gent:project-git-status-changed'));
+        } catch (pushError) {
+          setCommitError(pushError instanceof Error ? pushError.message : 'Failed to push changes');
+        }
+      } else {
+        setCommitError(messageText);
+      }
+    } finally {
+      setIsCommitting(false);
+      setIsPushing(false);
     }
   }, [projectId, commitMessage, loadStatus]);
 
@@ -264,11 +323,14 @@ export default function InlineSessionGitSummary(props: InlineSessionGitSummaryPr
               rows={2}
             />
             <div className="session-inline-git-commit-actions">
-              <button type="button" onClick={() => void handleSuggestMessage()} disabled={isSuggesting || isCommitting}>
+              <button type="button" onClick={() => void handleSuggestMessage()} disabled={isSuggesting || isCommitting || isPushing}>
                 {isSuggesting ? 'Suggesting…' : 'Suggest'}
               </button>
-              <button type="button" onClick={() => void handleCommit()} disabled={isCommitting || commitMessage.trim() === ''}>
-                {isCommitting ? 'Committing…' : 'Commit'}
+              <button type="button" onClick={() => void handleCommit()} disabled={isCommitting || isPushing || commitMessage.trim() === ''}>
+                {isCommitting && !isPushing ? 'Committing…' : 'Commit'}
+              </button>
+              <button type="button" onClick={() => void handleCommitAndPush()} disabled={isCommitting || isPushing || commitMessage.trim() === ''}>
+                {isCommitting && isPushing ? 'Committing & pushing…' : 'Commit & Push'}
               </button>
             </div>
             {commitError ? <p className="session-inline-git-error">{commitError}</p> : null}

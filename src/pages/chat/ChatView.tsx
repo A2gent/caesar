@@ -1591,14 +1591,6 @@ function ChatView() {
                   </div>
                 </div>
               ) : null}
-              {session.project_id ? (
-                <InlineSessionGitSummary
-                  projectId={session.project_id}
-                  sessionStatus={session.status}
-                  isWorkflowSession={Boolean(workflowState)}
-                  onOpenFile={(path) => navigate(`/projects/${session.project_id}?openFile=${encodeURIComponent(path)}`)}
-                />
-              ) : null}
               </div>
             </>
           ) : isInitialSessionLoad ? (
@@ -1650,6 +1642,15 @@ function ChatView() {
           selectedOption={composerValue}
         />
       )}
+
+      {session?.project_id ? (
+        <InlineSessionGitSummary
+          projectId={session.project_id}
+          sessionStatus={session.status}
+          isWorkflowSession={Boolean(workflowState)}
+          onOpenFile={(path) => navigate(`/projects/${session.project_id}?openFile=${encodeURIComponent(path)}`)}
+        />
+      ) : null}
       
       <ChatInput
         onSend={handleSendMessage}
