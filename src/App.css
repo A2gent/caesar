@@ -8068,6 +8068,22 @@ input[type="checkbox"]:disabled {
   color: #8ea0b8;
 }
 
+.project-commit-message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.project-commit-message-row .project-commit-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-suggest-message-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .project-commit-message {
   width: 100%;
   resize: vertical;
@@ -9169,9 +9185,18 @@ input[type="checkbox"]:disabled {
     flex-wrap: nowrap;
   }
 
+  .project-commit-message-row {
+    flex-direction: column;
+  }
+
+  .project-suggest-message-btn {
+    align-self: flex-end;
+  }
+
   .project-commit-content {
     grid-template-columns: 1fr;
     min-height: 0;
+  }
   }
 
   .project-history-panel {

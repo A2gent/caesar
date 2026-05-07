@@ -4176,30 +4176,24 @@ function ProjectView() {
               </EmptyState>
             ) : (
               <div className="project-git-panel">
-                <div className="project-git-heading">
-                  <h2>Git Changes</h2>
+                <div className="project-commit-message-row">
+                  <textarea
+                    className="project-commit-message"
+                    value={commitMessage}
+                    onChange={(event) => setCommitMessage(event.target.value)}
+                    placeholder="Commit message"
+                    rows={4}
+                    disabled={isCommitting || isPushing || isPulling}
+                  />
                   <button
                     type="button"
-                    className="settings-add-btn"
+                    className="settings-add-btn project-suggest-message-btn"
                     onClick={() => void handleGenerateCommitMessage()}
                     disabled={isCommitting || isPushing || isPulling || isGeneratingCommitMessage || commitDialogFiles.length === 0}
                   >
                     {isGeneratingCommitMessage ? 'Generating...' : 'Suggest message'}
                   </button>
                 </div>
-                <p className="project-commit-summary">
-                  {commitDialogFiles.length > 0
-                    ? `${commitDialogFiles.length} changed file(s), ${stagedCommitFilesCount} staged`
-                    : 'No changed files.'}
-                </p>
-                <textarea
-                  className="project-commit-message"
-                  value={commitMessage}
-                  onChange={(event) => setCommitMessage(event.target.value)}
-                  placeholder="Commit message"
-                  rows={4}
-                  disabled={isCommitting || isPushing || isPulling}
-                />
                 <div className="project-commit-content">
                   <div className="project-commit-files-column">
                     <div className="project-commit-files">
@@ -4253,6 +4247,11 @@ function ProjectView() {
                         ))
                       )}
                     </div>
+                    <p className="project-commit-summary">
+                      {commitDialogFiles.length > 0
+                        ? `${commitDialogFiles.length} changed file(s), ${stagedCommitFilesCount} staged`
+                        : 'No changed files.'}
+                    </p>
                     <div className="project-commit-controls">
                       <button
                         type="button"
