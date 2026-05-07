@@ -4176,8 +4176,17 @@ function ProjectView() {
               </EmptyState>
             ) : (
               <div className="project-git-panel">
-                <h2>Git Changes</h2>
-                {commitRepoLabel ? <p className="project-commit-target">Repository: {commitRepoLabel}</p> : null}
+                <div className="project-git-heading">
+                  <h2>Git Changes</h2>
+                  <button
+                    type="button"
+                    className="settings-add-btn"
+                    onClick={() => void handleGenerateCommitMessage()}
+                    disabled={isCommitting || isPushing || isPulling || isGeneratingCommitMessage || commitDialogFiles.length === 0}
+                  >
+                    {isGeneratingCommitMessage ? 'Generating...' : 'Suggest message'}
+                  </button>
+                </div>
                 <p className="project-commit-summary">
                   {commitDialogFiles.length > 0
                     ? `${commitDialogFiles.length} changed file(s), ${stagedCommitFilesCount} staged`
@@ -4191,41 +4200,13 @@ function ProjectView() {
                   rows={4}
                   disabled={isCommitting || isPushing || isPulling}
                 />
-                <div className="project-commit-controls">
-                  <button
-                    type="button"
-                    className="settings-add-btn"
-                    onClick={() => void handleGenerateCommitMessage()}
-                    disabled={isCommitting || isPushing || isPulling || isGeneratingCommitMessage || commitDialogFiles.length === 0}
-                  >
-                    {isGeneratingCommitMessage ? 'Generating...' : 'Suggest message'}
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-add-btn"
-                    onClick={() => void handleStageAllFiles()}
-                    disabled={isCommitting || isPushing || isPulling || isStagingAll || commitDialogFiles.filter((f) => !f.staged).length === 0}
-                  >
-                    {isStagingAll ? 'Adding...' : 'Add All'}
-                  </button>
-                  <button
-                    type="button"
-                    className="settings-add-btn"
-                    onClick={() => {
-                      void refreshCommitDialogFiles();
-                      void loadGitStatus();
-                    }}
-                    disabled={isLoadingGitStatus || isCommitting || isPushing || isPulling}
-                  >
-                    Refresh
-                  </button>
-                </div>
                 <div className="project-commit-content">
-                  <div className="project-commit-files">
-                    {commitDialogFiles.length === 0 ? (
-                      <div className="project-commit-empty">Working tree is clean.</div>
-                    ) : (
-                      commitDialogFiles.map((file) => (
+                  <div className="project-commit-files-column">
+                    <div className="project-commit-files">
+                      {commitDialogFiles.length === 0 ? (
+                        <div className="project-commit-empty">Working tree is clean.</div>
+                      ) : (
+                        commitDialogFiles.map((file) => (
                         <div
                           key={`${file.status}-${file.path}`}
                           className={`project-commit-file ${file.staged ? 'staged' : 'unstaged'} ${file.untracked ? 'untracked' : ''} ${selectedCommitFilePath === file.path ? 'selected' : ''}`}
@@ -4269,8 +4250,30 @@ function ProjectView() {
                             {gitDiscardPath === file.path ? 'Discarding...' : 'Discard'}
                           </button>
                         </div>
-                      ))
-                    )}
+                        ))
+                      )}
+                    </div>
+                    <div className="project-commit-controls">
+                      <button
+                        type="button"
+                        className="settings-add-btn"
+                        onClick={() => void handleStageAllFiles()}
+                        disabled={isCommitting || isPushing || isPulling || isStagingAll || commitDialogFiles.filter((f) => !f.staged).length === 0}
+                      >
+                        {isStagingAll ? 'Adding...' : 'Add All'}
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-add-btn"
+                        onClick={() => {
+                          void refreshCommitDialogFiles();
+                          void loadGitStatus();
+                        }}
+                        disabled={isLoadingGitStatus || isCommitting || isPushing || isPulling}
+                      >
+                        Refresh
+                      </button>
+                    </div>
                   </div>
                   <div className="project-commit-diff">
                     <div className="project-commit-diff-header">
