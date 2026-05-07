@@ -9197,7 +9197,6 @@ input[type="checkbox"]:disabled {
     grid-template-columns: 1fr;
     min-height: 0;
   }
-  }
 
   .project-history-panel {
     grid-template-columns: 1fr;

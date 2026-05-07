@@ -942,7 +942,7 @@ function ProjectView() {
   const navigate = useNavigate();
   const location = useLocation();
   const { projectId, projectTab } = useParams<{ projectId: string; projectTab?: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   
   // Project state
   const [project, setProject] = useState<Project | null>(null);
@@ -963,7 +963,7 @@ function ProjectView() {
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [isLoadingGitStatus, setIsLoadingGitStatus] = useState(false);
   const [commitRepoPath, setCommitRepoPath] = useState('');
-  const [commitRepoLabel, setCommitRepoLabel] = useState('');
+  const [, setCommitRepoLabel] = useState('');
   const [commitDialogFiles, setCommitDialogFiles] = useState<ProjectGitChangedFile[]>([]);
   const [commitMessage, setCommitMessage] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
@@ -1486,6 +1486,47 @@ function ProjectView() {
     }
   }, [selectedFilePath, projectId]);
 
+  // Keep the currently selected project file in the URL so refresh/deep links restore it.
+  useEffect(() => {
+    if (!projectId || !location.pathname.startsWith(`/projects/${encodeURIComponent(projectId)}`)) {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(location.search);
+    const currentFileParam = nextParams.get('file') || '';
+    const currentOpenFileParam = nextParams.get('openFile') || '';
+
+    // On initial deep-link loads, let the query-param opener consume the URL before
+    // syncing the empty initial selection back into it.
+    if (!selectedFilePath) {
+      const pendingQueryPath = currentOpenFileParam || currentFileParam;
+      if (pendingQueryPath && handledOpenFileQueryRef.current !== pendingQueryPath) {
+        return;
+      }
+    }
+
+    nextParams.delete('openFile');
+    if (selectedFilePath) {
+      nextParams.set('file', selectedFilePath);
+      handledOpenFileQueryRef.current = selectedFilePath;
+    } else {
+      nextParams.delete('file');
+    }
+
+    if (currentFileParam === selectedFilePath && currentOpenFileParam === '') {
+      return;
+    }
+
+    const nextSearch = nextParams.toString();
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : '',
+      },
+      { replace: true },
+    );
+  }, [location.pathname, location.search, navigate, projectId, selectedFilePath]);
+
   // Persist tree panel width
   useEffect(() => {
     localStorage.setItem(TREE_PANEL_WIDTH_STORAGE_KEY, String(treePanelWidth));
@@ -1786,6 +1827,11 @@ function ProjectView() {
   const openSearchResultFile = useCallback(async (path: string) => {
     const normalizedPath = normalizeMindPath(path);
     if (normalizedPath === '') return;
+    projectSearchRequestRef.current += 1;
+    setProjectSearchQuery('');
+    setProjectSearchResults(null);
+    setProjectSearchError(null);
+    setIsSearchingProject(false);
     await expandTreePath(normalizedPath);
     await openFile(normalizedPath);
   }, [expandTreePath, openFile]);
@@ -3029,14 +3075,17 @@ function ProjectView() {
     navigate(`/agent/jobs/new?prefillInstructionFile=${encodeURIComponent(selectedFileAbsolutePath)}`);
   };
 
-  // Handle openFile query param
+  // Handle file query params. `file` is the persistent deep-link param, while
+  // `openFile` is kept for older links from chat/tool results and is normalized to `file`.
   useEffect(() => {
     const requestedOpenPath = (searchParams.get('openFile') || '').trim();
-    if (requestedOpenPath === '' || !rootFolder) return;
-    if (handledOpenFileQueryRef.current === requestedOpenPath) return;
+    const requestedFilePath = (searchParams.get('file') || '').trim();
+    const requestedPath = requestedOpenPath || requestedFilePath;
+    if (requestedPath === '' || !rootFolder) return;
+    if (handledOpenFileQueryRef.current === requestedPath) return;
 
-    const relativePath = toMindRelativePath(rootFolder, requestedOpenPath);
-    handledOpenFileQueryRef.current = requestedOpenPath;
+    const relativePath = toMindRelativePath(rootFolder, requestedPath);
+    handledOpenFileQueryRef.current = requestedPath;
 
     if (relativePath === '') {
       setError('Requested file is outside of project folder.');
@@ -3047,14 +3096,10 @@ function ProjectView() {
       setActiveTab('explorer');
       await expandTreePath(relativePath);
       await openFile(relativePath);
-
-      const nextParams = new URLSearchParams(searchParams);
-      nextParams.delete('openFile');
-      setSearchParams(nextParams, { replace: true });
     };
 
     void openFromQuery();
-  }, [expandTreePath, openFile, rootFolder, searchParams, setActiveTab, setSearchParams]);
+  }, [expandTreePath, openFile, rootFolder, searchParams, setActiveTab]);
 
   // Handle markdown anchor scrolling
   useEffect(() => {
