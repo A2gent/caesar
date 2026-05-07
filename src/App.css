@@ -319,6 +319,110 @@ body.mind-resizing * {
   gap: 8px;
   margin-bottom: 10px;
 }
+.chat-context-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chat-context-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  border: 1px solid #4a4a4a;
+  border-radius: 999px;
+  background: #2f3545;
+  color: #e4e8ff;
+  padding: 7px 11px;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: help;
+  outline: none;
+}
+
+.chat-context-chip:hover,
+.chat-context-chip:focus-visible {
+  border-color: #7d95ff;
+  background: #36405c;
+}
+
+.chat-context-chip-icon {
+  flex-shrink: 0;
+}
+
+.chat-context-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-context-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.chat-context-remove:hover,
+.chat-context-remove:focus-visible {
+  background: rgba(255, 255, 255, 0.22);
+  outline: none;
+}
+
+.chat-context-preview {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 50;
+  display: none;
+  width: min(680px, calc(100vw - 48px));
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid #4b587a;
+  border-radius: 10px;
+  background: #151821;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  padding: 12px;
+  color: #e8e8e8;
+  text-align: left;
+}
+
+.chat-context-chip:hover .chat-context-preview,
+.chat-context-chip:focus-visible .chat-context-preview,
+.chat-context-chip:focus-within .chat-context-preview {
+  display: block;
+}
+
+.chat-context-preview-title {
+  margin-bottom: 8px;
+  color: #aebcff;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chat-context-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 .chat-image-chip {
   position: relative;
@@ -10560,6 +10664,39 @@ input[type="checkbox"]:disabled {
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+
+[data-theme='light'] .chat-context-remove {
+  background: rgba(38, 52, 95, 0.14);
+  color: #26345f;
+}
+
+[data-theme='light'] .chat-context-remove:hover,
+[data-theme='light'] .chat-context-remove:focus-visible {
+  background: rgba(38, 52, 95, 0.24);
+}
+}
+
+[data-theme='light'] .chat-context-chip {
+  background: #eef2ff;
+  color: #26345f;
+  border-color: #c9d3f4;
+}
+
+[data-theme='light'] .chat-context-chip:hover,
+[data-theme='light'] .chat-context-chip:focus-visible {
+  background: #e3e9ff;
+  border-color: #8fa3ec;
+}
+
+[data-theme='light'] .chat-context-preview {
+  background: #ffffff;
+  color: var(--app-text-1);
+  border-color: #c9d3f4;
+  box-shadow: 0 18px 40px rgba(25, 35, 70, 0.18);
+}
+
+[data-theme='light'] .chat-context-preview-title {
+  color: #4257b2;
 }
 
 /* Make provider chip look clickable */

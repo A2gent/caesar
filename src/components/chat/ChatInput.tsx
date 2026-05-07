@@ -25,6 +25,9 @@ interface ChatInputProps {
   showVoiceButton?: boolean;
   slashCommands?: SlashCommand[];
   onSlashCommand?: (command: SlashCommandSelection) => boolean | Promise<boolean>;
+  appendContext?: string;
+  appendContextLabel?: string;
+  onClearAppendContext?: () => void;
 }
 
 export interface SlashCommand {
@@ -186,6 +189,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   showVoiceButton = true,
   slashCommands = [],
   onSlashCommand,
+  appendContext = '',
+  appendContextLabel = 'Context',
+  onClearAppendContext,
 }) => {
   const { setListening, clearListening } = useAvatarAudio();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -225,6 +231,23 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   const slashInput = useMemo(() => parseSlashInput(value), [value]);
   const slashQuery = slashInput?.command || '';
+  const trimmedAppendContext = appendContext.trim();
+  const hasAppendContext = trimmedAppendContext !== '';
+  const appendContextLineCount = hasAppendContext ? trimmedAppendContext.split('\n').length : 0;
+  const appendContextSummary = appendContextLineCount > 1
+    ? `${appendContextLabel} · ${appendContextLineCount} lines will be appended`
+    : `${appendContextLabel} will be appended`;
+  const hasSendableContent = Boolean(value.trim() || pendingImages.length > 0 || hasAppendContext);
+  const buildMessageWithAppendContext = useCallback((message: string) => {
+    if (!trimmedAppendContext) {
+      return message;
+    }
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      return trimmedAppendContext;
+    }
+    return `${trimmedMessage}\n\n---\n\n${trimmedAppendContext}`;
+  }, [trimmedAppendContext]);
   const slashSuggestions = useMemo(() => {
     if (!value.trimStart().startsWith('/')) {
       return [] as SlashCommand[];
@@ -521,8 +544,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
         if (handled) {
           return;
         }
-        const messageToSend = value.trim();
-        if ((messageToSend || pendingImages.length > 0) && onSend) {
+        const messageToSend = buildMessageWithAppendContext(value);
+        if (hasSendableContent && onSend) {
           onSend(messageToSend, pendingImages);
           setValue('');
           setPendingImages([]);
@@ -531,7 +554,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       .catch((error) => {
         console.error('Failed to execute slash command:', error);
       });
-  }, [disabled, executeSlashIfNeeded, onSend, pendingImages, setValue, value]);
+  }, [buildMessageWithAppendContext, disabled, executeSlashIfNeeded, hasSendableContent, onSend, pendingImages, setValue, value]);
 
   const handleQueue = useCallback(() => {
     if (disabled) return;
@@ -540,13 +563,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       alert('Slash commands are immediate actions and cannot be queued.');
       return;
     }
-    const messageToSend = value.trim();
-    if ((messageToSend || pendingImages.length > 0) && onQueue) {
+    const messageToSend = buildMessageWithAppendContext(value);
+    if (hasSendableContent && onQueue) {
       onQueue(messageToSend, pendingImages);
       setValue('');
       setPendingImages([]);
     }
-  }, [disabled, onQueue, pendingImages, setValue, value]);
+  }, [buildMessageWithAppendContext, disabled, hasSendableContent, onQueue, pendingImages, setValue, value]);
 
   const startRecording = useCallback(async () => {
     if (disabled || isRecording || isTranscribing) {
@@ -759,6 +782,29 @@ const ChatInput: React.FC<ChatInputProps> = ({
           ))}
         </div>
       ) : null}
+      {hasAppendContext ? (
+        <div className="chat-context-strip">
+          <div className="chat-context-chip" tabIndex={0} aria-label={appendContextSummary}>
+            <span className="chat-context-chip-icon" aria-hidden="true">📎</span>
+            <span className="chat-context-chip-label">{appendContextSummary}</span>
+            {onClearAppendContext ? (
+              <button
+                type="button"
+                className="chat-context-remove"
+                onClick={onClearAppendContext}
+                aria-label="Remove appended context"
+                title="Remove appended context"
+              >
+                ×
+              </button>
+            ) : null}
+            <div className="chat-context-preview" role="tooltip">
+              <div className="chat-context-preview-title">Appended context</div>
+              <pre>{trimmedAppendContext}</pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {(isRecording || isTranscribing) && (
         <div className="voice-live-panel" aria-live="polite">
           {isRecording ? (
@@ -881,7 +927,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 type="button"
                 className="queue-button"
                 onClick={handleQueue}
-                disabled={disabled || (!value.trim() && pendingImages.length === 0)}
+                disabled={disabled || !hasSendableContent}
                 title="Queue for later (create without starting)"
                 aria-label="Queue for later"
               >
@@ -895,7 +941,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               type="button"
               className="send-button"
               onClick={handleSend}
-              disabled={disabled || (!value.trim() && pendingImages.length === 0)}
+              disabled={disabled || !hasSendableContent}
               title="Send message"
               aria-label="Send message"
             >

@@ -1472,6 +1472,7 @@ function ProjectView() {
   // File session context state
   const [sessionComposerMessage, setSessionComposerMessage] = useState('');
   const [sessionTargetLabel, setSessionTargetLabel] = useState('');
+  const [sessionAppendContext, setSessionAppendContext] = useState('');
   const [agentInstructionFilePaths, setAgentInstructionFilePaths] = useState<Set<string>>(new Set());
   const [isAddingAgentInstructionFile, setIsAddingAgentInstructionFile] = useState(false);
   const [isFileActionsMenuOpen, setIsFileActionsMenuOpen] = useState(false);
@@ -2126,6 +2127,7 @@ function ProjectView() {
 
       if (target.kind === 'external') {
         setSessionTargetLabel('');
+        setSessionAppendContext('');
         navigate(`/a2a/contact/${encodeURIComponent(target.externalAgentId)}`, {
           state: {
             agent: {
@@ -2155,6 +2157,7 @@ function ProjectView() {
       });
 
       setSessionTargetLabel('');
+      setSessionAppendContext('');
 
       handleSelectSession(created.id, message, images);
     } catch (err) {
@@ -2194,6 +2197,7 @@ function ProjectView() {
       });
       
       setSessionTargetLabel('');
+      setSessionAppendContext('');
 
       await loadSessions();
     } catch (err) {
@@ -3112,7 +3116,7 @@ function ProjectView() {
     const normalizedPath = normalizeMindPath(path);
     const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, normalizedPath) : normalizedPath;
     let label = type === 'folder' ? `folder "${normalizedPath || 'root'}"` : `file "${normalizedPath}"`;
-    let composerMessage = `${buildMindSessionContext(type, fullPath)}\n`;
+    let appendContext = buildMindSessionContext(type, fullPath);
 
     if (
       type === 'file'
@@ -3126,12 +3130,12 @@ function ProjectView() {
         : null;
       if (selectedCodeContext) {
         label = `selection in "${normalizedPath}"`;
-        composerMessage = `${selectedCodeContext}\n`;
+        appendContext = selectedCodeContext;
       }
     }
 
     setSessionTargetLabel(label);
-    setSessionComposerMessage(composerMessage);
+    setSessionAppendContext(appendContext);
     
     // Scroll to the sessions form
     setTimeout(() => {
@@ -5400,6 +5404,12 @@ function ProjectView() {
               showQueueButton={true}
               value={sessionComposerMessage}
               onValueChange={setSessionComposerMessage}
+              appendContext={sessionAppendContext}
+              appendContextLabel={sessionTargetLabel ? `Context: ${sessionTargetLabel}` : 'Context'}
+              onClearAppendContext={() => {
+                setSessionAppendContext('');
+                setSessionTargetLabel('');
+              }}
               placeholder={sessionTargetLabel
                 ? `Describe the task for ${sessionTargetLabel}...`
                 : 'Start a new chat...'}
