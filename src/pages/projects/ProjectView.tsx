@@ -26,6 +26,10 @@ import {
   initializeProjectGit,
   getSession,
   getSettings,
+  sendMessageStream,
+  cancelSessionRun,
+  attachToolCallsToCurrentAssistant,
+  mergeStreamMessage,
   listProjectTree,
   listProviders,
   listSessions,
@@ -44,6 +48,8 @@ import {
   updateProject,
   type LLMProviderType,
   type MessageImage,
+  type Message,
+  type ChatStreamEvent,
   type ProjectContentMatch,
   type ProjectFileNameMatch,
   type MindTreeEntry,
@@ -55,7 +61,7 @@ import {
   type ProjectSearchResponse,
   type Session,
 } from '../../api';
-import ChatInput from '../../components/chat/ChatInput';
+import SessionCreationPanel from '../../components/chat/SessionCreationPanel';
 import MeetingsView from './MeetingsView';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from '../../components/common/EmptyState';
 import ProjectSourceEditor from '../../components/projects/ProjectSourceEditor';
@@ -129,6 +135,7 @@ type DraggedTodoTask = {
   task: TodoTask;
   sourceColumnId: string;
 };
+type SessionComposerMode = 'navigate' | 'inline';
 
 const GIT_HISTORY_COLORS = ['#5b8cff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#e879f9', '#f97316'];
 const MEETING_AUDIO_FOLDER_KEY = 'A2GENT_MEETINGS_AUDIO_FOLDER';
@@ -1466,6 +1473,11 @@ function ProjectView() {
   const [editingTodoTaskID, setEditingTodoTaskID] = useState<string | null>(null);
   const [editingTodoTaskText, setEditingTodoTaskText] = useState('');
   const [pendingAnchor, setPendingAnchor] = useState('');
+  const [sessionComposerMode, setSessionComposerMode] = useState<SessionComposerMode>('navigate');
+  const [inlineSession, setInlineSession] = useState<Session | null>(null);
+  const [inlineMessages, setInlineMessages] = useState<Message[]>([]);
+  const [isInlineSessionLoading, setIsInlineSessionLoading] = useState(false);
+  const activeInlineStreamAbortRef = useRef<AbortController | null>(null);
   const [treePanelWidth, setTreePanelWidth] = useState(readStoredTreePanelWidth);
   const treeResizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -2114,6 +2126,123 @@ function ProjectView() {
     }
   };
 
+  const handleProjectInlineStreamEvent = (event: ChatStreamEvent, targetSessionId: string) => {
+    if (event.type === 'assistant_delta') {
+      if (!event.delta) return;
+      setInlineMessages((prev) => {
+        const next = [...prev];
+        if (next.length === 0 || next[next.length - 1].role !== 'assistant') {
+          next.push({ role: 'assistant', content: event.delta, timestamp: new Date().toISOString() });
+          return next;
+        }
+        const last = next[next.length - 1];
+        next[next.length - 1] = { ...last, content: `${last.content}${event.delta}` };
+        return next;
+      });
+      return;
+    }
+
+    if (event.type === 'status') {
+      setInlineSession((prev) => (prev && prev.id === targetSessionId ? { ...prev, status: event.status || prev.status } : prev));
+      return;
+    }
+
+    if (event.type === 'tool_executing') {
+      setInlineMessages((prev) => attachToolCallsToCurrentAssistant(prev, event.tool_calls || [], event.message));
+      return;
+    }
+
+    if (event.type === 'tool_completed') {
+      if (event.messages) {
+        setInlineMessages(event.messages);
+      } else {
+        setInlineMessages((prev) => mergeStreamMessage(prev, event.message));
+      }
+      setInlineSession((prev) => (prev && prev.id === targetSessionId ? { ...prev, status: event.status || prev.status } : prev));
+      return;
+    }
+
+    if (event.type === 'done') {
+      setInlineMessages(event.messages || []);
+      setInlineSession((prev) => (prev && prev.id === targetSessionId ? { ...prev, status: event.status || prev.status } : prev));
+      setIsInlineSessionLoading(false);
+      void getSession(targetSessionId)
+        .then((fresh) => {
+          setInlineSession(fresh);
+          setInlineMessages(fresh.messages || event.messages || []);
+        })
+        .catch((refreshError) => {
+          console.error('Failed to refresh inline project session:', refreshError);
+        });
+      return;
+    }
+
+    if (event.type === 'error') {
+      setError(event.error || 'Failed to send message');
+      const nextStatus = typeof event.status === 'string' ? event.status.trim() : '';
+      if (nextStatus !== '') {
+        setInlineSession((prev) => (prev && prev.id === targetSessionId ? { ...prev, status: nextStatus } : prev));
+      }
+      setIsInlineSessionLoading(false);
+    }
+  };
+
+  const sendProjectInlineMessageWithStreaming = async (targetSessionId: string, message: string, images: MessageImage[] = []) => {
+    const trimmedMessage = message.trim();
+    if (trimmedMessage === '' && images.length === 0) return;
+
+    const now = new Date().toISOString();
+    setInlineMessages((prev) => [
+      ...prev,
+      { role: 'user', content: trimmedMessage, images, timestamp: now },
+      { role: 'assistant', content: '', timestamp: now },
+    ]);
+    setIsInlineSessionLoading(true);
+    setError(null);
+
+    const controller = new AbortController();
+    activeInlineStreamAbortRef.current = controller;
+
+    try {
+      for await (const event of sendMessageStream(targetSessionId, trimmedMessage, images, controller.signal)) {
+        handleProjectInlineStreamEvent(event, targetSessionId);
+      }
+    } catch (streamError) {
+      const isAbort = streamError instanceof DOMException && streamError.name === 'AbortError';
+      if (!isAbort) {
+        console.error('Failed to send inline project session message:', streamError);
+        setError(streamError instanceof Error ? streamError.message : 'Failed to send message');
+      }
+      setIsInlineSessionLoading(false);
+    } finally {
+      if (activeInlineStreamAbortRef.current === controller) {
+        activeInlineStreamAbortRef.current = null;
+      }
+    }
+  };
+
+  const handleSendProjectInlineMessage = async (message: string, images: MessageImage[] = []) => {
+    if (!inlineSession || isInlineSessionLoading) return;
+    await sendProjectInlineMessageWithStreaming(inlineSession.id, message, images);
+  };
+
+  const handleCancelProjectInlineSession = async () => {
+    if (!inlineSession) return;
+    activeInlineStreamAbortRef.current?.abort();
+    setIsInlineSessionLoading(false);
+
+    try {
+      await cancelSessionRun(inlineSession.id);
+      const fresh = await getSession(inlineSession.id);
+      setInlineSession(fresh);
+      setInlineMessages(fresh.messages || []);
+      setError('Request was canceled before completion.');
+    } catch (cancelError) {
+      console.error('Failed to cancel inline project session run:', cancelError);
+      setError(cancelError instanceof Error ? cancelError.message : 'Failed to cancel session run');
+    }
+  };
+
   const handleStartSession = async (message: string, images: MessageImage[] = []) => {
     setIsCreatingSession(true);
     setError(null);
@@ -2163,6 +2292,55 @@ function ProjectView() {
     } catch (err) {
       console.error('Failed to create session:', err);
       setError(err instanceof Error ? err.message : 'Failed to create session');
+    } finally {
+      setIsCreatingSession(false);
+    }
+  };
+
+  const handleStartSessionInline = async (message: string, images: MessageImage[] = []) => {
+    setIsCreatingSession(true);
+    setError(null);
+
+    try {
+      const workflow = selectedWorkflow;
+      if (!workflow) {
+        throw new Error('Select a workflow first.');
+      }
+      const target = resolveWorkflowLaunchTarget(workflow);
+      if (target.kind === 'external' || target.kind === 'local') {
+        throw new Error('Inline sessions currently support only Main/Sub-agent workflow targets.');
+      }
+      if (target.kind === 'none') {
+        throw new Error('This workflow has no launchable agent target.');
+      }
+
+      const created = await createSession({
+        agent_id: 'build',
+        provider: target.kind === 'main' ? (selectedProvider || undefined) : undefined,
+        sub_agent_id: target.kind === 'subagent' ? target.subAgentId : undefined,
+        project_id: projectId || undefined,
+        metadata: buildWorkflowSessionMetadata(workflow),
+      });
+      const now = new Date().toISOString();
+      setInlineSession({
+        id: created.id,
+        agent_id: 'build',
+        provider: target.kind === 'main' ? (selectedProvider || undefined) : undefined,
+        project_id: projectId || undefined,
+        title: 'Project Session',
+        status: 'running',
+        created_at: now,
+        updated_at: now,
+      });
+      setInlineMessages([]);
+      setSessionTargetLabel('');
+      setSessionAppendContext('');
+      await sendProjectInlineMessageWithStreaming(created.id, message, images);
+      await loadSessions();
+    } catch (err) {
+      console.error('Failed to create inline session:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create inline session');
+      setIsInlineSessionLoading(false);
     } finally {
       setIsCreatingSession(false);
     }
@@ -3112,6 +3290,21 @@ function ProjectView() {
   };
 
   // File session dialog handlers
+  const openSessionComposer = (label: string, appendContext: string, mode: SessionComposerMode = 'navigate') => {
+    setSessionTargetLabel(label);
+    setSessionAppendContext(appendContext);
+    setSessionComposerMode(mode);
+    setInlineSession(null);
+    setInlineMessages([]);
+    setIsInlineSessionLoading(false);
+    setTimeout(() => {
+      const sessionsComposer = document.querySelector('.project-sessions-composer');
+      if (sessionsComposer) {
+        sessionsComposer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+  };
+
   const openSessionDialogForPath = (type: 'folder' | 'file', path: string) => {
     const normalizedPath = normalizeMindPath(path);
     const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, normalizedPath) : normalizedPath;
@@ -3134,16 +3327,27 @@ function ProjectView() {
       }
     }
 
-    setSessionTargetLabel(label);
-    setSessionAppendContext(appendContext);
-    
-    // Scroll to the sessions form
-    setTimeout(() => {
-      const sessionsComposer = document.querySelector('.project-sessions-composer');
-      if (sessionsComposer) {
-        sessionsComposer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 100);
+    openSessionComposer(label, appendContext, 'navigate');
+  };
+
+  const openBranchFileSessionComposer = (mode: SessionComposerMode = 'inline') => {
+    if (!selectedBranchFilePath) return;
+    const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, selectedBranchFilePath) : selectedBranchFilePath;
+    const stats = selectedBranchFile
+      ? `${getBranchChangeLabel(selectedBranchFile)} · +${selectedBranchFile.additions} -${selectedBranchFile.deletions}`
+      : 'Changed file';
+    const contextLines = [
+      `Branch changes file: ${selectedBranchFilePath}`,
+      `Absolute path: ${fullPath}`,
+      gitCurrentBranch && branchChangesBaseBranch ? `Comparison: ${gitCurrentBranch} compared with ${branchChangesBaseBranch}` : '',
+      `Status: ${stats}`,
+      '',
+      'Diff:',
+      '```diff',
+      selectedBranchFileDiff || '(No diff loaded.)',
+      '```',
+    ].filter((line) => line !== '');
+    openSessionComposer(`branch changes for "${selectedBranchFilePath}"`, contextLines.join('\n'), mode);
   };
 
 
@@ -3289,6 +3493,10 @@ function ProjectView() {
       return null;
     }
   }, [selectedBranchFileDiff, selectedBranchFilePath]);
+  const selectedBranchFile = useMemo(
+    () => branchChangedFiles.find((file) => file.path === selectedBranchFilePath) || null,
+    [branchChangedFiles, selectedBranchFilePath],
+  );
   const selectedHistoryCommit = useMemo(
     () => gitHistoryCommits.find((commit) => commit.hash === selectedHistoryCommitHash) || null,
     [gitHistoryCommits, selectedHistoryCommitHash],
@@ -4172,7 +4380,7 @@ function ProjectView() {
   const firstSearchHitPath = fileNameSearchMatches[0]?.path || contentSearchMatches[0]?.path || '';
   const hasSearchHits = fileNameSearchMatches.length > 0 || contentSearchMatches.length > 0;
   const viewerPlaceholder = getProjectViewerPlaceholder(project);
-  const showSessionComposer = activeTab === 'explorer' || activeTab === 'sessions';
+  const showSessionComposer = activeTab === 'explorer' || activeTab === 'sessions' || sessionAppendContext.trim() !== '' || inlineSession !== null;
 
   const renderBranchChangedFileTreeNode = (node: BranchChangedFileTreeNode, depth = 0): ReactElement => {
     if (node.file) {
@@ -5193,7 +5401,18 @@ function ProjectView() {
                   </div>
                   <div className="project-commit-diff">
                     <div className="project-commit-diff-header">
-                      {selectedBranchFilePath || 'Select a file'}
+                      <span>{selectedBranchFilePath || 'Select a file'}</span>
+                      {selectedBranchFilePath ? (
+                        <button
+                          type="button"
+                          className="mind-create-session-btn"
+                          onClick={() => openBranchFileSessionComposer('inline')}
+                          disabled={isLoadingBranchFileDiff}
+                          title="Ask about this branch diff without leaving this view"
+                        >
+                          💭 Session
+                        </button>
+                      ) : null}
                     </div>
                     {isLoadingBranchFileDiff ? (
                       <div className="project-commit-diff-empty">Loading branch diff...</div>
@@ -5394,55 +5613,88 @@ function ProjectView() {
         ) : null}
 
         {showSessionComposer ? (
-          <div className="project-sessions-composer">
-            <ChatInput
-              onSend={handleStartSession}
-              onQueue={handleQueueSession}
-              disabled={isCreatingSession || isQueuingSession}
-              showVoiceButton={false}
-              autoFocus={!rootFolder}
-              showQueueButton={true}
-              value={sessionComposerMessage}
-              onValueChange={setSessionComposerMessage}
-              appendContext={sessionAppendContext}
-              appendContextLabel={sessionTargetLabel ? `Context: ${sessionTargetLabel}` : 'Context'}
-              onClearAppendContext={() => {
-                setSessionAppendContext('');
-                setSessionTargetLabel('');
-              }}
-              placeholder={sessionTargetLabel
-                ? `Describe the task for ${sessionTargetLabel}...`
-                : 'Start a new chat...'}
-              actionControls={
-                <div className="sessions-new-chat-controls">
-                  <label className="chat-provider-select">
-                    <select
-                      value={selectedWorkflowId}
-                      onChange={(event) => {
-                        const nextId = event.target.value;
-                        setSelectedWorkflowId(nextId);
-                        if (projectId) {
-                          try {
-                            localStorage.setItem(SELECTED_WORKFLOW_STORAGE_KEY_PREFIX + projectId, nextId);
-                          } catch {
-                            // Ignore local storage failures.
-                          }
+          <SessionCreationPanel
+            className="project-sessions-composer"
+            onSend={sessionComposerMode === 'inline' ? handleStartSessionInline : handleStartSession}
+            onQueue={sessionComposerMode === 'inline' ? undefined : handleQueueSession}
+            disabled={isCreatingSession || isQueuingSession || isInlineSessionLoading}
+            autoFocus={!rootFolder || sessionAppendContext.trim() !== ''}
+            showQueueButton={sessionComposerMode !== 'inline'}
+            showVoiceButton={false}
+            composerValue={sessionComposerMessage}
+            onComposerValueChange={setSessionComposerMessage}
+            appendContext={sessionAppendContext}
+            appendContextLabel={sessionTargetLabel ? `Context: ${sessionTargetLabel}` : 'Context'}
+            targetLabel={sessionTargetLabel}
+            onClearAppendContext={() => {
+              setSessionAppendContext('');
+              setSessionTargetLabel('');
+            }}
+            onClose={activeTab === 'explorer' || activeTab === 'sessions' ? undefined : () => {
+              activeInlineStreamAbortRef.current?.abort();
+              setInlineSession(null);
+              setInlineMessages([]);
+              setIsInlineSessionLoading(false);
+              setSessionAppendContext('');
+              setSessionTargetLabel('');
+            }}
+            inlineSession={inlineSession}
+            inlineMessages={inlineMessages}
+            inlineLoading={isInlineSessionLoading}
+            inlineProjectId={projectId || null}
+            onInlineSend={(message, images) => void handleSendProjectInlineMessage(message, images)}
+            onInlineStop={() => void handleCancelProjectInlineSession()}
+            onOpenInlineSession={inlineSession ? () => handleSelectSession(inlineSession.id) : undefined}
+            onNewInlineSession={inlineSession ? () => {
+              activeInlineStreamAbortRef.current?.abort();
+              setInlineSession(null);
+              setInlineMessages([]);
+              setIsInlineSessionLoading(false);
+            } : undefined}
+            placeholder={sessionTargetLabel
+              ? `Describe the task for ${sessionTargetLabel}...`
+              : 'Start a new chat...'}
+            actionControls={
+              <div className="sessions-new-chat-controls">
+                <label className="chat-provider-select">
+                  <select
+                    value={selectedWorkflowId}
+                    onChange={(event) => {
+                      const nextId = event.target.value;
+                      setSelectedWorkflowId(nextId);
+                      if (projectId) {
+                        try {
+                          localStorage.setItem(SELECTED_WORKFLOW_STORAGE_KEY_PREFIX + projectId, nextId);
+                        } catch {
+                          // Ignore local storage failures.
                         }
-                      }}
-                      title="Workflow"
-                      aria-label="Workflow"
-                    >
-                      {workflowOptions.map((workflow) => (
-                        <option key={workflow.id} value={workflow.id}>
-                          {workflow.name}{workflow.builtIn ? ' (Built-in)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              }
-            />
-          </div>
+                      }
+                    }}
+                    title="Workflow"
+                    aria-label="Workflow"
+                  >
+                    {workflowOptions.map((workflow) => (
+                      <option key={workflow.id} value={workflow.id}>
+                        {workflow.name}{workflow.builtIn ? ' (Built-in)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="chat-provider-select">
+                  <select
+                    value={sessionComposerMode}
+                    onChange={(event) => setSessionComposerMode(event.target.value as SessionComposerMode)}
+                    title="Open mode"
+                    aria-label="Open mode"
+                    disabled={Boolean(inlineSession)}
+                  >
+                    <option value="navigate">Open full chat</option>
+                    <option value="inline">Ask inline</option>
+                  </select>
+                </label>
+              </div>
+            }
+          />
         ) : null}
       </div>
 

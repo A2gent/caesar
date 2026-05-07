@@ -7792,6 +7792,55 @@ input[type="checkbox"]:disabled {
   flex: 1;
 }
 
+.session-creation-panel.with-inline-session {
+  min-height: 220px;
+}
+
+.session-creation-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.session-creation-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #efefef;
+}
+
+.session-creation-inline-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.session-creation-inline-body {
+  border: 1px solid #353535;
+  border-radius: 8px;
+  background: #191919;
+  padding: 10px;
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.session-creation-inline-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  flex: 1;
+}
+
+.session-creation-panel.with-inline-session .chat-input-container {
+  max-width: none;
+  padding: 0;
+  border-top: none;
+  background: transparent;
+}
+
 /* Thinking */
 .thinking-content {
   max-width: 860px;
@@ -9363,6 +9412,21 @@ input[type="checkbox"]:disabled {
   font-size: 11px;
   width: 16px;
   text-align: center;
+}
+
+.project-sessions-composer.with-inline-session {
+  min-height: 260px;
+  max-height: 48vh;
+}
+
+.project-sessions-composer .session-creation-panel-header {
+  padding: 0 2px;
+}
+
+.project-commit-diff-header .mind-create-session-btn {
+  margin-left: auto;
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .project-sessions-title {
