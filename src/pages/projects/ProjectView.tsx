@@ -5523,8 +5523,8 @@ function ProjectView() {
                     </div>
                   </div>
                   <div className="project-commit-diff">
-                    <div className="project-commit-diff-header">
-                      <span>{selectedBranchFilePath || 'Select a file'}</span>
+                    <div className="project-commit-diff-header project-branch-diff-header">
+                      <span className="project-branch-diff-file-name">{selectedBranchFilePath || 'Select a file'}</span>
                       {selectedBranchFilePath ? (
                         <button
                           type="button"

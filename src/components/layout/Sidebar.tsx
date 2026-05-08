@@ -396,7 +396,11 @@ function Sidebar({
         if (cancelled) return;
 
         const recent = data
-          .filter((session) => session.project_id === activeProjectId)
+          .filter((session) => {
+            const isProjectSession = session.project_id === activeProjectId;
+            const isParentSession = !(session.parent_id || '').trim();
+            return isProjectSession && isParentSession;
+          })
           .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
           .slice(0, 5);
         setRecentProjectSessions(recent);

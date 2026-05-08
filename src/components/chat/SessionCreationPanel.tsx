@@ -77,7 +77,7 @@ function SessionCreationPanel({
               </button>
             ) : null}
             {onClose ? (
-              <button type="button" className="settings-remove-btn" onClick={onClose} disabled={inlineLoading}>
+              <button type="button" className="settings-remove-btn" onClick={onClose}>
                 Close
               </button>
             ) : null}

@@ -9495,8 +9495,22 @@ input[type="checkbox"]:disabled {
   padding: 0 2px;
 }
 
+.project-branch-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.project-branch-diff-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-commit-diff-header .mind-create-session-btn {
   margin-left: auto;
+  flex: 0 0 auto;
   padding: 4px 8px;
   font-size: 12px;
 }
@@ -9544,6 +9558,10 @@ input[type="checkbox"]:disabled {
   border-top: none;
   background: transparent;
   flex: 1;
+}
+
+.project-sessions-composer.with-inline-session .chat-input-container {
+  flex: 0 0 auto;
 }
 
 .project-sessions-composer .chat-input-actions {
