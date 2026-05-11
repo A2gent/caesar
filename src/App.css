@@ -9143,10 +9143,52 @@ input[type="checkbox"]:disabled {
   background: #121925;
   color: #d5dfef;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 26px;
+  grid-template-columns: 28px minmax(0, 1fr) 26px;
   gap: 3px;
   align-items: stretch;
   overflow: hidden;
+}
+
+.project-branch-file-row.reviewed {
+  opacity: 0.48;
+}
+
+.project-branch-file-row.reviewed.selected,
+.project-branch-file-row.reviewed:hover {
+  opacity: 0.72;
+}
+
+.project-branch-file-reviewed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid #2c3443;
+  cursor: pointer;
+}
+
+.project-branch-file-reviewed input {
+  appearance: auto;
+  -webkit-appearance: checkbox;
+  position: static;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border-radius: 0;
+  border: initial;
+  background: initial;
+  box-shadow: none;
+  transition: none;
+  accent-color: #5b8cff;
+  cursor: pointer;
+}
+
+.project-branch-file-reviewed input::before {
+  content: none;
+  display: none;
+}
+
+.project-branch-file-reviewed:hover {
+  background: rgba(91, 140, 255, 0.12);
 }
 
 .project-branch-file-row:hover {
@@ -12203,6 +12245,14 @@ button.session-provider-chip:hover {
 [data-theme='light'] .project-branch-file-row.selected {
   border-color: #5b8cff;
   background: #e8f0ff;
+}
+
+[data-theme='light'] .project-branch-file-reviewed {
+  border-right-color: #d7deea;
+}
+
+[data-theme='light'] .project-branch-file-reviewed:hover {
+  background: #eef4ff;
 }
 
 [data-theme='light'] .project-branch-file-open {

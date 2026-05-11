@@ -213,6 +213,59 @@ function buildGitFileStatusTooltip(file: ProjectGitChangedFile): string {
 
 type BranchChangeKind = 'added' | 'deleted' | 'changed';
 
+type BranchReviewedFileMap = Record<string, string>;
+
+const BRANCH_REVIEW_STORAGE_PREFIX = 'a2gent:project-branch-reviewed-files:v1';
+
+function buildBranchReviewFileSignature(file: ProjectGitCommitFile): string {
+  return [
+    file.status || '',
+    file.additions ?? 0,
+    file.deletions ?? 0,
+    file.binary ? 'binary' : 'text',
+  ].join('|');
+}
+
+function encodeBranchReviewKeyPart(value: string): string {
+  try {
+    return encodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function readBranchReviewedFiles(storageKey: string): BranchReviewedFileMap {
+  if (!storageKey || typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const reviewed: BranchReviewedFileMap = {};
+    for (const [path, signature] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof path === 'string' && typeof signature === 'string') {
+        reviewed[path] = signature;
+      }
+    }
+    return reviewed;
+  } catch {
+    return {};
+  }
+}
+
+function writeBranchReviewedFiles(storageKey: string, reviewedFiles: BranchReviewedFileMap): void {
+  if (!storageKey || typeof window === 'undefined') return;
+  try {
+    if (Object.keys(reviewedFiles).length === 0) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    window.localStorage.setItem(storageKey, JSON.stringify(reviewedFiles));
+  } catch {
+    // localStorage can be unavailable or full; review marks are best-effort UI state.
+  }
+}
+
 type BranchChangedFileTreeNode = {
   name: string;
   path: string;
@@ -1555,6 +1608,7 @@ function ProjectView() {
   const [isLoadingBranchChanges, setIsLoadingBranchChanges] = useState(false);
   const [isLoadingBranchFileDiff, setIsLoadingBranchFileDiff] = useState(false);
   const [branchChangesError, setBranchChangesError] = useState<string | null>(null);
+  const [branchReviewedFiles, setBranchReviewedFiles] = useState<BranchReviewedFileMap>({});
   const [commitRepoPath, setCommitRepoPath] = useState('');
   const [, setCommitRepoLabel] = useState('');
   const [commitDialogFiles, setCommitDialogFiles] = useState<ProjectGitChangedFile[]>([]);
@@ -3741,10 +3795,49 @@ function ProjectView() {
     : gitCurrentBranch
       ? `${gitCurrentBranch} branch changes`
       : 'Branch changes';
+  const branchReviewStorageKey = useMemo(() => {
+    if (!projectId || !gitCurrentBranch || !branchChangesBaseBranch) return '';
+    return [
+      BRANCH_REVIEW_STORAGE_PREFIX,
+      encodeBranchReviewKeyPart(projectId),
+      encodeBranchReviewKeyPart(rootFolder || ''),
+      encodeBranchReviewKeyPart(commitRepoPath || ''),
+      encodeBranchReviewKeyPart(gitCurrentBranch),
+      encodeBranchReviewKeyPart(branchChangesBaseBranch),
+    ].join(':');
+  }, [projectId, rootFolder, commitRepoPath, gitCurrentBranch, branchChangesBaseBranch]);
+  const reviewedBranchFileCount = useMemo(() => branchChangedFiles.filter((file) => (
+    branchReviewedFiles[file.path] === buildBranchReviewFileSignature(file)
+  )).length, [branchChangedFiles, branchReviewedFiles]);
   const branchChangedFileTree = useMemo(
     () => buildBranchChangedFileTree(branchChangedFiles),
     [branchChangedFiles],
   );
+
+  useEffect(() => {
+    setBranchReviewedFiles(readBranchReviewedFiles(branchReviewStorageKey));
+  }, [branchReviewStorageKey]);
+
+  useEffect(() => {
+    if (!branchReviewStorageKey || branchChangedFiles.length === 0) return;
+    setBranchReviewedFiles((current) => {
+      const validEntries = new Map(branchChangedFiles.map((file) => [file.path, buildBranchReviewFileSignature(file)]));
+      const next: BranchReviewedFileMap = {};
+      for (const [path, signature] of Object.entries(current)) {
+        if (validEntries.get(path) === signature) {
+          next[path] = signature;
+        }
+      }
+      const currentKeys = Object.keys(current);
+      const nextKeys = Object.keys(next);
+      const changed = currentKeys.length !== nextKeys.length || currentKeys.some((key) => current[key] !== next[key]);
+      if (changed) {
+        writeBranchReviewedFiles(branchReviewStorageKey, next);
+        return next;
+      }
+      return current;
+    });
+  }, [branchChangedFiles, branchReviewStorageKey]);
   const branchTreeDepthStyle = useCallback((depth: number): CSSProperties => ({ '--tree-depth': depth } as CSSProperties), []);
   const activeTodoFilePath = isTodoFilePath(selectedFilePath)
     ? selectedFilePath
@@ -4667,18 +4760,41 @@ function ProjectView() {
   const showSessionComposer = activeTab === 'explorer' || activeTab === 'sessions' || sessionAppendContext.trim() !== '' || inlineSession !== null;
   const sessionComposerUsesInlineMode = activeTab !== 'sessions' && sessionComposerMode === 'inline';
 
+  const handleToggleBranchFileReviewed = (file: ProjectGitCommitFile, reviewed: boolean) => {
+    if (!branchReviewStorageKey) return;
+    setBranchReviewedFiles((current) => {
+      const next = { ...current };
+      if (reviewed) {
+        next[file.path] = buildBranchReviewFileSignature(file);
+      } else {
+        delete next[file.path];
+      }
+      writeBranchReviewedFiles(branchReviewStorageKey, next);
+      return next;
+    });
+  };
+
   const renderBranchChangedFileTreeNode = (node: BranchChangedFileTreeNode, depth = 0): ReactElement => {
     if (node.file) {
       const file = node.file;
       const kind = getBranchChangeKind(file);
       const label = getBranchChangeLabel(file);
       const stats = file.binary ? 'binary' : `+${file.additions} -${file.deletions}`;
+      const isReviewed = branchReviewedFiles[file.path] === buildBranchReviewFileSignature(file);
       return (
         <div
           key={`file:${file.status}:${file.path}`}
-          className={`project-branch-file-row project-branch-file-row-${kind} ${selectedBranchFilePath === file.path ? 'selected' : ''}`}
+          className={`project-branch-file-row project-branch-file-row-${kind} ${selectedBranchFilePath === file.path ? 'selected' : ''} ${isReviewed ? 'reviewed' : ''}`}
           style={branchTreeDepthStyle(depth)}
         >
+          <label className="project-branch-file-reviewed" title={isReviewed ? 'Mark as not reviewed' : 'Mark as reviewed'}>
+            <input
+              type="checkbox"
+              checked={isReviewed}
+              onChange={(event) => handleToggleBranchFileReviewed(file, event.currentTarget.checked)}
+              aria-label={`${isReviewed ? 'Mark as not reviewed' : 'Mark as reviewed'}: ${file.path}`}
+            />
+          </label>
           <button
             type="button"
             className="project-branch-file-select"
@@ -5691,7 +5807,7 @@ function ProjectView() {
                       <span>
                         {isLoadingBranchChanges
                           ? 'Loading changed files...'
-                          : `${branchChangedFiles.length} changed file(s)`}
+                          : `${reviewedBranchFileCount}/${branchChangedFiles.length} reviewed`}
                       </span>
                     </div>
                     {branchChangesError ? (
