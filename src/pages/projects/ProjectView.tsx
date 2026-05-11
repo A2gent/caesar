@@ -1189,11 +1189,43 @@ function parseMarkdownPreviewSegments(html: string): Array<{ type: 'html'; html:
   return segments;
 }
 
-function MarkdownPreview({ html, onClick }: { html: string; onClick: (event: ReactMouseEvent<HTMLDivElement>) => void }): ReactElement {
+function clearMarkdownPreviewSelectionHighlights(): void {
+  if (typeof document === 'undefined') return;
+  document
+    .querySelectorAll('.mind-preview-selected-line')
+    .forEach((element) => element.classList.remove('mind-preview-selected-line'));
+}
+
+function highlightMarkdownPreviewSelection(selection: Selection, previewBody: Element): void {
+  clearMarkdownPreviewSelectionHighlights();
+  if (selection.rangeCount === 0) return;
+
+  const range = selection.getRangeAt(0);
+  const candidates = previewBody.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, tr, td, th');
+  candidates.forEach((element) => {
+    try {
+      if (range.intersectsNode(element)) {
+        element.classList.add('mind-preview-selected-line');
+      }
+    } catch {
+      // Ignore detached/non-intersectable nodes.
+    }
+  });
+}
+
+function MarkdownPreview({
+  html,
+  onClick,
+  onSelectionChange,
+}: {
+  html: string;
+  onClick: (event: ReactMouseEvent<HTMLDivElement>) => void;
+  onSelectionChange?: () => void;
+}): ReactElement {
   const segments = useMemo(() => parseMarkdownPreviewSegments(html), [html]);
 
   return (
-    <div className="mind-markdown-preview" onClick={onClick}>
+    <div className="mind-markdown-preview" onClick={onClick} onMouseUp={onSelectionChange} onKeyUp={onSelectionChange}>
       {segments.map((segment, index) => (
         segment.type === 'mermaid' ? (
           <MermaidDiagram key={`mermaid-${index}-${segment.source}`} source={segment.source} diagramKey={`${index}-${slugifyHeading(segment.source).slice(0, 48)}`} />
@@ -1392,6 +1424,31 @@ function buildMindSessionContext(type: 'folder' | 'file', fullPath: string): str
   ].join('\n');
 }
 
+function buildSelectedTextSessionContext(fullPath: string, relativePath: string, selectedText: string): string | null {
+  const snippet = selectedText.trim();
+  if (snippet === '') return null;
+
+  let fence = '```';
+  while (snippet.includes(fence)) {
+    fence += '`';
+  }
+
+  return [
+    'This request is tied to selected text from a project file.',
+    '',
+    'Target type: text selection',
+    `Full path: ${fullPath}`,
+    `Relative path: ${relativePath}`,
+    '',
+    'Selected text:',
+    fence,
+    snippet,
+    fence,
+    '',
+    'Use this selected text as the primary context for the session.',
+  ].join('\n');
+}
+
 function getProjectViewerPlaceholder(project: Project | null): { icon: string; title: string; hint: string } {
   if (!project) {
     return {
@@ -1566,6 +1623,7 @@ function ProjectView() {
   const [selectedFileContent, setSelectedFileContent] = useState('');
   const [savedFileContent, setSavedFileContent] = useState('');
   const [sourceSelectionRange, setSourceSelectionRange] = useState<FileSourceSelection | null>(null);
+  const [previewSelectionText, setPreviewSelectionText] = useState('');
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [isSavingFile, setIsSavingFile] = useState(false);
   const [isDeletingFile, setIsDeletingFile] = useState(false);
@@ -2597,6 +2655,9 @@ function ProjectView() {
     if (!projectId) return;
     setSelectedFilePath(path);
     setMarkdownMode(defaultMarkdownModeForPath(path));
+    setSourceSelectionRange(null);
+    setPreviewSelectionText('');
+    clearMarkdownPreviewSelectionHighlights();
     setIsLoadingFile(true);
     try {
       const response = await getProjectFile(projectId, path);
@@ -3451,11 +3512,12 @@ function ProjectView() {
     }, 100);
   };
 
-  const openSessionDialogForPath = (type: 'folder' | 'file', path: string) => {
+  const openSessionDialogForPath = (type: 'folder' | 'file', path: string, previewSelectionTextOverride = '') => {
     const normalizedPath = normalizeMindPath(path);
     const fullPath = rootFolder ? joinMindAbsolutePath(rootFolder, normalizedPath) : normalizedPath;
     let label = type === 'folder' ? `folder "${normalizedPath || 'root'}"` : `file "${normalizedPath}"`;
     let appendContext = buildMindSessionContext(type, fullPath);
+    const currentPreviewSelectionText = previewSelectionTextOverride.trim() || previewSelectionText.trim();
 
     if (
       type === 'file'
@@ -3471,9 +3533,20 @@ function ProjectView() {
         label = `selection in "${normalizedPath}"`;
         appendContext = selectedCodeContext;
       }
+    } else if (
+      type === 'file'
+      && normalizedPath !== ''
+      && normalizeMindPath(selectedFilePath) === normalizedPath
+      && currentPreviewSelectionText !== ''
+    ) {
+      const selectedTextContext = buildSelectedTextSessionContext(fullPath, normalizedPath, currentPreviewSelectionText);
+      if (selectedTextContext) {
+        label = `selection in "${normalizedPath}"`;
+        appendContext = selectedTextContext;
+      }
     }
 
-    openSessionComposer(label, appendContext, 'navigate');
+    openSessionComposer(label, appendContext, (label.startsWith('selection in ') ? 'inline' : 'navigate'));
   };
   const captureSelectedBranchDiffText = () => {
     if (typeof window === 'undefined') return '';
@@ -3542,7 +3615,9 @@ function ProjectView() {
   const activeSourceSelectionLabel = useMemo(() => (
     activeSourceSelection ? describeSourceSelection(selectedFileContent, activeSourceSelection) : ''
   ), [activeSourceSelection, selectedFileContent]);
+  const activeFileSelectionLabel = activeSourceSelectionLabel || (previewSelectionText.trim() !== '' ? 'selected text' : '');
   const handleSourceEditorSelectionChange = useCallback((selection: SourceEditorSelection | null) => {
+    setPreviewSelectionText('');
     if (!selection || selectedFilePath.trim() === '') {
       setSourceSelectionRange(null);
       return;
@@ -3553,6 +3628,29 @@ function ProjectView() {
       end: selection.end,
     });
   }, [selectedFilePath]);
+  const capturePreviewSelectionText = useCallback(() => {
+    if (typeof window === 'undefined' || selectedFilePath.trim() === '') return '';
+    const selection = window.getSelection();
+    if (!selection) return '';
+    const selectedText = selection.toString().trim() || '';
+    if (selectedText === '') return '';
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    const previewBody = document.querySelector('.mind-markdown-preview');
+    if (!previewBody) return '';
+    const selectionIsInsidePreview = (node: Node | null | undefined) => Boolean(node && previewBody.contains(node));
+    if (!selectionIsInsidePreview(anchorNode) && !selectionIsInsidePreview(focusNode)) return '';
+    highlightMarkdownPreviewSelection(selection, previewBody);
+    setSourceSelectionRange(null);
+    setPreviewSelectionText(selectedText);
+    return selectedText;
+  }, [selectedFilePath]);
+  const handlePreviewSelectionChange = useCallback(() => {
+    const selectedText = capturePreviewSelectionText();
+    if (selectedText === '') {
+      setPreviewSelectionText('');
+    }
+  }, [capturePreviewSelectionText]);
   const selectedFileSupportsMarkdownPreview = selectedFilePath !== '' && isMarkdownFilePath(selectedFilePath);
   const selectedFileShowsSourceEditor = selectedFilePath !== '' && (
     markdownMode === 'source' || !selectedFileSupportsMarkdownPreview
@@ -4929,9 +5027,9 @@ function ProjectView() {
                     </div>
                     <div className="mind-viewer-mode">
                       {selectedFilePath ? (
-                        activeSourceSelectionLabel ? (
-                          <span className="mind-source-selection-chip" title={`Selected ${activeSourceSelectionLabel}`}>
-                            {activeSourceSelectionLabel}
+                        activeFileSelectionLabel ? (
+                          <span className="mind-source-selection-chip" title={`Selected ${activeFileSelectionLabel}`}>
+                            {activeFileSelectionLabel}
                           </span>
                         ) : null
                       ) : null}
@@ -4939,12 +5037,17 @@ function ProjectView() {
                         <button
                           type="button"
                           className="mind-create-session-btn"
-                          onClick={() => openSessionDialogForPath('file', selectedFilePath)}
-                          title={activeSourceSelectionLabel
-                            ? `Create session for selected code (${activeSourceSelectionLabel})`
+                          onClick={() => {
+                            const selectedPreviewText = selectedFileSupportsMarkdownPreview && markdownMode === 'preview'
+                              ? capturePreviewSelectionText()
+                              : '';
+                            openSessionDialogForPath('file', selectedFilePath, selectedPreviewText);
+                          }}
+                          title={activeFileSelectionLabel
+                            ? `Ask inline about ${activeFileSelectionLabel}`
                             : 'Create session for this file'}
                         >
-                          {activeSourceSelectionLabel ? '💭 Selection' : '💭 Session'}
+                          {activeFileSelectionLabel ? '💭 Selection' : '💭 Session'}
                         </button>
                       ) : null}
                       {selectedFilePath ? (
@@ -5055,7 +5158,11 @@ function ProjectView() {
                       />
                     ) : null}
                     {!isLoadingFile && selectedFilePath && selectedFileSupportsMarkdownPreview && markdownMode === 'preview' ? (
-                      <MarkdownPreview html={markdownHtml} onClick={(event) => void handlePreviewClick(event)} />
+                      <MarkdownPreview
+                        html={markdownHtml}
+                        onClick={(event) => void handlePreviewClick(event)}
+                        onSelectionChange={handlePreviewSelectionChange}
+                      />
                     ) : null}
                   </div>
                 </div>

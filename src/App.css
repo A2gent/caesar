@@ -7465,6 +7465,18 @@ input[type="checkbox"]:disabled {
   font-size: 14px;
 }
 
+.mind-markdown-preview::selection,
+.mind-markdown-preview *::selection {
+  background: rgba(255, 193, 7, 0.55);
+  color: #ffffff;
+}
+
+.mind-markdown-preview .mind-preview-selected-line {
+  background: rgba(255, 193, 7, 0.18) !important;
+  box-shadow: inset 3px 0 0 rgba(255, 193, 7, 0.9), 0 0 0 1px rgba(255, 193, 7, 0.22);
+  border-radius: 6px;
+}
+
 .mind-markdown-preview h1,
 .mind-markdown-preview h2,
 .mind-markdown-preview h3,
@@ -11368,6 +11380,17 @@ button.session-provider-chip:hover {
 [data-theme='light'] .project-files-section .mind-code-editor .cm-tooltip,
 [data-theme='light'] .project-files-section .mind-code-editor .cm-tooltip-autocomplete {
   border-color: #c4d2e6;
+
+[data-theme='light'] .project-files-section .mind-markdown-preview::selection,
+[data-theme='light'] .project-files-section .mind-markdown-preview *::selection {
+  background: rgba(245, 158, 11, 0.42);
+  color: #111827;
+}
+
+[data-theme='light'] .project-files-section .mind-markdown-preview .mind-preview-selected-line {
+  background: rgba(245, 158, 11, 0.16) !important;
+  box-shadow: inset 3px 0 0 rgba(217, 119, 6, 0.95), 0 0 0 1px rgba(217, 119, 6, 0.2);
+}
   background: #ffffff;
   color: #132238;
 }
