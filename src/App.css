@@ -8348,8 +8348,9 @@ input[type="checkbox"]:disabled {
   position: relative;
   display: flex;
   align-items: stretch;
-  min-width: 220px;
-  max-width: 320px;
+  width: min(42vw, 520px);
+  min-width: 320px;
+  max-width: 520px;
 }
 
 .project-branch-combobox-input {
