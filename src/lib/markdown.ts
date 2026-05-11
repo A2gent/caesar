@@ -238,18 +238,57 @@ function renderMermaidBlock(source: string): string {
 export function renderMarkdownToHtml(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const html: string[] = [];
-  let inList = false;
+  const listIndents: number[] = [];
+  const openListItems: boolean[] = [];
   let inCodeFence = false;
   let inTable = false;
   let tableColumns = 0;
   let codeLanguage = '';
   let codeFenceLines: string[] = [];
 
-  const closeList = () => {
-    if (inList) {
+  const closeList = (targetDepth = 0) => {
+    while (listIndents.length > targetDepth) {
+      if (openListItems[openListItems.length - 1]) {
+        html.push('</li>');
+      }
       html.push('</ul>');
-      inList = false;
+      listIndents.pop();
+      openListItems.pop();
     }
+  };
+
+  const getListIndent = (indent: string): number => indent.replace(/\t/g, '    ').length;
+
+  const renderListItem = (indentText: string, content: string) => {
+    const indent = getListIndent(indentText);
+
+    while (listIndents.length > 0 && indent < listIndents[listIndents.length - 1]) {
+      closeList(listIndents.length - 1);
+    }
+
+    if (listIndents.length === 0 || indent > listIndents[listIndents.length - 1]) {
+      html.push('<ul>');
+      listIndents.push(indent);
+      openListItems.push(false);
+    }
+
+    if (indent !== listIndents[listIndents.length - 1]) {
+      while (listIndents.length > 0 && indent !== listIndents[listIndents.length - 1]) {
+        closeList(listIndents.length - 1);
+      }
+      if (listIndents.length === 0) {
+        html.push('<ul>');
+        listIndents.push(indent);
+        openListItems.push(false);
+      }
+    }
+
+    const currentDepth = openListItems.length - 1;
+    if (openListItems[currentDepth]) {
+      html.push('</li>');
+    }
+    html.push(`<li>${renderInlineMarkdown(content)}`);
+    openListItems[currentDepth] = true;
   };
 
   const closeCodeFence = () => {
@@ -353,13 +392,9 @@ export function renderMarkdownToHtml(markdown: string): string {
       continue;
     }
 
-    const listMatch = /^[-*]\s+(.+)$/.exec(trimmed);
+    const listMatch = /^(\s*)[-*]\s+(.+)$/.exec(line);
     if (listMatch) {
-      if (!inList) {
-        html.push('<ul>');
-        inList = true;
-      }
-      html.push(`<li>${renderInlineMarkdown(listMatch[1])}</li>`);
+      renderListItem(listMatch[1], listMatch[2]);
       continue;
     }
 
