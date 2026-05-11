@@ -38,8 +38,42 @@ type ChatLocationState = {
   initialImages?: MessageImage[];
 };
 
+const OPENAI_CODEX_PROVIDER_SETTINGS_PATH = '/providers/openai_codex';
+const OPENAI_CODEX_AUTH_EXPIRED_REASON = 'OpenAI Codex authentication expired. Reconnect OpenAI Codex in provider settings.';
+
 function firstNonEmpty(value: string | null | undefined): string {
   return (value || '').trim();
+}
+
+function isOpenAICodexAuthExpiredError(raw: string | null | undefined): boolean {
+  const lower = (raw || '').toLowerCase();
+  if (!lower) {
+    return false;
+  }
+  if (lower.includes(OPENAI_CODEX_AUTH_EXPIRED_REASON.toLowerCase())) {
+    return true;
+  }
+  const mentionsCodex =
+    lower.includes('openai codex') ||
+    lower.includes('openai_codex') ||
+    lower.includes(OPENAI_CODEX_PROVIDER_SETTINGS_PATH);
+  const mentionsExpiredToken =
+    lower.includes('token_expired') ||
+    (lower.includes('authentication token') && lower.includes('expired')) ||
+    (lower.includes('token is expired') && lower.includes('signing in again'));
+  return mentionsCodex && mentionsExpiredToken;
+}
+
+function shouldLinkOpenAICodexProviderSettings(raw: string | null | undefined): boolean {
+  return (raw || '').trim() === OPENAI_CODEX_AUTH_EXPIRED_REASON || isOpenAICodexAuthExpiredError(raw);
+}
+
+function OpenAICodexProviderSettingsLink({ className }: { className?: string }) {
+  return (
+    <Link to={OPENAI_CODEX_PROVIDER_SETTINGS_PATH} className={className || 'provider-settings-link'}>
+      Open provider settings
+    </Link>
+  );
 }
 
 function routedTargetLabel(session: Session | null): string {
@@ -262,6 +296,10 @@ function normalizeFailureReason(raw: string): string {
     return 'The request failed, but no details were provided.';
   }
 
+  if (isOpenAICodexAuthExpiredError(cleaned)) {
+    return OPENAI_CODEX_AUTH_EXPIRED_REASON;
+  }
+
   if (lower.includes('requires an api key') || lower.includes('invalid api key') || lower.includes('unauthorized') || lower.includes('authentication')) {
     return `Authentication failed: ${cleaned}`;
   }
@@ -365,6 +403,9 @@ function formatProviderTrace(event: Extract<ChatStreamEvent, { type: 'provider_t
 
 function summarizeTraceReason(reason: string): string {
   const { summary } = formatFailureReasonForMessage(reason);
+  if (isOpenAICodexAuthExpiredError(summary)) {
+    return OPENAI_CODEX_AUTH_EXPIRED_REASON;
+  }
   const normalized = summary.replace(/\s+/g, ' ').trim();
   if (normalized.length <= 260) {
     return normalized;
@@ -421,7 +462,10 @@ function formatProviderFailure(item: ProviderFailure): string {
   const model = (item.model || '').trim();
   const attempt = item.attempt ?? 0;
   const maxAttempts = item.max_attempts ?? 0;
-  const reason = (item.reason || '').trim();
+  const rawReason = (item.reason || '').trim();
+  const reason = isOpenAICodexAuthExpiredError(`${provider} ${rawReason}`)
+    ? OPENAI_CODEX_AUTH_EXPIRED_REASON
+    : rawReason;
   const phase = (item.phase || '').trim();
   const fallbackTo = (item.fallback_to || '').trim();
   const fallbackModel = (item.fallback_model || '').trim();
@@ -531,6 +575,7 @@ function formatFailureReasonForMessage(reason: string): { summary: string; prett
   if (trimmed === '') {
     return { summary: '', prettyJson: '' };
   }
+  const codexExpiredAuth = isOpenAICodexAuthExpiredError(trimmed);
   const idxObject = trimmed.indexOf('{');
   const idxArray = trimmed.indexOf('[');
   let idx = -1;
@@ -542,7 +587,7 @@ function formatFailureReasonForMessage(reason: string): { summary: string; prett
     idx = idxArray;
   }
   if (idx < 0) {
-    return { summary: trimmed, prettyJson: '' };
+    return { summary: codexExpiredAuth ? OPENAI_CODEX_AUTH_EXPIRED_REASON : trimmed, prettyJson: '' };
   }
 
   const prefix = trimmed.slice(0, idx).trim().replace(/\s+/g, ' ');
@@ -550,11 +595,11 @@ function formatFailureReasonForMessage(reason: string): { summary: string; prett
   try {
     const parsed = JSON.parse(jsonPart) as unknown;
     return {
-      summary: prefix || trimmed,
+      summary: codexExpiredAuth ? OPENAI_CODEX_AUTH_EXPIRED_REASON : prefix || trimmed,
       prettyJson: JSON.stringify(parsed, null, 2),
     };
   } catch {
-    return { summary: trimmed, prettyJson: '' };
+    return { summary: codexExpiredAuth ? OPENAI_CODEX_AUTH_EXPIRED_REASON : trimmed, prettyJson: '' };
   }
 }
 
@@ -1613,7 +1658,10 @@ function ChatView() {
               ) : null}
               {session.status === 'failed' && sessionFailureReason ? (
                 <div className="session-failure-reason" title={sessionFailureReason}>
-                  Failure reason: {sessionFailureReason}
+                  <span className="session-failure-reason-text">Failure reason: {sessionFailureReason}</span>
+                  {shouldLinkOpenAICodexProviderSettings(sessionFailureReason) ? (
+                    <OpenAICodexProviderSettingsLink className="provider-settings-link session-failure-action" />
+                  ) : null}
                 </div>
               ) : null}
               {providerTrace && isActiveRequest ? (
@@ -1624,7 +1672,10 @@ function ChatView() {
               {latestProviderFailure && !providerTrace ? (
                 <div className="session-provider-failures">
                   <div className="session-provider-failure-row" title={formatProviderFailure(latestProviderFailure)}>
-                    {formatProviderFailure(latestProviderFailure)}
+                    <span className="session-provider-failure-text">{formatProviderFailure(latestProviderFailure)}</span>
+                    {shouldLinkOpenAICodexProviderSettings(`${latestProviderFailure.provider || ''} ${latestProviderFailure.reason || ''}`) ? (
+                      <OpenAICodexProviderSettingsLink className="provider-settings-link session-provider-failure-action" />
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -1640,7 +1691,12 @@ function ChatView() {
       
       {error && (
         <div className="error-banner">
-          {error}
+          <span className="error-banner-message">
+            {error}
+            {shouldLinkOpenAICodexProviderSettings(error) ? (
+              <OpenAICodexProviderSettingsLink />
+            ) : null}
+          </span>
           <button onClick={() => setError(null)} className="error-dismiss">×</button>
         </div>
       )}

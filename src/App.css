@@ -1376,9 +1376,16 @@ body.mind-resizing * {
 }
 
 .session-failure-reason {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   color: #ff9f9a;
   max-width: min(60vw, 820px);
+}
+
+.session-failure-reason-text {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1400,12 +1407,27 @@ body.mind-resizing * {
 }
 
 .session-provider-failure-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   color: #ffb38c;
   max-width: min(60vw, 820px);
+}
+
+.session-provider-failure-text {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.provider-settings-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
 }
 
 .session-relations-panel {
@@ -1837,10 +1859,20 @@ body.mind-resizing * {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 12px 20px;
   background-color: rgba(244, 67, 54, 0.15);
   color: #f44336;
   border-bottom: 1px solid #f44336;
+}
+
+.error-banner-message {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
 }
 
 .error-dismiss {

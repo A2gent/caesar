@@ -447,4 +447,47 @@ describe('ChatView provider failure details', () => {
     expect(await screen.findByText(/Failure reason: Provider is unreachable:/)).toBeInTheDocument();
     expect((await screen.findAllByText(/\[network\] openai_codex\/gpt-5\.4/)).length).toBeGreaterThan(0);
   });
+
+  it('links expired OpenAI Codex auth failures to provider settings', async () => {
+    const expiredReason = 'LLM error: OpenAI Codex error (401): { "error": { "message": "Provided authentication token is expired. Please try signing in again.", "code": "token_expired" }, "status": 401 }';
+    getSessionMock.mockResolvedValue({
+      id: 'session-1',
+      agent_id: 'build',
+      title: 'Failed Codex session',
+      status: 'failed',
+      created_at: '2026-04-16T10:00:00Z',
+      updated_at: '2026-04-16T10:00:00Z',
+      messages: [
+        {
+          role: 'assistant',
+          content: `Request failed: ${expiredReason}`,
+          timestamp: '2026-04-16T10:01:00Z',
+        },
+      ],
+      provider_failures: [
+        {
+          provider: 'openai_codex',
+          model: 'gpt-5.4',
+          phase: 'retry_layer_failed',
+          attempt: 1,
+          max_attempts: 4,
+          reason: expiredReason,
+          timestamp: '2026-04-16T10:01:00Z',
+        },
+      ],
+      metadata: {},
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/chat/session-1']}>
+        <Routes>
+          <Route path="/chat/:sessionId" element={<ChatView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect((await screen.findAllByText(/OpenAI Codex authentication expired/)).length).toBeGreaterThan(0);
+    const settingsLinks = await screen.findAllByRole('link', { name: 'Open provider settings' });
+    expect(settingsLinks[0]).toHaveAttribute('href', '/providers/openai_codex');
+  });
 });
