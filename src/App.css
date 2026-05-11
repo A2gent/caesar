@@ -7146,13 +7146,44 @@ input[type="checkbox"]:disabled {
   line-height: 1.35;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: #202833;
   border: 1px solid #37465d;
   border-radius: 6px;
   padding: 5px 8px;
+}
+
+.mind-viewer-path-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mind-viewer-path-copy {
+  border: none;
+  background: transparent;
+  color: #b9c7dc;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.75;
+  padding: 1px 2px;
+}
+
+.mind-viewer-path-copy:hover {
+  color: #ffffff;
+  opacity: 1;
+}
+
+.mind-viewer-path-copy:focus-visible {
+  outline: 2px solid #6d90ff;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .mind-viewer-mode {
@@ -11267,7 +11298,16 @@ button.session-provider-chip:hover {
   background: #ffffff;
 }
 
-[data-theme='light'] .project-files-section .mind-tree-toolbar,
+[data-theme='light'] .project-files-section .mind-tree-toolbar {
+  border-color: #d7deea;
+}
+[data-theme='light'] .project-files-section .mind-viewer-path-copy {
+  color: #4f6382;
+}
+
+[data-theme='light'] .project-files-section .mind-viewer-path-copy:hover {
+  color: #1a2a44;
+}
 [data-theme='light'] .project-files-section .mind-viewer-header {
   border-color: #d7deea;
   background: #f8fbff;

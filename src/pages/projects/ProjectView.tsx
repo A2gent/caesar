@@ -783,6 +783,27 @@ function writeStoredSelectedFile(projectId: string, path: string): void {
   }
 }
 
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-9999px';
+  textArea.style.top = '0';
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textArea);
+  }
+}
+
 function isExternalLink(href: string): boolean {
   return /^(https?:|mailto:|tel:)/i.test(href);
 }
@@ -1520,6 +1541,7 @@ function ProjectView() {
   const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
   const [startingSessionID, setStartingSessionID] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<LLMProviderType | ''>('');
+  const [hasCopiedSelectedFilePath, setHasCopiedSelectedFilePath] = useState(false);
   const [workflowOptions, setWorkflowOptions] = useState<WorkflowDefinition[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(DEFAULT_WORKFLOW_ID);
 
@@ -2539,6 +2561,18 @@ function ProjectView() {
       setError(err instanceof Error ? err.message : 'Failed to duplicate session');
     } finally {
       setDuplicatingSessionID((current) => (current === sourceSession.id ? null : current));
+    }
+  };
+
+  const copySelectedFilePath = async () => {
+    if (!selectedFilePath) return;
+    try {
+      await copyTextToClipboard(selectedFilePath);
+      setHasCopiedSelectedFilePath(true);
+      window.setTimeout(() => setHasCopiedSelectedFilePath(false), 1500);
+    } catch (copyError) {
+      console.error('Failed to copy selected file path:', copyError);
+      setError(copyError instanceof Error ? copyError.message : 'Failed to copy file path');
     }
   };
 
@@ -4879,7 +4913,20 @@ function ProjectView() {
                 />
                 <div className="mind-viewer-panel">
                   <div className="mind-viewer-header">
-                    <div className="mind-viewer-path">{selectedFilePath || 'Select a file from the tree'}</div>
+                    <div className="mind-viewer-path" title={selectedFilePath || undefined}>
+                      <span className="mind-viewer-path-text">{selectedFilePath || 'Select a file from the tree'}</span>
+                      {selectedFilePath ? (
+                        <button
+                          type="button"
+                          className="mind-viewer-path-copy"
+                          onClick={() => void copySelectedFilePath()}
+                          title="Copy file path"
+                          aria-label="Copy file path"
+                        >
+                          {hasCopiedSelectedFilePath ? '✓' : '📋'}
+                        </button>
+                      ) : null}
+                    </div>
                     <div className="mind-viewer-mode">
                       {selectedFilePath ? (
                         activeSourceSelectionLabel ? (
