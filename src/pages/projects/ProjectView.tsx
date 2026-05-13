@@ -216,6 +216,7 @@ type BranchChangeKind = 'added' | 'deleted' | 'changed';
 type BranchReviewedFileMap = Record<string, string>;
 
 const BRANCH_REVIEW_STORAGE_PREFIX = 'a2gent:project-branch-reviewed-files:v1';
+const BRANCH_SELECTED_FILE_STORAGE_PREFIX = 'a2gent:project-branch-selected-file:v1';
 
 function buildBranchReviewFileSignature(file: ProjectGitCommitFile): string {
   return [
@@ -263,6 +264,28 @@ function writeBranchReviewedFiles(storageKey: string, reviewedFiles: BranchRevie
     window.localStorage.setItem(storageKey, JSON.stringify(reviewedFiles));
   } catch {
     // localStorage can be unavailable or full; review marks are best-effort UI state.
+  }
+}
+
+function readStoredBranchSelectedFile(storageKey: string): string {
+  if (!storageKey || typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(storageKey) || '';
+  } catch {
+    return '';
+  }
+}
+
+function writeStoredBranchSelectedFile(storageKey: string, path: string): void {
+  if (!storageKey || typeof window === 'undefined') return;
+  try {
+    if (path) {
+      window.localStorage.setItem(storageKey, path);
+    } else {
+      window.localStorage.removeItem(storageKey);
+    }
+  } catch {
+    // localStorage can be unavailable or full; selected branch file is best-effort UI state.
   }
 }
 
@@ -1978,6 +2001,18 @@ function ProjectView() {
       setSelectedBranchFilePath((currentPath) => {
         if (currentPath && files.some((file) => file.path === currentPath)) {
           return currentPath;
+        }
+        const storageKey = [
+          BRANCH_SELECTED_FILE_STORAGE_PREFIX,
+          encodeBranchReviewKeyPart(projectId),
+          encodeBranchReviewKeyPart(rootFolder || ''),
+          encodeBranchReviewKeyPart(targetRepoPath || ''),
+          encodeBranchReviewKeyPart(response.current_branch || ''),
+          encodeBranchReviewKeyPart(response.base_branch || ''),
+        ].join(':');
+        const storedPath = readStoredBranchSelectedFile(storageKey);
+        if (storedPath && files.some((file) => file.path === storedPath)) {
+          return storedPath;
         }
         return files[0]?.path || '';
       });
@@ -3806,6 +3841,17 @@ function ProjectView() {
       encodeBranchReviewKeyPart(branchChangesBaseBranch),
     ].join(':');
   }, [projectId, rootFolder, commitRepoPath, gitCurrentBranch, branchChangesBaseBranch]);
+  const branchSelectedFileStorageKey = useMemo(() => {
+    if (!projectId || !gitCurrentBranch || !branchChangesBaseBranch) return '';
+    return [
+      BRANCH_SELECTED_FILE_STORAGE_PREFIX,
+      encodeBranchReviewKeyPart(projectId),
+      encodeBranchReviewKeyPart(rootFolder || ''),
+      encodeBranchReviewKeyPart(commitRepoPath || ''),
+      encodeBranchReviewKeyPart(gitCurrentBranch),
+      encodeBranchReviewKeyPart(branchChangesBaseBranch),
+    ].join(':');
+  }, [projectId, rootFolder, commitRepoPath, gitCurrentBranch, branchChangesBaseBranch]);
   const reviewedBranchFileCount = useMemo(() => branchChangedFiles.filter((file) => (
     branchReviewedFiles[file.path] === buildBranchReviewFileSignature(file)
   )).length, [branchChangedFiles, branchReviewedFiles]);
@@ -3838,6 +3884,11 @@ function ProjectView() {
       return current;
     });
   }, [branchChangedFiles, branchReviewStorageKey]);
+
+  useEffect(() => {
+    if (!branchSelectedFileStorageKey) return;
+    writeStoredBranchSelectedFile(branchSelectedFileStorageKey, selectedBranchFilePath);
+  }, [branchSelectedFileStorageKey, selectedBranchFilePath]);
   const branchTreeDepthStyle = useCallback((depth: number): CSSProperties => ({ '--tree-depth': depth } as CSSProperties), []);
   const activeTodoFilePath = isTodoFilePath(selectedFilePath)
     ? selectedFilePath
@@ -5889,34 +5940,38 @@ function ProjectView() {
                 <div className="project-history-panel">
                   <div className="project-history-left">
                     <div className="project-history-header">
-                      <h3>History</h3>
+                      <div className="project-history-title-block">
+                        <h3>History</h3>
+                        <span className="project-history-branch-summary">
+                          {currentGitBranch ? (
+                            <>
+                              <span className="project-history-branch-dot" style={{ '--branch-color': gitHistoryColorForRef(currentGitBranch.name) } as CSSProperties} />
+                              <span title={currentGitBranch.name}>{currentGitBranch.name}</span>
+                              {currentGitBranch.ahead > 0 ? <span>↑{currentGitBranch.ahead}</span> : null}
+                              {currentGitBranch.behind > 0 ? <span>↓{currentGitBranch.behind}</span> : null}
+                            </>
+                          ) : gitCurrentBranch ? (
+                            <>
+                              <span className="project-history-branch-dot" style={{ '--branch-color': gitHistoryColorForRef(gitCurrentBranch) } as CSSProperties} />
+                              <span title={gitCurrentBranch}>{gitCurrentBranch}</span>
+                            </>
+                          ) : (
+                            <span>{gitHistoryBranches.length} branch{gitHistoryBranches.length === 1 ? '' : 'es'}</span>
+                          )}
+                        </span>
+                      </div>
                       <button
                         type="button"
                         className="settings-add-btn"
                         onClick={() => void loadGitHistory()}
                         disabled={isLoadingGitHistory || isCommitting || isPushing || isPulling}
                       >
-                        {isLoadingGitHistory ? 'Loading...' : 'Refresh History'}
+                        {isLoadingGitHistory ? 'Loading...' : 'Refresh'}
                       </button>
                     </div>
-                    {gitHistoryBranches.length > 0 ? (
-                      <div className="project-history-branches">
-                        {gitHistoryBranches.map((branch) => {
-                          const branchColor = gitHistoryColorForRef(branch.name);
-                          const branchClassName = `project-history-branch-chip${branch.current ? ' current' : ''}${branch.remote ? ' remote' : ''}`;
-                          return (
-                            <span
-                              key={`${branch.remote ? 'remote' : 'local'}:${branch.name}`}
-                              className={branchClassName}
-                              style={{ '--branch-color': branchColor } as CSSProperties}
-                              title={`${branch.name}${branch.ahead > 0 ? ` · ahead ${branch.ahead}` : ''}${branch.behind > 0 ? ` · behind ${branch.behind}` : ''}`}
-                            >
-                              {branch.name}
-                              {branch.ahead > 0 ? ` ↑${branch.ahead}` : ''}
-                              {branch.behind > 0 ? ` ↓${branch.behind}` : ''}
-                            </span>
-                          );
-                        })}
+                    {gitHistoryBranches.length > 1 ? (
+                      <div className="project-history-branch-count" title={gitHistoryBranches.map((branch) => branch.name).join('\n')}>
+                        {gitHistoryBranches.length} branches available. Branch names are hidden here so commits stay visible; use the branch selector above to switch branches.
                       </div>
                     ) : null}
                     {gitHistoryError ? (

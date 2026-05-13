@@ -9316,18 +9316,50 @@ input[type="checkbox"]:disabled {
   border-bottom: 1px solid #2c3443;
 }
 
+.project-history-title-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .project-history-header h3 {
   margin: 0;
   font-size: 13px;
   color: #d9e2f2;
 }
 
-.project-history-branches {
+.project-history-branch-summary {
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 10px;
+  align-items: center;
+  gap: 5px;
+  color: #8f9eb5;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.project-history-branch-summary span:not(.project-history-branch-dot) {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.project-history-branch-dot {
+  --branch-color: #5b8cff;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--branch-color);
+}
+
+.project-history-branch-count {
+  padding: 7px 10px;
   border-bottom: 1px solid #2c3443;
+  color: #8f9eb5;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .project-history-branch-chip {
