@@ -7538,11 +7538,11 @@ input[type="checkbox"]:disabled {
 
 
 .mind-markdown-preview .md-mermaid {
-  margin: 14px 0;
-  padding: 14px;
+  margin: 10px 0;
+  padding: 8px;
   overflow-x: auto;
   border: 1px solid #3b3b3b;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #1a1a1a;
   text-align: center;
 }
@@ -7550,6 +7550,15 @@ input[type="checkbox"]:disabled {
 .mind-markdown-preview .md-mermaid svg {
   max-width: 100%;
   height: auto;
+  font-size: 12px;
+}
+
+.mind-markdown-preview .md-mermaid .nodeLabel,
+.mind-markdown-preview .md-mermaid .edgeLabel,
+.mind-markdown-preview .md-mermaid .label,
+.mind-markdown-preview .md-mermaid .label text,
+.mind-markdown-preview .md-mermaid text {
+  font-size: 12px !important;
 }
 
 .mind-markdown-preview .md-mermaid-error {

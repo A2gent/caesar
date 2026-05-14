@@ -1209,6 +1209,16 @@ function MermaidDiagram({ source, diagramKey }: MermaidDiagramProps): ReactEleme
       startOnLoad: false,
       securityLevel: 'strict',
       theme: isLightTheme ? 'default' : 'dark',
+      fontSize: 12,
+      themeVariables: {
+        fontSize: '12px',
+      },
+      flowchart: {
+        diagramPadding: 4,
+        nodeSpacing: 30,
+        rankSpacing: 36,
+        padding: 8,
+      },
     });
 
     container.textContent = '';
