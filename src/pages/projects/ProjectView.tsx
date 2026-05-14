@@ -5,6 +5,7 @@ import mermaid from 'mermaid';
 import { FileDiff, type FileDiffMetadata } from '@pierre/diffs/react';
 import { parsePatchFiles } from '@pierre/diffs';
 import {
+  buildProjectFileRawUrl,
   browseMindDirectories,
   browseSkillDirectories,
   commitProjectGit,
@@ -676,6 +677,10 @@ function isTodoFilePath(path: string): boolean {
 function isMarkdownFilePath(path: string): boolean {
   const lowerPath = path.toLowerCase();
   return lowerPath.endsWith('.md') || lowerPath.endsWith('.markdown');
+}
+
+function isPDFFilePath(path: string): boolean {
+  return path.toLowerCase().endsWith('.pdf');
 }
 
 function defaultMarkdownModeForPath(path: string): MarkdownMode {
@@ -2225,6 +2230,12 @@ function ProjectView() {
     const loadFile = async () => {
       setIsLoadingFile(true);
       try {
+        if (isPDFFilePath(selectedFilePath)) {
+          setSelectedFileContent('');
+          setSavedFileContent('');
+          return;
+        }
+
         const response = await getProjectFile(projectId, selectedFilePath);
         setSelectedFileContent(response.content || '');
         setSavedFileContent(response.content || '');
@@ -3774,7 +3785,11 @@ function ProjectView() {
     }
   }, [capturePreviewSelectionText]);
   const selectedFileSupportsMarkdownPreview = selectedFilePath !== '' && isMarkdownFilePath(selectedFilePath);
-  const selectedFileShowsSourceEditor = selectedFilePath !== '' && (
+  const selectedFileSupportsPDFPreview = selectedFilePath !== '' && isPDFFilePath(selectedFilePath);
+  const selectedPDFPreviewUrl = selectedFileSupportsPDFPreview && projectId
+    ? buildProjectFileRawUrl(projectId, selectedFilePath)
+    : '';
+  const selectedFileShowsSourceEditor = selectedFilePath !== '' && !selectedFileSupportsPDFPreview && (
     markdownMode === 'source' || !selectedFileSupportsMarkdownPreview
   );
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
@@ -5318,8 +5333,8 @@ function ProjectView() {
                           aria-selected={markdownMode === 'preview'}
                           className={`mind-mode-tab ${markdownMode === 'preview' ? 'active' : ''}`}
                           onClick={() => setMarkdownMode('preview')}
-                          disabled={!selectedFilePath || !selectedFileSupportsMarkdownPreview || isLoadingFile || isDeletingFile}
-                          title="Markdown preview"
+                          disabled={!selectedFilePath || (!selectedFileSupportsMarkdownPreview && !selectedFileSupportsPDFPreview) || isLoadingFile || isDeletingFile}
+                          title={selectedFileSupportsPDFPreview ? 'PDF preview' : 'Markdown preview'}
                         >
                           Preview
                         </button>
@@ -5329,7 +5344,7 @@ function ProjectView() {
                           aria-selected={markdownMode === 'source'}
                           className={`mind-mode-tab ${markdownMode === 'source' ? 'active' : ''}`}
                           onClick={() => setMarkdownMode('source')}
-                          disabled={!selectedFilePath || isLoadingFile || isDeletingFile}
+                          disabled={!selectedFilePath || selectedFileSupportsPDFPreview || isLoadingFile || isDeletingFile}
                           title="Edit file source"
                         >
                           Edit
@@ -5362,6 +5377,13 @@ function ProjectView() {
                         html={markdownHtml}
                         onClick={(event) => void handlePreviewClick(event)}
                         onSelectionChange={handlePreviewSelectionChange}
+                      />
+                    ) : null}
+                    {!isLoadingFile && selectedFilePath && selectedFileSupportsPDFPreview && selectedPDFPreviewUrl ? (
+                      <iframe
+                        className="mind-pdf-preview"
+                        src={selectedPDFPreviewUrl}
+                        title={`PDF preview: ${selectedFilePath}`}
                       />
                     ) : null}
                   </div>

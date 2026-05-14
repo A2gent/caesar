@@ -55,6 +55,15 @@ export function buildImageAssetUrl(path: string): string {
   return `${getApiBaseUrl()}/assets/images?path=${encodeURIComponent(normalized)}`;
 }
 
+export function buildProjectFileRawUrl(projectID: string, path: string): string {
+  const normalizedProjectID = projectID.trim();
+  const normalizedPath = path.trim();
+  if (normalizedProjectID === '' || normalizedPath === '') {
+    return '';
+  }
+  return `${getApiBaseUrl()}/projects/file/raw?projectID=${encodeURIComponent(normalizedProjectID)}&path=${encodeURIComponent(normalizedPath)}`;
+}
+
 export function buildSpeechClipUrl(clipID: string): string {
   const normalized = clipID.trim();
   if (normalized === '') {
