@@ -245,6 +245,7 @@ export function renderMarkdownToHtml(markdown: string): string {
   let tableColumns = 0;
   let codeLanguage = '';
   let codeFenceLines: string[] = [];
+  let paragraphLines: string[] = [];
 
   const closeList = (targetDepth = 0) => {
     while (listIndents.length > targetDepth) {
@@ -258,6 +259,14 @@ export function renderMarkdownToHtml(markdown: string): string {
   };
 
   const getListIndent = (indent: string): number => indent.replace(/\t/g, '    ').length;
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) {
+      return;
+    }
+    html.push(`<p>${renderInlineMarkdown(paragraphLines.join(' '))}</p>`);
+    paragraphLines = [];
+  };
 
   const renderListItem = (indentText: string, content: string) => {
     const indent = getListIndent(indentText);
@@ -319,6 +328,7 @@ export function renderMarkdownToHtml(markdown: string): string {
     const line = lines[index];
     const fenceMatch = /^```\s*([a-zA-Z0-9_+-]+)?\s*$/.exec(line);
     if (fenceMatch) {
+      flushParagraph();
       closeList();
       closeTable();
       if (!inCodeFence) {
@@ -338,6 +348,7 @@ export function renderMarkdownToHtml(markdown: string): string {
 
     const trimmed = line.trim();
     if (trimmed === '') {
+      flushParagraph();
       closeList();
       closeTable();
       continue;
@@ -346,6 +357,7 @@ export function renderMarkdownToHtml(markdown: string): string {
     if (!inTable) {
       const headerCells = parseTableCells(trimmed);
       if (headerCells && index + 1 < lines.length && isTableSeparator(lines[index + 1].trim(), headerCells.length)) {
+        flushParagraph();
         closeList();
         inTable = true;
         tableColumns = headerCells.length;
@@ -379,6 +391,7 @@ export function renderMarkdownToHtml(markdown: string): string {
 
     const headingMatch = /^(#{1,6})\s+(.+)$/.exec(trimmed);
     if (headingMatch) {
+      flushParagraph();
       closeList();
       const level = headingMatch[1].length;
       html.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
@@ -387,6 +400,7 @@ export function renderMarkdownToHtml(markdown: string): string {
 
     const quoteMatch = /^>\s?(.+)$/.exec(trimmed);
     if (quoteMatch) {
+      flushParagraph();
       closeList();
       html.push(`<blockquote>${renderInlineMarkdown(quoteMatch[1])}</blockquote>`);
       continue;
@@ -394,14 +408,16 @@ export function renderMarkdownToHtml(markdown: string): string {
 
     const listMatch = /^(\s*)[-*]\s+(.+)$/.exec(line);
     if (listMatch) {
+      flushParagraph();
       renderListItem(listMatch[1], listMatch[2]);
       continue;
     }
 
     closeList();
-    html.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
+    paragraphLines.push(trimmed);
   }
 
+  flushParagraph();
   closeCodeFence();
   closeList();
   closeTable();

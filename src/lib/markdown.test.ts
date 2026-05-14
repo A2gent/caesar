@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { renderMarkdownToHtml } from './markdown';
 
 describe('renderMarkdownToHtml', () => {
+  it('merges consecutive plain text lines into one paragraph', () => {
+    const html = renderMarkdownToHtml([
+      'This paragraph is manually wrapped around eighty characters in the source so',
+      'that it stays readable while editing the markdown document in source mode.',
+      'The preview should still render it as a single flowing paragraph.',
+      '',
+      'A blank line starts the next paragraph.',
+    ].join('\n'));
+
+    const root = document.createElement('div');
+    root.innerHTML = html;
+
+    const paragraphs = Array.from(root.querySelectorAll('p'));
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[0].textContent).toBe(
+      'This paragraph is manually wrapped around eighty characters in the source so '
+      + 'that it stays readable while editing the markdown document in source mode. '
+      + 'The preview should still render it as a single flowing paragraph.',
+    );
+    expect(paragraphs[1].textContent).toBe('A blank line starts the next paragraph.');
+  });
+
   it('preserves nested unordered lists based on indentation', () => {
     const html = renderMarkdownToHtml([
       '- level 1',

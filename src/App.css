@@ -7464,8 +7464,19 @@ input[type="checkbox"]:disabled {
 
 .mind-markdown-preview {
   color: #ddd;
-  line-height: 1.55;
   font-size: 14px;
+  line-height: 1.46;
+  overflow-wrap: anywhere;
+}
+
+.mind-markdown-preview > :first-child,
+.mind-markdown-preview > div:first-child > :first-child {
+  margin-top: 0;
+}
+
+.mind-markdown-preview > :last-child,
+.mind-markdown-preview > div:last-child > :last-child {
+  margin-bottom: 0;
 }
 
 .mind-pdf-preview {
@@ -7501,7 +7512,13 @@ input[type="checkbox"]:disabled {
 }
 
 .mind-markdown-preview p {
-  margin: 10px 0;
+  margin: 0 0 15px;
+  max-width: 78ch;
+  line-height: 1.46;
+}
+
+.mind-markdown-preview p + p {
+  margin-top: 15px;
 }
 
 .mind-markdown-preview ul {
