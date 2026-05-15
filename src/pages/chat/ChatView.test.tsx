@@ -200,6 +200,97 @@ describe('ChatView workflow review loop rendering', () => {
     expect(screen.queryByText('review-loop__worker')).not.toBeInTheDocument();
     expect(screen.queryByText('review-loop__critic')).not.toBeInTheDocument();
   });
+
+  it('renders workflow child tool calls in the parent session timeline', async () => {
+    const parentSession = {
+      id: 'session-1',
+      agent_id: 'build',
+      title: 'Workflow session',
+      status: 'running',
+      created_at: '2026-04-16T10:00:00Z',
+      updated_at: '2026-04-16T10:00:00Z',
+      messages: [],
+      metadata: {
+        workflow_definition: {
+          nodes: [
+            {
+              id: 'review-loop',
+              kind: 'review_loop',
+              label: 'Review loop',
+              workerLabel: 'Writer',
+              reviewerLabel: 'Reviewer',
+            },
+          ],
+        },
+        workflow_state: {
+          workflowName: 'Complex workflow',
+          status: 'running',
+          updatedAt: '2026-04-16T10:00:00Z',
+          nodes: {
+            'review-loop__worker': {
+              status: 'running',
+              childSessionId: 'child-worker',
+              startedAt: '2026-04-16T10:00:30Z',
+            },
+          },
+        },
+      },
+    };
+    const childSession = {
+      id: 'child-worker',
+      agent_id: 'build',
+      parent_id: 'session-1',
+      title: 'Writer',
+      status: 'running',
+      created_at: '2026-04-16T10:00:30Z',
+      updated_at: '2026-04-16T10:00:35Z',
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          timestamp: '2026-04-16T10:00:31Z',
+          tool_calls: [
+            {
+              id: 'call-1',
+              name: 'bash',
+              input: { cmd: 'make test' },
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          content: '',
+          timestamp: '2026-04-16T10:00:35Z',
+          tool_results: [
+            {
+              tool_call_id: 'call-1',
+              name: 'bash',
+              content: 'ran focused tests',
+              is_error: false,
+              duration_ms: 42,
+            },
+          ],
+        },
+      ],
+      metadata: {},
+    };
+    getSessionMock.mockImplementation(async (sessionId: string) => (
+      sessionId === 'child-worker' ? childSession : parentSession
+    ));
+    listSessionsMock.mockResolvedValue([childSession]);
+
+    render(
+      <MemoryRouter initialEntries={['/chat/session-1']}>
+        <Routes>
+          <Route path="/chat/:sessionId" element={<ChatView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Child session activity')).toBeInTheDocument();
+    expect(await screen.findByText('bash')).toBeInTheDocument();
+    expect(await screen.findByText('ran focused tests')).toBeInTheDocument();
+  });
 });
 
 
@@ -379,7 +470,9 @@ describe('ChatView session transcript isolation', () => {
       expect(releaseStream).toBeDefined();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open old session' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open old session' }));
+    });
     expect(await screen.findByText('old session answer')).toBeInTheDocument();
 
     await act(async () => {

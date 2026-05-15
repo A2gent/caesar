@@ -399,6 +399,19 @@ export interface PendingQuestion {
   custom: boolean;
 }
 
+export interface WorkflowTranscriptEntry {
+  id: string;
+  nodeId?: string;
+  nodeLabel?: string;
+  nodeKind?: string;
+  childSessionId?: string;
+  role: 'user' | 'agent' | 'workflow' | 'system' | string;
+  content: string;
+  createdAt: string;
+  status?: string;
+  turn?: number;
+}
+
 export interface ChatResponse {
   content: string;
   messages: Message[];
@@ -425,11 +438,13 @@ export interface StreamToolResult {
 
 export type ChatStreamEvent =
   | { type: 'status'; status: string }
+  | { type: 'heartbeat' }
   | { type: 'assistant_delta'; delta: string }
   | { type: 'tool_executing'; step: number; message?: Message; tool_calls: StreamToolCall[] }
   | { type: 'tool_completed'; step: number; message?: Message; messages?: Message[]; status: string }
   | { type: 'step_completed'; step: number }
   | { type: 'workflow_update'; workflow: Record<string, unknown> }
+  | { type: 'workflow_transcript_entry'; workflow_transcript_entry: WorkflowTranscriptEntry }
   | {
       type: 'provider_trace';
       step: number;

@@ -29,6 +29,7 @@ import {
   type Message,
   type MessageImage,
   type ChatStreamEvent,
+  type WorkflowTranscriptEntry,
   type PendingQuestion,
   type ProviderFailure,
 } from '../../api';
@@ -88,6 +89,42 @@ function routedTargetLabel(session: Session | null): string {
   return model ? `${provider} / ${model}` : provider;
 }
 
+function parseWorkflowTranscript(session: Session | null): WorkflowTranscriptEntry[] {
+  const raw = session?.metadata?.workflow_transcript;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((item): WorkflowTranscriptEntry | null => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      const id = typeof record.id === 'string' ? record.id.trim() : '';
+      const role = typeof record.role === 'string' ? record.role.trim() : '';
+      const content = typeof record.content === 'string' ? record.content : '';
+      const createdAt = typeof record.createdAt === 'string' ? record.createdAt.trim() : '';
+      if (id === '' || role === '' || content.trim() === '' || createdAt === '') {
+        return null;
+      }
+      const turn = typeof record.turn === 'number' && Number.isFinite(record.turn) ? record.turn : undefined;
+      return {
+        id,
+        nodeId: typeof record.nodeId === 'string' ? record.nodeId : undefined,
+        nodeLabel: typeof record.nodeLabel === 'string' ? record.nodeLabel : undefined,
+        nodeKind: typeof record.nodeKind === 'string' ? record.nodeKind : undefined,
+        childSessionId: typeof record.childSessionId === 'string' ? record.childSessionId : undefined,
+        role,
+        content,
+        createdAt,
+        status: typeof record.status === 'string' ? record.status : undefined,
+        turn,
+      };
+    })
+    .filter((entry): entry is WorkflowTranscriptEntry => entry !== null)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+}
+
 type WorkflowNodeStateView = {
   id: string;
   label: string;
@@ -97,6 +134,8 @@ type WorkflowNodeStateView = {
   externalAgentId?: string;
   status: string;
   childSessionId?: string;
+  startedAt?: string;
+  completedAt?: string;
   outputPreview?: string;
   error?: string;
 };
@@ -223,6 +262,8 @@ function parseWorkflowState(session: Session | null): WorkflowStateView | null {
       externalAgentId: definition?.externalAgentId,
       status: typeof row.status === 'string' ? row.status : 'pending',
       childSessionId: typeof row.childSessionId === 'string' ? row.childSessionId : undefined,
+      startedAt: typeof row.startedAt === 'string' ? row.startedAt : undefined,
+      completedAt: typeof row.completedAt === 'string' ? row.completedAt : undefined,
       outputPreview: typeof row.outputPreview === 'string' ? row.outputPreview : undefined,
       error: typeof row.error === 'string' ? row.error : undefined,
     };
@@ -672,6 +713,7 @@ function ChatView() {
   const [isCreatingLinkedSession, setIsCreatingLinkedSession] = useState(false);
   const [providerTrace, setProviderTrace] = useState<string>('');
   const [sessionIndex, setSessionIndex] = useState<Session[]>([]);
+  const [workflowChildSessions, setWorkflowChildSessions] = useState<Record<string, Session>>({});
   const sessionRef = useRef<Session | null>(null);
 
   const SESSION_POLL_INTERVAL_MS = 2000; // Poll every 2 seconds for active sessions
@@ -950,21 +992,55 @@ function ChatView() {
     }
     const controller = new AbortController();
     activeStreamAbortRef.current = controller;
+    let sawTerminalStreamEvent = false;
+
+    const refreshAfterInterruptedStream = async (): Promise<Session | null> => {
+      try {
+        const fresh = await getSession(targetSessionId);
+        if (isViewingSession(targetSessionId)) {
+          setSession(fresh);
+          setMessages(fresh.messages || []);
+        }
+        return fresh;
+      } catch (refreshErr) {
+        console.error('Failed to refresh session after interrupted stream:', refreshErr);
+        return null;
+      }
+    };
 
     try {
       for await (const event of sendMessageStream(targetSessionId, message, images, controller.signal)) {
+        if (event.type === 'done' || event.type === 'error') {
+          sawTerminalStreamEvent = true;
+        }
         handleStreamEvent(event, targetSessionId);
+      }
+      if (!sawTerminalStreamEvent && !controller.signal.aborted) {
+        const fresh = await refreshAfterInterruptedStream();
+        if (!fresh) {
+          throw new Error('Live stream ended before the session sent a completion event.');
+        }
+        if (!isTerminalSessionStatus(fresh.status) && isViewingSession(targetSessionId)) {
+          setProviderTrace('Live stream disconnected. Showing saved session updates while the run continues.');
+        }
       }
     } catch (err) {
       const isAbort = err instanceof DOMException && err.name === 'AbortError';
       if (!isAbort) {
         console.error('Failed to send message:', err);
-        if (isViewingSession(targetSessionId)) {
-          setError(normalizeFailureReason(err instanceof Error ? err.message : 'Failed to send message'));
+        const fresh = await refreshAfterInterruptedStream();
+        if (fresh) {
+          if (!isTerminalSessionStatus(fresh.status) && isViewingSession(targetSessionId)) {
+            setProviderTrace('Live stream disconnected. Showing saved session updates while the run continues.');
+          }
+        } else {
+          if (isViewingSession(targetSessionId)) {
+            setError(normalizeFailureReason(err instanceof Error ? err.message : 'Failed to send message'));
+          }
+          // Remove the placeholder assistant message (and user message if we added it)
+          const removeCount = messageAlreadyExists ? 1 : 2;
+          updateMessagesForSession(targetSessionId, (prev) => prev.slice(0, -removeCount));
         }
-        // Remove the placeholder assistant message (and user message if we added it)
-        const removeCount = messageAlreadyExists ? 1 : 2;
-        updateMessagesForSession(targetSessionId, (prev) => prev.slice(0, -removeCount));
       }
     } finally {
       if (isViewingSession(targetSessionId)) {
@@ -978,6 +1054,10 @@ function ChatView() {
   };
 
   const handleStreamEvent = (event: ChatStreamEvent, targetSessionId: string) => {
+    if (event.type === 'heartbeat') {
+      return;
+    }
+
     if (event.type === 'assistant_delta') {
       if (!event.delta) {
         return;
@@ -1067,6 +1147,31 @@ function ChatView() {
           metadata: {
             ...(prev.metadata || {}),
             workflow_state: event.workflow,
+          },
+        };
+      });
+      return;
+    }
+
+    if (event.type === 'workflow_transcript_entry' && event.workflow_transcript_entry) {
+      setSession((prev) => {
+        if (!prev || prev.id !== targetSessionId) {
+          return prev;
+        }
+        const metadata = prev.metadata || {};
+        const existing = Array.isArray(metadata.workflow_transcript) ? metadata.workflow_transcript : [];
+        const nextEntry = event.workflow_transcript_entry;
+        const next = existing.some((entry) => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            return false;
+          }
+          return (entry as Record<string, unknown>).id === nextEntry.id;
+        }) ? existing : [...existing, nextEntry];
+        return {
+          ...prev,
+          metadata: {
+            ...metadata,
+            workflow_transcript: next,
           },
         };
       });
@@ -1293,6 +1398,10 @@ function ChatView() {
     setLinkedSessionType(nextType);
   };
 
+  const workflowTranscript = useMemo(
+    () => parseWorkflowTranscript(session),
+    [session],
+  );
   const linkedAgentOptions = useMemo(
     () => [
       { value: 'build', name: 'Default agent' },
@@ -1330,6 +1439,83 @@ function ChatView() {
       .filter((item) => item.parent_id === session.id)
       .sort((a, b) => new Date(a.created_at || a.updated_at).getTime() - new Date(b.created_at || b.updated_at).getTime());
   }, [session, sessionIndex]);
+
+  const workflowChildSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    const hasWorkflowContext = Boolean(workflowState) || workflowTranscript.length > 0;
+    for (const node of workflowState?.nodes || []) {
+      const childSessionId = (node.childSessionId || '').trim();
+      if (childSessionId) {
+        ids.add(childSessionId);
+      }
+    }
+    for (const entry of workflowTranscript) {
+      const childSessionId = (entry.childSessionId || '').trim();
+      if (childSessionId) {
+        ids.add(childSessionId);
+      }
+    }
+    if (hasWorkflowContext) {
+      for (const child of childSessions) {
+        if (child.id) {
+          ids.add(child.id);
+        }
+      }
+    }
+    return Array.from(ids).sort();
+  }, [childSessions, workflowState, workflowTranscript]);
+
+  useEffect(() => {
+    if (!session || workflowChildSessionIds.length === 0) {
+      setWorkflowChildSessions({});
+      return;
+    }
+
+    let cancelled = false;
+    const refreshWorkflowChildren = async () => {
+      const loaded = await Promise.all(workflowChildSessionIds.map(async (childSessionId) => {
+        try {
+          return [childSessionId, await getSession(childSessionId)] as const;
+        } catch (err) {
+          console.error('Failed to load workflow child session:', childSessionId, err);
+          return null;
+        }
+      }));
+      if (cancelled) {
+        return;
+      }
+      setWorkflowChildSessions((prev) => {
+        const next: Record<string, Session> = {};
+        for (const childSessionId of workflowChildSessionIds) {
+          if (prev[childSessionId]) {
+            next[childSessionId] = prev[childSessionId];
+          }
+        }
+        for (const item of loaded) {
+          if (item) {
+            next[item[0]] = item[1];
+          }
+        }
+        return next;
+      });
+    };
+
+    void refreshWorkflowChildren();
+    if (isTerminalSessionStatus(session.status)) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshWorkflowChildren();
+    }, SESSION_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [session, workflowChildSessionIds]);
 
   const composerPlaceholder = useMemo(() => {
     if (pendingQuestion) {
@@ -1702,7 +1888,7 @@ function ChatView() {
       )}
       
       <div className="chat-history">
-        {messages.length > 0 || systemPromptSnapshot || childSessions.length > 0 ? (
+        {messages.length > 0 || systemPromptSnapshot || childSessions.length > 0 || workflowTranscript.length > 0 ? (
           <>
             <MessageList 
               messages={messagesWithProviderFailures} 
@@ -1712,6 +1898,8 @@ function ChatView() {
             systemPromptSnapshot={systemPromptSnapshot}
             session={session}
             childSessions={childSessions}
+            workflowTranscript={workflowTranscript}
+            workflowChildSessions={workflowChildSessions}
             subAgents={subAgents}
           />
           </>

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import mermaid from 'mermaid';
 // noop touch to satisfy workflow: ensuring latest edit pass for duration rendering fixes
 import { Link } from 'react-router-dom';
-import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type Session, type SubAgent, type SystemPromptSnapshot, type ToolCall, type ToolResult } from '../../api';
+import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type Session, type SubAgent, type SystemPromptSnapshot, type ToolCall, type ToolResult, type WorkflowTranscriptEntry } from '../../api';
 import { IntegrationProviderIcon, integrationProviderForToolName, integrationProviderLabel } from '../../lib/integrationMeta';
 import { renderMarkdownToHtml } from '../../lib/markdown';
 import { buildOpenInMyMindUrl, extractToolFilePath, isSupportedFileTool } from '../../lib/myMindNavigation';
@@ -58,6 +58,8 @@ interface MessageListProps {
   systemPromptSnapshot?: SystemPromptSnapshot | null;
   session?: Session | null;
   childSessions?: Session[];
+  workflowTranscript?: WorkflowTranscriptEntry[];
+  workflowChildSessions?: Record<string, Session>;
   subAgents?: SubAgent[];
 }
 
@@ -83,6 +85,206 @@ type TimelineEntry = {
   order: number;
   node: React.ReactNode;
 };
+
+type WorkflowTranscriptPersona = 'worker' | 'critic' | 'workflow';
+
+type WorkflowTranscriptRound = {
+  key: string;
+  turn: number | null;
+  entries: WorkflowTranscriptEntry[];
+  firstCreatedAt: string;
+};
+
+type WorkflowRuntimeNodeSummary = {
+  id: string;
+  label: string;
+  kind?: string;
+  childSessionId: string;
+  status: string;
+  startedAt?: string;
+  completedAt?: string;
+  outputPreview?: string;
+};
+
+type WorkflowDefinitionNodeSummary = {
+  id: string;
+  label: string;
+  kind?: string;
+};
+
+function workflowDefinitionNodeSummaries(session: Session | null | undefined): Map<string, WorkflowDefinitionNodeSummary> {
+  const raw = session?.metadata?.workflow_definition;
+  const definitions = new Map<string, WorkflowDefinitionNodeSummary>();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return definitions;
+  }
+  const nodes = (raw as Record<string, unknown>).nodes;
+  if (!Array.isArray(nodes)) {
+    return definitions;
+  }
+  for (const item of nodes) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    if (!id) {
+      continue;
+    }
+    const label = typeof record.label === 'string' && record.label.trim() ? record.label.trim() : id;
+    const kind = typeof record.kind === 'string' ? record.kind.trim() : undefined;
+    if (kind === 'review_loop') {
+      definitions.set(`${id}__worker`, {
+        id: `${id}__worker`,
+        label: typeof record.workerLabel === 'string' && record.workerLabel.trim() ? record.workerLabel.trim() : 'Worker',
+        kind: 'subagent',
+      });
+      definitions.set(`${id}__critic`, {
+        id: `${id}__critic`,
+        label: typeof record.reviewerLabel === 'string' && record.reviewerLabel.trim() ? record.reviewerLabel.trim() : 'Critic',
+        kind: 'subagent',
+      });
+      continue;
+    }
+    definitions.set(id, { id, label, kind });
+  }
+  return definitions;
+}
+
+function workflowRuntimeNodeSummaries(session: Session | null | undefined): WorkflowRuntimeNodeSummary[] {
+  const raw = session?.metadata?.workflow_state;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return [];
+  }
+  const nodes = (raw as Record<string, unknown>).nodes;
+  if (!nodes || typeof nodes !== 'object' || Array.isArray(nodes)) {
+    return [];
+  }
+  const definitions = workflowDefinitionNodeSummaries(session);
+  return Object.entries(nodes as Record<string, unknown>)
+    .map(([id, value]): WorkflowRuntimeNodeSummary | null => {
+      const record = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+      const childSessionId = typeof record.childSessionId === 'string' ? record.childSessionId.trim() : '';
+      if (!childSessionId) {
+        return null;
+      }
+      const definition = definitions.get(id);
+      return {
+        id,
+        label: definition?.label || id,
+        kind: definition?.kind,
+        childSessionId,
+        status: typeof record.status === 'string' ? record.status : 'pending',
+        startedAt: typeof record.startedAt === 'string' ? record.startedAt : undefined,
+        completedAt: typeof record.completedAt === 'string' ? record.completedAt : undefined,
+        outputPreview: typeof record.outputPreview === 'string' ? record.outputPreview : undefined,
+      };
+    })
+    .filter((node): node is WorkflowRuntimeNodeSummary => node !== null)
+    .sort((a, b) => timestampMs(a.startedAt || a.completedAt) - timestampMs(b.startedAt || b.completedAt));
+}
+
+function workflowEntryPersona(entry: WorkflowTranscriptEntry): WorkflowTranscriptPersona {
+  const haystack = `${entry.nodeKind ?? ''} ${entry.nodeLabel ?? ''} ${entry.nodeId ?? ''} ${entry.role ?? ''}`.toLowerCase();
+  if (haystack.includes('critic') || haystack.includes('reviewer') || haystack.includes('review')) {
+    return 'critic';
+  }
+  if (haystack.includes('worker') || haystack.includes('developer') || haystack.includes('dev')) {
+    return 'worker';
+  }
+  return 'workflow';
+}
+
+function workflowEntryAvatar(entry: WorkflowTranscriptEntry): string {
+  const persona = workflowEntryPersona(entry);
+  if (persona === 'worker') return '🛠️';
+  if (persona === 'critic') return '🔍';
+  return getAgentEmoji(entry.nodeKind === 'subagent' ? 'subagent' : 'main', entry.nodeId || entry.childSessionId || undefined) || '🤖';
+}
+
+function workflowEntryDisplayName(entry: WorkflowTranscriptEntry): string {
+  const label = (entry.nodeLabel || '').trim();
+  if (label !== '') return label;
+  const persona = workflowEntryPersona(entry);
+  if (persona === 'worker') return 'Developer';
+  if (persona === 'critic') return 'Critic';
+  return 'Workflow agent';
+}
+
+function workflowRoundLabel(round: WorkflowTranscriptRound, index: number): string {
+  const personas = new Set(round.entries.map(workflowEntryPersona));
+  const isReviewRound = personas.has('worker') || personas.has('critic');
+  if (round.turn !== null && Number.isFinite(round.turn)) {
+    return isReviewRound ? `Review Round ${round.turn}` : `Workflow Turn ${round.turn}`;
+  }
+  return isReviewRound ? `Review Round ${index + 1}` : `Workflow Conversation ${index + 1}`;
+}
+
+function workflowRoundParticipants(round: WorkflowTranscriptRound): string {
+  const ordered: WorkflowTranscriptPersona[] = [];
+  for (const entry of round.entries) {
+    const persona = workflowEntryPersona(entry);
+    if (!ordered.includes(persona)) ordered.push(persona);
+  }
+  if (ordered.length === 0) return 'Workflow conversation';
+  return ordered
+    .map((persona) => {
+      if (persona === 'worker') return 'Developer';
+      if (persona === 'critic') return 'Critic';
+      return 'Workflow';
+    })
+    .join(' → ');
+}
+
+function groupWorkflowTranscript(entries: WorkflowTranscriptEntry[]): WorkflowTranscriptRound[] {
+  const sortedEntries = entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const diff = timestampMs(a.entry.createdAt) - timestampMs(b.entry.createdAt);
+      return diff !== 0 ? diff : a.index - b.index;
+    });
+
+  const rounds: WorkflowTranscriptRound[] = [];
+  const explicitTurnRounds = new Map<number, WorkflowTranscriptRound>();
+  let fallbackRound: WorkflowTranscriptRound | null = null;
+  let fallbackIndex = 0;
+
+  for (const { entry, index } of sortedEntries) {
+    const createdAt = entry.createdAt || new Date(0).toISOString();
+    const turn = typeof entry.turn === 'number' && Number.isFinite(entry.turn) ? entry.turn : null;
+    if (turn !== null) {
+      let round = explicitTurnRounds.get(turn);
+      if (!round) {
+        round = { key: `turn-${turn}`, turn, entries: [], firstCreatedAt: createdAt };
+        explicitTurnRounds.set(turn, round);
+        rounds.push(round);
+      }
+      round.entries.push(entry);
+      if (timestampMs(createdAt) < timestampMs(round.firstCreatedAt)) round.firstCreatedAt = createdAt;
+      fallbackRound = null;
+      continue;
+    }
+
+    const persona = workflowEntryPersona(entry);
+    const previousPersona = fallbackRound?.entries.length ? workflowEntryPersona(fallbackRound.entries[fallbackRound.entries.length - 1]) : null;
+    const shouldStartFallback = !fallbackRound
+      || fallbackRound.entries.length >= 2
+      || (previousPersona !== null && previousPersona === persona);
+
+    if (shouldStartFallback) {
+      fallbackIndex += 1;
+      fallbackRound = { key: `fallback-${fallbackIndex}-${entry.id || index}`, turn: null, entries: [], firstCreatedAt: createdAt };
+      rounds.push(fallbackRound);
+    }
+    const activeFallbackRound = fallbackRound;
+    if (!activeFallbackRound) {
+      continue;
+    }
+    activeFallbackRound.entries.push(entry);
+  }
+
+  return rounds.sort((a, b) => timestampMs(a.firstCreatedAt) - timestampMs(b.firstCreatedAt));
+}
 
 type ParallelStepResult = {
   step?: number;
@@ -211,7 +413,7 @@ function isInternalHandoffMessage(message: Message): boolean {
   );
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot, session, childSessions = [], subAgents = [] }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionId, projectId, systemPromptSnapshot, session, childSessions = [], workflowTranscript = [], workflowChildSessions = {}, subAgents = [] }) => {
   const userAvatarUrl = buildGravatarUrl(getStoredA2ARegistryOwnerEmail(), 40);
   const assistantEmoji = useMemo(() => {
     const metadata = (session?.metadata ?? null) as Record<string, unknown> | null;
@@ -226,7 +428,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       return getAgentEmoji('local', session.a2a_target_agent_id);
     }
     return getAgentEmoji('main');
-  }, [session?.a2a_source_agent_id, session?.a2a_target_agent_id, session?.metadata]);
+  }, [session]);
 
   const subAgentIdSet = useMemo(() => new Set(subAgents.map((agent) => agent.id)), [subAgents]);
   const mermaidRenderRequestRef = useRef(0);
@@ -1162,7 +1364,77 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     );
   };
 
-  const renderedMessages = useMemo(() => {
+  const renderWorkflowChildActivity = (child: Session | undefined, baseKey: string): React.ReactNode => {
+    const childMessages = child?.messages || [];
+    const activityNodes: React.ReactNode[] = [];
+
+    for (let index = 0; index < childMessages.length; index += 1) {
+      const message = childMessages[index];
+      const toolCalls = message.tool_calls ?? [];
+      const toolResults = message.tool_results ?? [];
+
+      if (message.role === 'assistant' && toolCalls.length > 0) {
+        let mergedResults = [...toolResults];
+        let timestamp = message.timestamp;
+        const next = childMessages[index + 1];
+        if (next?.role === 'tool' && (next.tool_results?.length ?? 0) > 0) {
+          mergedResults = mergedResults.concat(next.tool_results || []);
+          timestamp = next.timestamp;
+          index += 1;
+        }
+        const resultByCallID = new Map<string, ToolResult>();
+        for (const result of mergedResults) {
+          const prev = resultByCallID.get(result.tool_call_id);
+          resultByCallID.set(result.tool_call_id, prev ? pickBetterToolResult(prev, result) : result);
+        }
+        for (const toolCall of toolCalls) {
+          const key = `${baseKey}-tool-${index}-${toolCall.id}`;
+          if (toolCall.name === 'delegate_to_subagent') {
+            activityNodes.push(renderSubAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, key));
+          } else if (toolCall.name === 'delegate_to_external_agent') {
+            activityNodes.push(renderExternalAgentDelegation(toolCall, resultByCallID.get(toolCall.id), timestamp, key));
+          } else {
+            activityNodes.push(renderToolExecutionCard(toolCall, resultByCallID.get(toolCall.id), timestamp, key));
+          }
+        }
+        continue;
+      }
+
+      if (message.role === 'tool' && toolResults.length > 0) {
+        for (const result of toolResults) {
+          activityNodes.push(renderStandaloneToolResultCard(result, message.timestamp, `${baseKey}-result-${index}-${result.tool_call_id}`));
+        }
+      }
+    }
+
+    const status = child?.status || '';
+    const isActiveChild = status !== '' && !['completed', 'failed'].includes(status.toLowerCase());
+    if (activityNodes.length === 0) {
+      if (!isActiveChild) {
+        return null;
+      }
+      return (
+        <div className="workflow-child-activity workflow-child-activity-empty">
+          <span className="workflow-child-activity-title">Child session activity</span>
+          <span className="workflow-child-activity-status">Waiting for the first tool call...</span>
+        </div>
+      );
+    }
+
+    return (
+      <details className="workflow-child-activity" open>
+        <summary className="workflow-child-activity-summary">
+          <span className="workflow-child-activity-title">Child session activity</span>
+          {status ? <span className={`workflow-agent-status status-${status}`}>{status}</span> : null}
+        </summary>
+        <div className="workflow-child-activity-list">
+          {activityNodes}
+        </div>
+      </details>
+    );
+  };
+
+  const renderedMessages = (() => {
     const entries: TimelineEntry[] = [];
     let order = 0;
     const pushEntry = (node: React.ReactNode, timestamp: string | undefined) => {
@@ -1331,28 +1603,162 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       ), message.timestamp);
     }
 
-    for (const child of childSessions) {
+    const transcriptChildSessionIds = new Set(
+      workflowTranscript
+        .map((entry) => (entry.childSessionId || '').trim())
+        .filter(Boolean),
+    );
+
+    const workflowRuntimeNodes = workflowRuntimeNodeSummaries(session);
+    const workflowRuntimeChildSessionIds = new Set(workflowRuntimeNodes.map((node) => node.childSessionId));
+
+    for (const [roundIndex, round] of groupWorkflowTranscript(workflowTranscript).entries()) {
+      const roundTimestamp = round.firstCreatedAt || new Date().toISOString();
+      const roundLabel = workflowRoundLabel(round, roundIndex);
       pushEntry(
-        <Link
-          key={`child-session-${child.id}`}
-          to={`/chat/${child.id}`}
-          className="inline-child-session"
-          title={`Open child session ${child.id}`}
-        >
-          <span className="inline-child-session-emoji" aria-hidden="true">{childSessionEmoji(child)}</span>
-          <span className={`inline-child-session-dot status-${child.status}`} aria-hidden="true" />
-          <span className="inline-child-session-main">
-            <span className="inline-child-session-title">
-              {child.title || `Session ${child.id.slice(0, 8)}`}
-            </span>
-            <span className="inline-child-session-subtitle">
-              {childSessionWorkflowLabel(child)}
-            </span>
-          </span>
-          <span className="inline-child-session-status">{child.status}</span>
-        </Link>,
-        child.created_at || child.updated_at,
+        <div key={`workflow-transcript-round-${round.key}`} className="workflow-dialogue-thread">
+          <details className="workflow-dialogue-round" open>
+            <summary className="workflow-dialogue-round-summary">
+              <span className="workflow-dialogue-round-title">{roundLabel}</span>
+              <span className="workflow-dialogue-round-participants">{workflowRoundParticipants(round)}</span>
+            </summary>
+            <div className="workflow-dialogue-turns">
+              {round.entries.map((entry) => {
+                const timestamp = entry.createdAt || roundTimestamp;
+                const persona = workflowEntryPersona(entry);
+                const html = renderMarkdownToHtml(entry.content || '');
+                const displayName = workflowEntryDisplayName(entry);
+                const key = entry.id || `${round.key}-${entry.nodeId || entry.childSessionId || displayName}-${timestamp}`;
+                return (
+                  <article key={`workflow-transcript-${key}`} className={`workflow-dialogue-speaker workflow-dialogue-speaker-${persona}`}>
+                    <div className={`workflow-dialogue-avatar workflow-dialogue-avatar-${persona}`} aria-hidden="true">
+                      {workflowEntryAvatar(entry)}
+                    </div>
+                    <div className="workflow-dialogue-bubble">
+                      <div className="workflow-dialogue-header">
+                        <div className="workflow-dialogue-identity">
+                          <strong>{displayName}</strong>
+                          <span>{persona === 'worker' ? 'Developer agent' : persona === 'critic' ? 'Reviewer agent' : 'Workflow agent'}</span>
+                        </div>
+                        <div className="workflow-dialogue-actions">
+                          {entry.status ? <span className={`workflow-agent-status status-${entry.status}`}>{entry.status}</span> : null}
+                          {entry.childSessionId ? (
+                            <Link to={`/chat/${entry.childSessionId}`} className="workflow-agent-link">
+                              Open full conversation
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="message-content workflow-dialogue-content">
+                        <div className="message-markdown" dangerouslySetInnerHTML={{ __html: html }} />
+                      </div>
+                      {renderWorkflowChildActivity(
+                        entry.childSessionId ? workflowChildSessions[entry.childSessionId] : undefined,
+                        `workflow-transcript-${key}`,
+                      )}
+                      <div className="message-footer workflow-dialogue-footer">
+                        <CopyButton text={entry.content || ''} />
+                        <span className="message-time" title={timestamp ? new Date(timestamp).toLocaleString() : ''}>🕐</span>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </details>
+        </div>,
+        roundTimestamp,
       );
+    }
+
+    for (const node of workflowRuntimeNodes) {
+      if (transcriptChildSessionIds.has(node.childSessionId)) {
+        continue;
+      }
+      const child = workflowChildSessions[node.childSessionId] || childSessions.find((item) => item.id === node.childSessionId);
+      const timestamp = node.startedAt || child?.created_at || node.completedAt || child?.updated_at || new Date().toISOString();
+      const pseudoEntry: WorkflowTranscriptEntry = {
+        id: `workflow-node-${node.id}`,
+        nodeId: node.id,
+        nodeLabel: node.label,
+        nodeKind: node.kind,
+        childSessionId: node.childSessionId,
+        role: 'agent',
+        content: node.outputPreview || '',
+        createdAt: timestamp,
+        status: node.status,
+      };
+      const persona = workflowEntryPersona(pseudoEntry);
+      const previewHtml = node.outputPreview ? renderMarkdownToHtml(node.outputPreview) : '';
+      pushEntry(
+        <div key={`workflow-live-node-${node.id}`} className="workflow-dialogue-thread workflow-dialogue-thread-live">
+          <details className="workflow-dialogue-round" open>
+            <summary className="workflow-dialogue-round-summary">
+              <span className="workflow-dialogue-round-title">{node.label}</span>
+              <span className="workflow-dialogue-round-participants">Child session</span>
+            </summary>
+            <div className="workflow-dialogue-turns">
+              <article className={`workflow-dialogue-speaker workflow-dialogue-speaker-${persona}`}>
+                <div className={`workflow-dialogue-avatar workflow-dialogue-avatar-${persona}`} aria-hidden="true">
+                  {workflowEntryAvatar(pseudoEntry)}
+                </div>
+                <div className="workflow-dialogue-bubble">
+                  <div className="workflow-dialogue-header">
+                    <div className="workflow-dialogue-identity">
+                      <strong>{node.label}</strong>
+                      <span>{persona === 'worker' ? 'Developer agent' : persona === 'critic' ? 'Reviewer agent' : 'Workflow agent'}</span>
+                    </div>
+                    <div className="workflow-dialogue-actions">
+                      <span className={`workflow-agent-status status-${node.status}`}>{node.status}</span>
+                      <Link to={`/chat/${node.childSessionId}`} className="workflow-agent-link">
+                        Open full conversation
+                      </Link>
+                    </div>
+                  </div>
+                  {previewHtml ? (
+                    <div className="message-content workflow-dialogue-content">
+                      <div className="message-markdown" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                    </div>
+                  ) : (
+                    <div className="workflow-live-node-note">Session activity is loading as the child agent works.</div>
+                  )}
+                  {renderWorkflowChildActivity(child, `workflow-live-node-${node.id}`)}
+                </div>
+              </article>
+            </div>
+          </details>
+        </div>,
+        timestamp,
+      );
+    }
+
+    if (workflowTranscript.length === 0) {
+      for (const child of childSessions) {
+        if (workflowRuntimeChildSessionIds.has(child.id)) {
+          continue;
+        }
+        pushEntry(
+          <Link
+            key={`child-session-${child.id}`}
+            to={`/chat/${child.id}`}
+            className="inline-child-session"
+            title={`Open child session ${child.id}`}
+          >
+            <span className="inline-child-session-emoji" aria-hidden="true">{childSessionEmoji(child)}</span>
+            <span className={`inline-child-session-dot status-${child.status}`} aria-hidden="true" />
+            <span className="inline-child-session-main">
+              <span className="inline-child-session-title">
+                {child.title || `Session ${child.id.slice(0, 8)}`}
+              </span>
+              <span className="inline-child-session-subtitle">
+                {childSessionWorkflowLabel(child)}
+              </span>
+            </span>
+            <span className="inline-child-session-status">{child.status}</span>
+          </Link>,
+          child.created_at || child.updated_at,
+        );
+      }
     }
 
     if (isLoading) {
@@ -1373,7 +1779,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         return a.order - b.order;
       })
       .map((entry) => entry.node);
-  }, [messages, userAvatarUrl, assistantEmoji, childSessions, childSessionEmoji, isLoading]);
+  })();
 
   useEffect(() => {
     const messageListElement = document.querySelector('.message-list');
