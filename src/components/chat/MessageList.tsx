@@ -1434,6 +1434,77 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     );
   };
 
+  const workflowPersonaLabel = (persona: WorkflowTranscriptPersona): string => {
+    if (persona === 'worker') return 'Developer agent';
+    if (persona === 'critic') return 'Reviewer agent';
+    return 'Workflow agent';
+  };
+
+  const renderWorkflowEntry = (
+    entry: WorkflowTranscriptEntry,
+    key: string,
+    timestampFallback?: string,
+    child?: Session,
+    emptyContentNote?: string,
+  ): React.ReactNode => {
+    const timestamp = entry.createdAt || timestampFallback || '';
+    const persona = workflowEntryPersona(entry);
+    const displayName = workflowEntryDisplayName(entry);
+    const html = entry.content ? renderMarkdownToHtml(entry.content) : '';
+
+    return (
+      <article key={key} className={`workflow-entry workflow-entry-${persona}`}>
+        <div className="workflow-entry-main">
+          <header className="workflow-entry-header">
+            <span className={`workflow-entry-avatar workflow-entry-avatar-${persona}`} aria-hidden="true">
+              {workflowEntryAvatar(entry)}
+            </span>
+            <span className="workflow-entry-identity">
+              <strong>{displayName}</strong>
+              <span>{workflowPersonaLabel(persona)}</span>
+            </span>
+            <span className="workflow-entry-actions">
+              {entry.status ? <span className={`workflow-agent-status status-${entry.status}`}>{entry.status}</span> : null}
+              {entry.childSessionId ? (
+                <Link to={`/chat/${entry.childSessionId}`} className="workflow-agent-link">
+                  Open full conversation
+                </Link>
+              ) : null}
+            </span>
+          </header>
+          {html ? (
+            <div className="message-content workflow-entry-content">
+              <div className="message-markdown" dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          ) : emptyContentNote ? (
+            <div className="workflow-live-node-note">{emptyContentNote}</div>
+          ) : null}
+          {renderWorkflowChildActivity(child ?? (entry.childSessionId ? workflowChildSessions[entry.childSessionId] : undefined), key)}
+          <footer className="message-footer workflow-entry-footer">
+            <CopyButton text={entry.content || ''} />
+            {timestamp ? <span className="message-time" title={new Date(timestamp).toLocaleString()}>🕐</span> : null}
+          </footer>
+        </div>
+      </article>
+    );
+  };
+
+  const renderWorkflowTurn = (
+    key: string,
+    title: string,
+    meta: string,
+    children: React.ReactNode,
+    live = false,
+  ): React.ReactNode => (
+    <details key={key} className={`workflow-turn${live ? ' workflow-turn-live' : ''}`} open>
+      <summary className="workflow-turn-separator">
+        <span className="workflow-turn-title">{title}</span>
+        <span className="workflow-turn-meta">{meta}</span>
+      </summary>
+      <div className="workflow-turn-body">{children}</div>
+    </details>
+  );
+
   const renderedMessages = (() => {
     const entries: TimelineEntry[] = [];
     let order = 0;
@@ -1616,57 +1687,17 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       const roundTimestamp = round.firstCreatedAt || new Date().toISOString();
       const roundLabel = workflowRoundLabel(round, roundIndex);
       pushEntry(
-        <div key={`workflow-transcript-round-${round.key}`} className="workflow-dialogue-thread">
-          <details className="workflow-dialogue-round" open>
-            <summary className="workflow-dialogue-round-summary">
-              <span className="workflow-dialogue-round-title">{roundLabel}</span>
-              <span className="workflow-dialogue-round-participants">{workflowRoundParticipants(round)}</span>
-            </summary>
-            <div className="workflow-dialogue-turns">
-              {round.entries.map((entry) => {
-                const timestamp = entry.createdAt || roundTimestamp;
-                const persona = workflowEntryPersona(entry);
-                const html = renderMarkdownToHtml(entry.content || '');
-                const displayName = workflowEntryDisplayName(entry);
-                const key = entry.id || `${round.key}-${entry.nodeId || entry.childSessionId || displayName}-${timestamp}`;
-                return (
-                  <article key={`workflow-transcript-${key}`} className={`workflow-dialogue-speaker workflow-dialogue-speaker-${persona}`}>
-                    <div className={`workflow-dialogue-avatar workflow-dialogue-avatar-${persona}`} aria-hidden="true">
-                      {workflowEntryAvatar(entry)}
-                    </div>
-                    <div className="workflow-dialogue-bubble">
-                      <div className="workflow-dialogue-header">
-                        <div className="workflow-dialogue-identity">
-                          <strong>{displayName}</strong>
-                          <span>{persona === 'worker' ? 'Developer agent' : persona === 'critic' ? 'Reviewer agent' : 'Workflow agent'}</span>
-                        </div>
-                        <div className="workflow-dialogue-actions">
-                          {entry.status ? <span className={`workflow-agent-status status-${entry.status}`}>{entry.status}</span> : null}
-                          {entry.childSessionId ? (
-                            <Link to={`/chat/${entry.childSessionId}`} className="workflow-agent-link">
-                              Open full conversation
-                            </Link>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="message-content workflow-dialogue-content">
-                        <div className="message-markdown" dangerouslySetInnerHTML={{ __html: html }} />
-                      </div>
-                      {renderWorkflowChildActivity(
-                        entry.childSessionId ? workflowChildSessions[entry.childSessionId] : undefined,
-                        `workflow-transcript-${key}`,
-                      )}
-                      <div className="message-footer workflow-dialogue-footer">
-                        <CopyButton text={entry.content || ''} />
-                        <span className="message-time" title={timestamp ? new Date(timestamp).toLocaleString() : ''}>🕐</span>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </details>
-        </div>,
+        renderWorkflowTurn(
+          `workflow-transcript-round-${round.key}`,
+          roundLabel,
+          workflowRoundParticipants(round),
+          round.entries.map((entry) => {
+            const timestamp = entry.createdAt || roundTimestamp;
+            const displayName = workflowEntryDisplayName(entry);
+            const key = entry.id || `${round.key}-${entry.nodeId || entry.childSessionId || displayName}-${timestamp}`;
+            return renderWorkflowEntry(entry, `workflow-transcript-${key}`, roundTimestamp);
+          }),
+        ),
         roundTimestamp,
       );
     }
@@ -1688,46 +1719,20 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         createdAt: timestamp,
         status: node.status,
       };
-      const persona = workflowEntryPersona(pseudoEntry);
-      const previewHtml = node.outputPreview ? renderMarkdownToHtml(node.outputPreview) : '';
       pushEntry(
-        <div key={`workflow-live-node-${node.id}`} className="workflow-dialogue-thread workflow-dialogue-thread-live">
-          <details className="workflow-dialogue-round" open>
-            <summary className="workflow-dialogue-round-summary">
-              <span className="workflow-dialogue-round-title">{node.label}</span>
-              <span className="workflow-dialogue-round-participants">Child session</span>
-            </summary>
-            <div className="workflow-dialogue-turns">
-              <article className={`workflow-dialogue-speaker workflow-dialogue-speaker-${persona}`}>
-                <div className={`workflow-dialogue-avatar workflow-dialogue-avatar-${persona}`} aria-hidden="true">
-                  {workflowEntryAvatar(pseudoEntry)}
-                </div>
-                <div className="workflow-dialogue-bubble">
-                  <div className="workflow-dialogue-header">
-                    <div className="workflow-dialogue-identity">
-                      <strong>{node.label}</strong>
-                      <span>{persona === 'worker' ? 'Developer agent' : persona === 'critic' ? 'Reviewer agent' : 'Workflow agent'}</span>
-                    </div>
-                    <div className="workflow-dialogue-actions">
-                      <span className={`workflow-agent-status status-${node.status}`}>{node.status}</span>
-                      <Link to={`/chat/${node.childSessionId}`} className="workflow-agent-link">
-                        Open full conversation
-                      </Link>
-                    </div>
-                  </div>
-                  {previewHtml ? (
-                    <div className="message-content workflow-dialogue-content">
-                      <div className="message-markdown" dangerouslySetInnerHTML={{ __html: previewHtml }} />
-                    </div>
-                  ) : (
-                    <div className="workflow-live-node-note">Session activity is loading as the child agent works.</div>
-                  )}
-                  {renderWorkflowChildActivity(child, `workflow-live-node-${node.id}`)}
-                </div>
-              </article>
-            </div>
-          </details>
-        </div>,
+        renderWorkflowTurn(
+          `workflow-live-node-${node.id}`,
+          node.label,
+          'Child session',
+          renderWorkflowEntry(
+            pseudoEntry,
+            `workflow-live-node-entry-${node.id}`,
+            timestamp,
+            child,
+            'Session activity is loading as the child agent works.',
+          ),
+          true,
+        ),
         timestamp,
       );
     }
