@@ -47,6 +47,7 @@ import { webAppNotificationEventName, type WebAppNotificationEventDetail } from 
 import { AvatarAudioProvider } from './components/avatar/AvatarAudioProvider';
 import { useAvatarAudio } from './lib/avatarAudio';
 import GlobalAvatarVoiceSession from './components/avatar/GlobalAvatarVoiceSession';
+import { START_MEETING_RECORDING_EVENT, START_MEETING_RECORDING_REQUEST_KEY } from './lib/voiceInputEvents';
 import './App.css';
 
 const MOBILE_BREAKPOINT = 900;
@@ -759,6 +760,20 @@ function AppLayout() {
     clearParentApiBaseUrl();
     navigate(`/projects/${SYSTEM_PROJECT_KB_ID}`);
   }, [handleBackendChange, navigate]);
+
+  useEffect(() => {
+    const handleStartMeetingRecording = () => {
+      sessionStorage.setItem(START_MEETING_RECORDING_REQUEST_KEY, String(Date.now()));
+      if (location.pathname !== `/projects/${SYSTEM_PROJECT_KB_ID}/meetings`) {
+        navigate(`/projects/${SYSTEM_PROJECT_KB_ID}/meetings`);
+      }
+    };
+
+    window.addEventListener(START_MEETING_RECORDING_EVENT, handleStartMeetingRecording);
+    return () => {
+      window.removeEventListener(START_MEETING_RECORDING_EVENT, handleStartMeetingRecording);
+    };
+  }, [location.pathname, navigate]);
 
   const openNotificationSession = (sessionId: string) => {
     navigate(`/chat/${sessionId}`);

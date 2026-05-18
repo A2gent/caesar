@@ -14,7 +14,10 @@ import {
 } from '../../api';
 import { withAgentEmoji } from '../../lib/agentVisuals';
 import { AgentAvatar } from '../common/AgentAvatar';
-import { emitStartAvatarVoiceSessionEvent } from '../../lib/voiceInputEvents';
+import {
+  emitStartAvatarVoiceSessionEvent,
+  emitStartMeetingRecordingEvent,
+} from '../../lib/voiceInputEvents';
 
 interface NavItem {
   id: string;
@@ -598,8 +601,12 @@ function Sidebar({
         type="button"
         className="sidebar-avatar-wrap sidebar-avatar-trigger"
         onClick={emitStartAvatarVoiceSessionEvent}
-        title="Start voice session"
-        aria-label="Start voice session"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          emitStartMeetingRecordingEvent();
+        }}
+        title="Left click: start voice session. Right click: start meeting recording."
+        aria-label="Start voice session; right click starts meeting recording"
       >
         <AgentAvatar size={96} />
       </button>

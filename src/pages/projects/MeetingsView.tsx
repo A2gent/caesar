@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   deleteMeetingArtifacts,
   getMeetingAudioAssetUrl,
@@ -13,6 +13,8 @@ import {
 import { useAvatarAudio } from '../../lib/avatarAudio';
 import { buildOpenInMyMindUrl } from '../../lib/myMindNavigation';
 import { normalizeLanguageForBackend, readVoiceInputDeviceSetting, readVoiceInputLanguageSetting } from '../../lib/voiceInputSettings';
+import { START_MEETING_RECORDING_EVENT, START_MEETING_RECORDING_REQUEST_KEY } from '../../lib/voiceInputEvents';
+import { SYSTEM_PROJECT_KB_ID } from '../../components/layout/Sidebar';
 
 type MeetingStatus = 'idle' | 'recording' | 'paused' | 'stopping' | 'saving';
 type MeetingsPanel = 'new' | 'past';
@@ -277,7 +279,8 @@ function buildMeetingMarkdown(
 }
 
 function MeetingsView() {
-  const { projectID } = useParams<{ projectID: string }>();
+  const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
   const { setListening, clearListening, setRecording, clearRecording } = useAvatarAudio();
   const [status, setStatus] = useState<MeetingStatus>('idle');
   const statusRef = useRef<MeetingStatus>('idle');
@@ -313,6 +316,7 @@ function MeetingsView() {
   const meetingStartRef = useRef<Date | null>(null);
   const meetingIDRef = useRef<string>('');
   const timerIntervalRef = useRef<number | null>(null);
+  const hasConsumedStartRequestRef = useRef(false);
 
   useEffect(() => {
     statusRef.current = status;
@@ -673,6 +677,37 @@ function MeetingsView() {
     themSpeakerLabel,
   ]);
 
+  useEffect(() => {
+    const handleStartMeetingRecording = () => {
+      sessionStorage.setItem(START_MEETING_RECORDING_REQUEST_KEY, String(Date.now()));
+      setActivePanel('new');
+      if (projectId !== SYSTEM_PROJECT_KB_ID) {
+        navigate(`/projects/${encodeURIComponent(SYSTEM_PROJECT_KB_ID)}/meetings`);
+        return;
+      }
+      if (statusRef.current === 'idle') {
+        void startMeeting();
+      }
+    };
+
+    window.addEventListener(START_MEETING_RECORDING_EVENT, handleStartMeetingRecording);
+    return () => {
+      window.removeEventListener(START_MEETING_RECORDING_EVENT, handleStartMeetingRecording);
+    };
+  }, [navigate, projectId, startMeeting]);
+
+  useEffect(() => {
+    if (projectId !== SYSTEM_PROJECT_KB_ID || hasConsumedStartRequestRef.current) return;
+    const pendingRequest = sessionStorage.getItem(START_MEETING_RECORDING_REQUEST_KEY);
+    if (!pendingRequest) return;
+    hasConsumedStartRequestRef.current = true;
+    sessionStorage.removeItem(START_MEETING_RECORDING_REQUEST_KEY);
+    setActivePanel('new');
+    if (statusRef.current === 'idle') {
+      void startMeeting();
+    }
+  }, [projectId, startMeeting]);
+
   const pauseMeeting = useCallback(() => {
     if (statusRef.current !== 'recording') return;
     for (const capture of capturesRef.current.values()) {
@@ -890,16 +925,20 @@ function MeetingsView() {
     setPastPlaybackSeconds(current);
   }, []);
   const handleDeleteMeeting = useCallback(async (meeting: MeetingHistoryItem) => {
-    const meetingTitleForPrompt = (meeting.title || 'Meeting').trim();
-    const confirmed = window.confirm(`Delete "${meetingTitleForPrompt}" and all associated audio files? This cannot be undone.`);
-    if (!confirmed) return;
-
     setPastMeetingsError('');
     setDeletingMeetingPath(meeting.notes_path);
     try {
       await deleteMeetingArtifacts({
         notes_path: meeting.notes_path,
         audio_paths: meeting.audio_paths || [],
+      });
+      setPastMeetings((current) => {
+        const next = current.filter((item) => item.notes_path !== meeting.notes_path);
+        setSelectedPastMeetingPath((selected) => {
+          if (selected !== meeting.notes_path) return selected;
+          return next[0]?.notes_path || '';
+        });
+        return next;
       });
       await loadPastMeetings();
     } catch (deleteError) {
@@ -1058,7 +1097,11 @@ function MeetingsView() {
                   <button
                     type="button"
                     className="meetings-history-delete-btn"
-                    onClick={() => void handleDeleteMeeting(meeting)}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void handleDeleteMeeting(meeting);
+                    }}
                     title="Delete meeting note and audio"
                     aria-label={`Delete ${meeting.title || 'meeting'}`}
                     disabled={deletingMeetingPath === meeting.notes_path}
@@ -1080,7 +1123,7 @@ function MeetingsView() {
                       </div>
                       <Link
                         className="meetings-history-note-link"
-                        to={buildOpenInMyMindUrl(selectedPastMeeting.notes_path, projectID)}
+                        to={buildOpenInMyMindUrl(selectedPastMeeting.notes_path, projectId)}
                       >
                         {fileNameFromPath(selectedPastMeeting.notes_path)}
                       </Link>
