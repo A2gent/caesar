@@ -11315,6 +11315,106 @@ input[type="checkbox"]:disabled {
   transition: border-color 0.15s ease;
 }
 
+/* Custom confirmation dialog (used instead of native confirm(), which is unreliable in Tauri WebViews) */
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(3px);
+}
+
+.confirm-dialog {
+  width: min(420px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border, #3b4351);
+  border-radius: 14px;
+  background: var(--surface-1, #1a1d22);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.confirm-dialog-header,
+.confirm-dialog-body,
+.confirm-dialog-actions {
+  padding: 18px 20px;
+}
+
+.confirm-dialog-header {
+  border-bottom: 1px solid var(--border, #3b4351);
+}
+
+.confirm-dialog-header h2 {
+  margin: 0;
+  color: var(--text-1, #e6ebf2);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.confirm-dialog-body p {
+  margin: 0;
+  color: var(--text-2, #aeb7c7);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--border, #3b4351);
+}
+
+.confirm-dialog-cancel-btn,
+.confirm-dialog-confirm-btn {
+  border: 1px solid #4b5565;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.confirm-dialog-cancel-btn {
+  background: transparent;
+  color: #cbd5e1;
+}
+
+.confirm-dialog-cancel-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.confirm-dialog-confirm-btn {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.confirm-dialog-confirm-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.confirm-dialog-confirm-btn-danger {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.confirm-dialog-confirm-btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.confirm-dialog-cancel-btn:disabled,
+.confirm-dialog-confirm-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
 .form-group select:focus,
 .form-group input:focus,
 .form-group textarea:focus {
@@ -11584,6 +11684,36 @@ button.session-provider-chip:hover {
   background: transparent;
   border-color: transparent;
   color: #223049;
+}
+
+[data-theme='light'] .confirm-dialog {
+  background: #ffffff;
+  border-color: #d7e0ec;
+  box-shadow: 0 24px 80px rgba(25, 55, 100, 0.22);
+}
+
+[data-theme='light'] .confirm-dialog-header,
+[data-theme='light'] .confirm-dialog-actions {
+  border-color: #d7e0ec;
+}
+
+[data-theme='light'] .confirm-dialog-header h2 {
+  color: #162033;
+}
+
+[data-theme='light'] .confirm-dialog-body p {
+  color: #52627a;
+}
+
+[data-theme='light'] .confirm-dialog-cancel-btn {
+  background: #f5f8fc;
+  border-color: #c9d3e2;
+  color: #273247;
+}
+
+[data-theme='light'] .confirm-dialog-cancel-btn:hover:not(:disabled) {
+  background: #e6edf8;
+  color: #162033;
 }
 
 [data-theme='light'] .sidebar-agent-combo-option-btn:hover {

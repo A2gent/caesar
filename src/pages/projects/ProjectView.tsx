@@ -67,6 +67,7 @@ import {
 import SessionCreationPanel from '../../components/chat/SessionCreationPanel';
 import MeetingsView from './MeetingsView';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from '../../components/common/EmptyState';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
 import ProjectSourceEditor from '../../components/projects/ProjectSourceEditor';
 import {
   buildSelectedCodeSessionContext,
@@ -1734,6 +1735,7 @@ function ProjectView() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [isDeletingAllSessions, setIsDeletingAllSessions] = useState(false);
+  const [isDeleteAllSessionsDialogOpen, setIsDeleteAllSessionsDialogOpen] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isQueuingSession, setIsQueuingSession] = useState(false);
   const [duplicatingSessionID, setDuplicatingSessionID] = useState<string | null>(null);
@@ -2468,8 +2470,7 @@ function ProjectView() {
   };
 
   const handleDeleteAllSessions = async () => {
-    if (sessions.length === 0) return;
-    if (!confirm(`Delete all ${sessions.length} session(s) in this project? This cannot be undone.`)) return;
+    if (sessions.length === 0 || isDeletingAllSessions) return;
 
     setIsDeletingAllSessions(true);
     setError(null);
@@ -2485,6 +2486,7 @@ function ProjectView() {
       for (const rootSession of rootSessions) {
         await deleteSession(rootSession.id);
       }
+      setIsDeleteAllSessionsDialogOpen(false);
       await loadSessions();
     } catch (err) {
       console.error('Failed to delete all project sessions:', err);
@@ -5716,7 +5718,7 @@ function ProjectView() {
               <button
                 type="button"
                 className="project-bulk-delete-btn"
-                onClick={() => void handleDeleteAllSessions()}
+                onClick={() => setIsDeleteAllSessionsDialogOpen(true)}
                 disabled={sessions.length === 0 || isDeletingAllSessions}
                 title="Delete all sessions in this project"
               >
@@ -6504,6 +6506,16 @@ function ProjectView() {
         </div>
       ) : null}
 
+      <ConfirmDialog
+        open={isDeleteAllSessionsDialogOpen}
+        title="Delete all sessions?"
+        message={`Delete all ${sessions.length} session(s) in this project? This cannot be undone.`}
+        confirmLabel="Delete All"
+        destructive
+        busy={isDeletingAllSessions}
+        onConfirm={() => void handleDeleteAllSessions()}
+        onCancel={() => setIsDeleteAllSessionsDialogOpen(false)}
+      />
 
     </div>
   );
