@@ -719,7 +719,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
         );
       }
     }
-    const html = renderMarkdownToHtml(message.content);
+    const html = renderMarkdownToHtml(message.content, { preserveSingleLineBreaks: message.role === 'user' });
     return <div className="message-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
   };
 

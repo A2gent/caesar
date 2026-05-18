@@ -52,4 +52,17 @@ describe('renderMarkdownToHtml', () => {
     expect(thirdLevelItems).toHaveLength(1);
     expect(thirdLevelItems[0].textContent?.trim()).toBe('level 3');
   });
+  it('can preserve single line breaks for textarea-style messages', () => {
+    const html = renderMarkdownToHtml('First line\nSecond line\nThird line', {
+      preserveSingleLineBreaks: true,
+    });
+
+    const root = document.createElement('div');
+    root.innerHTML = html;
+
+    const paragraph = root.querySelector('p');
+    expect(paragraph?.textContent).toBe('First lineSecond lineThird line');
+    expect(paragraph?.querySelectorAll('br')).toHaveLength(2);
+  });
+
 });

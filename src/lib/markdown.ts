@@ -235,7 +235,11 @@ function renderMermaidBlock(source: string): string {
   return `<div class=\"md-mermaid\">${escapeHtml(source)}</div>`;
 }
 
-export function renderMarkdownToHtml(markdown: string): string {
+type RenderMarkdownOptions = {
+  preserveSingleLineBreaks?: boolean;
+};
+
+export function renderMarkdownToHtml(markdown: string, options: RenderMarkdownOptions = {}): string {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const html: string[] = [];
   const listIndents: number[] = [];
@@ -264,7 +268,10 @@ export function renderMarkdownToHtml(markdown: string): string {
     if (paragraphLines.length === 0) {
       return;
     }
-    html.push(`<p>${renderInlineMarkdown(paragraphLines.join(' '))}</p>`);
+    const content = options.preserveSingleLineBreaks
+      ? paragraphLines.map((line) => renderInlineMarkdown(line)).join('<br />')
+      : renderInlineMarkdown(paragraphLines.join(' '));
+    html.push(`<p>${content}</p>`);
     paragraphLines = [];
   };
 
