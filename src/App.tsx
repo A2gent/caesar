@@ -134,6 +134,8 @@ function shortcutBindingsForPath(pathname: string): KeyboardShortcutBinding[] {
 
   if (pathname.startsWith('/chat') || pathname.startsWith('/sessions')) {
     bindings.push(
+      { keys: '↑ / ↓', description: 'Move through the session list', scope: 'Session list' },
+      { keys: 'Enter', description: 'Open the highlighted session', scope: 'Session list' },
       { keys: 'Enter', description: 'Send the current message from the composer', scope: 'Chat composer' },
       { keys: 'Shift + Enter', description: 'Insert a new line in the composer', scope: 'Chat composer' },
       { keys: '↑ / ↓', description: 'Move through slash-command suggestions', scope: 'Chat composer' },
@@ -151,6 +153,8 @@ function shortcutBindingsForPath(pathname: string): KeyboardShortcutBinding[] {
       { keys: '6', description: 'Open Branch Changes tab', scope: 'Project view' },
       { keys: '7', description: 'Open History tab', scope: 'Project view' },
       { keys: '8', description: 'Open Settings tab', scope: 'Project view' },
+      { keys: '↑ / ↓', description: 'Move through the file tree in Explorer', scope: 'Project explorer' },
+      { keys: 'Enter', description: 'Open the highlighted file or expand/collapse the highlighted folder', scope: 'Project explorer' },
       { keys: 'Esc', description: 'Close open project dialogs or menus', scope: 'Project view' },
     );
   } else if (pathname.startsWith('/workflows')) {

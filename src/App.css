@@ -3918,6 +3918,12 @@ body.mind-resizing * {
   background-color: #2a2a2a;
 }
 
+.session-card.keyboard-active {
+  border-color: #8ea7ff;
+  background-color: #30364a;
+  box-shadow: inset 3px 0 0 #8ea7ff;
+}
+
 .session-card.session-child {
   padding-left: 20px;
 }
@@ -7294,6 +7300,13 @@ input[type="checkbox"]:disabled {
 
 .mind-tree-item.mind-tree-hidden {
   color: #8f8f8f;
+}
+
+.mind-tree-item.keyboard-active {
+  background: #2f3a58;
+  color: #dce5ff;
+  outline: 1px solid #8ea7ff;
+  outline-offset: -1px;
 }
 
 .mind-tree-file.active {

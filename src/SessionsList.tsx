@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ChatInput from './components/chat/ChatInput';
 import {
   createSession,
@@ -31,6 +31,12 @@ type SessionListRow = {
   depth: number;
 };
 
+const isEditableListShortcutTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+};
+
 function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +51,8 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
   const [projects, setProjects] = useState<Project[]>([]);
   const [taskProgressModalSession, setTaskProgressModalSession] = useState<Session | null>(null);
 
+  const [activeSessionListIndex, setActiveSessionListIndex] = useState(0);
+  const sessionCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const loadSessions = useCallback(async () => {
     try {
       setLoading(true);
@@ -328,6 +336,49 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
     appendRows(root, 0);
   }
 
+  useEffect(() => {
+    if (rows.length === 0) {
+      setActiveSessionListIndex(0);
+      return;
+    }
+    setActiveSessionListIndex((index) => Math.min(Math.max(index, 0), rows.length - 1));
+  }, [rows.length]);
+
+  useEffect(() => {
+    const activeSession = rows[activeSessionListIndex]?.session;
+    if (!activeSession) return;
+    sessionCardRefs.current.get(activeSession.id)?.scrollIntoView({ block: 'nearest' });
+  }, [activeSessionListIndex, rows]);
+
+  useEffect(() => {
+    const handleSessionListKeyDown = (event: KeyboardEvent) => {
+      if (isEditableListShortcutTarget(event.target) || rows.length === 0 || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveSessionListIndex((index) => Math.min(index + 1, rows.length - 1));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveSessionListIndex((index) => Math.max(index - 1, 0));
+        return;
+      }
+      if (event.key === 'Enter') {
+        const activeSession = rows[activeSessionListIndex]?.session;
+        if (!activeSession) return;
+        event.preventDefault();
+        onSelectSession(activeSession.id);
+      }
+    };
+
+    window.addEventListener('keydown', handleSessionListKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleSessionListKeyDown);
+    };
+  }, [activeSessionListIndex, onSelectSession, rows]);
+
   // Get display title
   const displayTitle = title || (projectId ? getProjectName(projectId) : 'Sessions') || 'Sessions';
 
@@ -357,15 +408,24 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
             </EmptyState>
           ) : (
             <div className="sessions-list">
-              {rows.map(({ session, depth }) => {
+              {rows.map(({ session, depth }, index) => {
+                const isActiveListItem = index === activeSessionListIndex;
                 const isQueued = session.status === 'queued';
                 const isChild = isChildSession(session);
                 const linkLabel = linkTypeLabel(session);
                 return (
                   <div
                     key={session.id}
-                    className={`session-card ${isQueued ? 'session-queued' : ''} ${isChild ? 'session-child' : ''}`}
+                    ref={(element) => {
+                      if (element) {
+                        sessionCardRefs.current.set(session.id, element);
+                      } else {
+                        sessionCardRefs.current.delete(session.id);
+                      }
+                    }}
+                    className={`session-card ${isQueued ? 'session-queued' : ''} ${isChild ? 'session-child' : ''} ${isActiveListItem ? 'keyboard-active' : ''}`}
                     style={depth > 0 ? { marginLeft: `${Math.min(depth, 6) * 18}px` } : undefined}
+                    onMouseEnter={() => setActiveSessionListIndex(index)}
                     onClick={() => onSelectSession(session.id)}
                   >
                     <div className="session-card-row">

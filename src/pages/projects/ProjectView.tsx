@@ -178,6 +178,10 @@ const isEditableShortcutTarget = (target: EventTarget | null): boolean => {
   return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
 };
 
+type VisibleTreeEntry = MindTreeEntry & {
+  depth: number;
+};
+
 function formatGitHistoryTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -1830,6 +1834,8 @@ function ProjectView() {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => new Set<string>(['']));
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(() => new Set<string>());
   const [selectedFilePath, setSelectedFilePath] = useState('');
+  const [activeTreePath, setActiveTreePath] = useState('');
+  const treeItemRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const [selectedFileContent, setSelectedFileContent] = useState('');
   const [savedFileContent, setSavedFileContent] = useState('');
   const [sourceSelectionRange, setSourceSelectionRange] = useState<FileSourceSelection | null>(null);
@@ -1867,6 +1873,8 @@ function ProjectView() {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
+  const [activeSessionListIndex, setActiveSessionListIndex] = useState(0);
+  const projectSessionCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const fileActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const handledOpenFileQueryRef = useRef('');
@@ -2872,6 +2880,37 @@ function ProjectView() {
     }
   };
 
+  const visibleTreeEntries = useMemo(() => {
+    const result: VisibleTreeEntry[] = [];
+    const appendEntries = (path: string, depth: number) => {
+      for (const entry of treeEntries[path] || []) {
+        result.push({ ...entry, depth });
+        if (entry.type === 'directory' && expandedDirs.has(entry.path)) {
+          appendEntries(entry.path, depth + 1);
+        }
+      }
+    };
+    appendEntries('', 0);
+    return result;
+  }, [expandedDirs, treeEntries]);
+
+  useEffect(() => {
+    if (activeTab !== 'explorer' || visibleTreeEntries.length === 0) {
+      return;
+    }
+    const selectedVisible = selectedFilePath && visibleTreeEntries.some((entry) => entry.path === selectedFilePath);
+    if (selectedVisible) {
+      setActiveTreePath(selectedFilePath);
+      return;
+    }
+    setActiveTreePath((current) => (visibleTreeEntries.some((entry) => entry.path === current) ? current : visibleTreeEntries[0].path));
+  }, [activeTab, selectedFilePath, visibleTreeEntries]);
+
+  useEffect(() => {
+    if (activeTab !== 'explorer' || !activeTreePath) return;
+    treeItemRefs.current.get(activeTreePath)?.scrollIntoView({ block: 'nearest' });
+  }, [activeTab, activeTreePath]);
+
   const copySelectedFilePath = async () => {
     if (!selectedFilePath) return;
     try {
@@ -2885,7 +2924,7 @@ function ProjectView() {
   };
 
   // File tree handlers
-  const toggleDirectory = async (path: string) => {
+  const toggleDirectory = useCallback(async (path: string) => {
     const isCurrentlyExpanded = expandedDirs.has(path);
     if (isCurrentlyExpanded) {
       setExpandedDirs((prev) => {
@@ -2899,10 +2938,11 @@ function ProjectView() {
         await loadTree(path);
       }
     }
-  };
+  }, [expandedDirs, loadTree, treeEntries]);
 
   const openFile = useCallback(async (path: string) => {
     if (!projectId) return;
+    setActiveTreePath(path);
     setSelectedFilePath(path);
     setMarkdownMode(defaultMarkdownModeForPath(path));
     setSourceSelectionRange(null);
@@ -2926,6 +2966,42 @@ function ProjectView() {
       setIsLoadingFile(false);
     }
   }, [projectId]);
+
+  useEffect(() => {
+    const handleExplorerListKeyDown = (event: KeyboardEvent) => {
+      if (activeTab !== 'explorer' || visibleTreeEntries.length === 0 || event.altKey || event.ctrlKey || event.metaKey || isEditableShortcutTarget(event.target)) {
+        return;
+      }
+      const activeIndex = Math.max(0, visibleTreeEntries.findIndex((entry) => entry.path === activeTreePath));
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveTreePath(visibleTreeEntries[Math.min(activeIndex + 1, visibleTreeEntries.length - 1)].path);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveTreePath(visibleTreeEntries[Math.max(activeIndex - 1, 0)].path);
+        return;
+      }
+      if (event.key !== 'Enter') {
+        return;
+      }
+
+      const activeEntry = visibleTreeEntries[activeIndex];
+      if (!activeEntry) return;
+      event.preventDefault();
+      if (activeEntry.type === 'directory') {
+        void toggleDirectory(activeEntry.path);
+      } else {
+        void openFile(activeEntry.path);
+      }
+    };
+
+    window.addEventListener('keydown', handleExplorerListKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleExplorerListKeyDown);
+    };
+  }, [activeTab, activeTreePath, openFile, toggleDirectory, visibleTreeEntries]);
 
   const expandTreePath = useCallback(async (targetPath: string) => {
     const segments = targetPath.split('/').filter((s) => s !== '');
@@ -4749,6 +4825,7 @@ function ProjectView() {
         {entries.map((entry) => {
           const isBeingRenamed = renamingPath === entry.path;
           const isHiddenEntry = entry.name.startsWith('.');
+          const isKeyboardActive = activeTreePath === entry.path;
           
           if (entry.type === 'directory') {
             const isExpanded = expandedDirs.has(entry.path);
@@ -4829,8 +4906,16 @@ function ProjectView() {
                   ) : (
                     <button
                       type="button"
-                      className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${hasFolderGitChanges ? 'mind-tree-directory-has-git-changes' : ''}`}
+                      ref={(element) => {
+                        if (element) {
+                          treeItemRefs.current.set(entry.path, element);
+                        } else {
+                          treeItemRefs.current.delete(entry.path);
+                        }
+                      }}
+                      className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${hasFolderGitChanges ? 'mind-tree-directory-has-git-changes' : ''} ${isKeyboardActive ? 'keyboard-active' : ''}`}
                       style={{ paddingLeft: `${12 + depth * 18}px` }}
+                      onMouseEnter={() => setActiveTreePath(entry.path)}
                       onClick={() => void toggleDirectory(entry.path)}
                       onContextMenu={(e) => handleTreeContextMenu(e, entry)}
                       onDoubleClick={(e) => {
@@ -4921,8 +5006,16 @@ function ProjectView() {
               ) : (
                 <button
                   type="button"
-                  className={`mind-tree-item mind-tree-file ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${selectedFilePath === entry.path ? 'active' : ''}`}
+                  ref={(element) => {
+                    if (element) {
+                      treeItemRefs.current.set(entry.path, element);
+                    } else {
+                      treeItemRefs.current.delete(entry.path);
+                    }
+                  }}
+                  className={`mind-tree-item mind-tree-file ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${selectedFilePath === entry.path ? 'active' : ''} ${isKeyboardActive ? 'keyboard-active' : ''}`}
                   style={{ paddingLeft: `${12 + depth * 18}px` }}
+                  onMouseEnter={() => setActiveTreePath(entry.path)}
                   onClick={() => void openFile(entry.path)}
                   onContextMenu={(e) => handleTreeContextMenu(e, entry)}
                   onDoubleClick={(e) => {
@@ -5037,6 +5130,50 @@ function ProjectView() {
   for (const rootSession of rootSessions) {
     appendSessionRows(rootSession, 0);
   }
+
+  useEffect(() => {
+    if (sessionRows.length === 0) {
+      setActiveSessionListIndex(0);
+      return;
+    }
+    setActiveSessionListIndex((index) => Math.min(Math.max(index, 0), sessionRows.length - 1));
+  }, [sessionRows.length]);
+
+  useEffect(() => {
+    if (activeTab !== 'sessions') return;
+    const activeSession = sessionRows[activeSessionListIndex]?.session;
+    if (!activeSession) return;
+    projectSessionCardRefs.current.get(activeSession.id)?.scrollIntoView({ block: 'nearest' });
+  }, [activeTab, activeSessionListIndex, sessionRows]);
+
+  useEffect(() => {
+    const handleProjectSessionListKeyDown = (event: KeyboardEvent) => {
+      if (activeTab !== 'sessions' || sessionRows.length === 0 || event.altKey || event.ctrlKey || event.metaKey || isEditableShortcutTarget(event.target)) {
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveSessionListIndex((index) => Math.min(index + 1, sessionRows.length - 1));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveSessionListIndex((index) => Math.max(index - 1, 0));
+        return;
+      }
+      if (event.key === 'Enter') {
+        const activeSession = sessionRows[activeSessionListIndex]?.session;
+        if (!activeSession) return;
+        event.preventDefault();
+        handleSelectSession(activeSession.id);
+      }
+    };
+
+    window.addEventListener('keydown', handleProjectSessionListKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleProjectSessionListKeyDown);
+    };
+  }, [activeTab, activeSessionListIndex, handleSelectSession, sessionRows]);
   const fileNameSearchMatches: ProjectFileNameMatch[] = projectSearchResults?.filename_matches || [];
   const contentSearchMatches: ProjectContentMatch[] = projectSearchResults?.content_matches || [];
   const firstSearchHitPath = fileNameSearchMatches[0]?.path || contentSearchMatches[0]?.path || '';
@@ -5139,14 +5276,23 @@ function ProjectView() {
         </EmptyState>
       ) : (
         <div className="sessions-list project-sessions-list">
-          {sessionRows.map(({ session, depth }) => {
+          {sessionRows.map(({ session, depth }, index) => {
+            const isActiveListItem = index === activeSessionListIndex;
             const isChild = isChildSession(session);
             const linkLabel = linkTypeLabel(session);
             return (
               <div
                 key={session.id}
-                className={`session-card ${isChild ? 'session-child' : ''}`}
+                ref={(element) => {
+                  if (element) {
+                    projectSessionCardRefs.current.set(session.id, element);
+                  } else {
+                    projectSessionCardRefs.current.delete(session.id);
+                  }
+                }}
+                className={`session-card ${isChild ? 'session-child' : ''} ${isActiveListItem ? 'keyboard-active' : ''}`}
                 style={depth > 0 ? { marginLeft: `${Math.min(depth, 6) * 18}px` } : undefined}
+                onMouseEnter={() => setActiveSessionListIndex(index)}
                 onClick={() => handleSelectSession(session.id)}
               >
                 <div className="session-card-row">
