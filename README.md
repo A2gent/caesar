@@ -46,6 +46,52 @@ Main use-case is having personal knowledge base (Obsidian-style second brain) us
 - **Keyboard Navigation** - Full keyboard accessibility support
 - **Auto-refresh** - Real-time polling for session updates
 
+### Web development
+
+Caesar remains a Vite/React web app for browser-based development:
+
+```bash
+cd caesar
+npm install
+npm run dev
+open 'http://localhost:5173'
+```
+
+By default the UI connects to the Brute backend API at `http://localhost:5445`. Start Brute separately before using the app, or configure a different API URL from the app settings / `VITE_API_URL`.
+
+### Desktop app for macOS (Tauri)
+
+Caesar can also run as a native macOS desktop shell using Tauri v2. The desktop app uses the same frontend and still talks to a separately running Brute backend at `http://localhost:5445` by default.
+
+Prerequisites:
+
+- Node.js and npm
+- Rust toolchain (`rustup`, `cargo`, `rustc`)
+- Xcode Command Line Tools (`xcode-select --install`)
+- Tauri macOS prerequisites as documented at https://tauri.app/start/prerequisites/
+
+Run in desktop development mode:
+
+```bash
+cd caesar
+npm install
+npm run desktop:dev
+```
+
+Build the macOS app bundle / DMG:
+
+```bash
+cd caesar
+npm run desktop:build
+```
+
+Build outputs are written under:
+
+- `src-tauri/target/release/bundle/macos/`
+- `src-tauri/target/release/bundle/dmg/`
+
+The production desktop build uses hash-based routing so packaged app navigation works without a web-server history fallback.
+
 ## Getting started
 
 Prerequisites - you have cloned this repo along with [brute](https://github.com/A2gent/brute).
