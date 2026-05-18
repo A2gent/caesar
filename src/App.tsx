@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
@@ -111,6 +111,99 @@ function activeChatSessionIdFromPath(pathname: string): string | null {
   }
   return decodeURIComponent(match[1]);
 }
+type KeyboardShortcutBinding = {
+  keys: string;
+  description: string;
+  scope?: string;
+};
+
+const isEditableShortcutTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+};
+
+function shortcutBindingsForPath(pathname: string): KeyboardShortcutBinding[] {
+  const bindings: KeyboardShortcutBinding[] = [
+    { keys: 'Shift + ?', description: 'Show keyboard shortcuts for this view', scope: 'Global' },
+    { keys: 'Esc', description: 'Close this shortcuts panel', scope: 'Global' },
+  ];
+
+  if (pathname.startsWith('/chat') || pathname.startsWith('/sessions')) {
+    bindings.push(
+      { keys: 'Enter', description: 'Send the current message from the composer', scope: 'Chat composer' },
+      { keys: 'Shift + Enter', description: 'Insert a new line in the composer', scope: 'Chat composer' },
+      { keys: '↑ / ↓', description: 'Move through slash-command suggestions', scope: 'Chat composer' },
+      { keys: 'Tab', description: 'Apply the selected slash-command suggestion', scope: 'Chat composer' },
+      { keys: 'Ctrl + Shift + M', description: 'Toggle voice input on macOS', scope: 'Chat composer' },
+      { keys: 'Alt + M', description: 'Toggle voice input on Windows/Linux', scope: 'Chat composer' },
+    );
+  } else if (pathname.startsWith('/projects')) {
+    bindings.push(
+      { keys: '1', description: 'Open Explorer tab', scope: 'Project view' },
+      { keys: '2', description: 'Open Tasks tab', scope: 'Project view' },
+      { keys: '3', description: 'Open Sessions tab', scope: 'Project view' },
+      { keys: '4', description: 'Open Meetings tab when available', scope: 'Project view' },
+      { keys: '5', description: 'Open Changes tab', scope: 'Project view' },
+      { keys: '6', description: 'Open Branch Changes tab', scope: 'Project view' },
+      { keys: '7', description: 'Open History tab', scope: 'Project view' },
+      { keys: '8', description: 'Open Settings tab', scope: 'Project view' },
+      { keys: 'Esc', description: 'Close open project dialogs or menus', scope: 'Project view' },
+    );
+  } else if (pathname.startsWith('/workflows')) {
+    bindings.push({ keys: '⌘/Ctrl + S', description: 'Save workflow while editing', scope: 'Workflow editor' });
+  }
+
+  return bindings;
+}
+
+function KeyboardShortcutsOverlay({ bindings, onClose }: { bindings: KeyboardShortcutBinding[]; onClose: () => void }) {
+  const grouped = bindings.reduce<Record<string, KeyboardShortcutBinding[]>>((acc, binding) => {
+    const scope = binding.scope || 'Current view';
+    acc[scope] = [...(acc[scope] || []), binding];
+    return acc;
+  }, {});
+
+  return (
+    <div className="keyboard-shortcuts-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="keyboard-shortcuts-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="keyboard-shortcuts-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="keyboard-shortcuts-header">
+          <div>
+            <h2 id="keyboard-shortcuts-title">Keyboard shortcuts</h2>
+            <p>Bindings available on the current page.</p>
+          </div>
+          <button type="button" className="keyboard-shortcuts-close" onClick={onClose} aria-label="Close keyboard shortcuts">
+            ×
+          </button>
+        </div>
+        <div className="keyboard-shortcuts-groups">
+          {Object.entries(grouped).map(([scope, scopeBindings]) => (
+            <div key={scope} className="keyboard-shortcuts-group">
+              <h3>{scope}</h3>
+              <dl className="keyboard-shortcuts-list">
+                {scopeBindings.map((binding) => (
+                  <div key={`${scope}-${binding.keys}-${binding.description}`} className="keyboard-shortcuts-row">
+                    <dt>{binding.keys.split(' + ').map((key) => <kbd key={key}>{key}</kbd>)}</dt>
+                    <dd>{binding.description}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
 
 function AppLayout() {
   const navigate = useNavigate();
@@ -133,6 +226,8 @@ function AppLayout() {
   const [backendRefreshKey, setBackendRefreshKey] = useState(0);
   const [themeMode, setThemeMode] = useState<ThemeMode>(readStoredTheme);
 
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const currentShortcutBindings = useMemo(() => shortcutBindingsForPath(location.pathname), [location.pathname]);
   const isSidebarOpen = isMobile ? isMobileSidebarOpen : isDesktopSidebarOpen;
 
   const refreshAgentName = useCallback(async () => {
@@ -261,6 +356,29 @@ function AppLayout() {
     seenWebAppNotificationIDsRef.current.clear();
     localStorage.removeItem(SEEN_NOTIFICATION_IDS_KEY);
   }, []);
+
+  useEffect(() => {
+    const handleShortcutHelpKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isShortcutsOpen) {
+        event.preventDefault();
+        setIsShortcutsOpen(false);
+        return;
+      }
+
+      const isQuestionMark = event.key === '?' || (event.key === '/' && event.shiftKey);
+      if (!isQuestionMark || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || isEditableShortcutTarget(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      setIsShortcutsOpen((isOpen) => !isOpen);
+    };
+
+    window.addEventListener('keydown', handleShortcutHelpKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleShortcutHelpKeyDown, true);
+    };
+  }, [isShortcutsOpen]);
 
   const dismissNotification = useCallback((id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
@@ -660,6 +778,10 @@ function AppLayout() {
         } as CSSProperties
       }
     >
+      {isShortcutsOpen ? (
+        <KeyboardShortcutsOverlay bindings={currentShortcutBindings} onClose={() => setIsShortcutsOpen(false)} />
+      ) : null}
+
       {isMobile ? (
         <button
           type="button"

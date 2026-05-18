@@ -158,6 +158,26 @@ function gitHistoryColorForRef(ref: string): string {
   return GIT_HISTORY_COLORS[hash % GIT_HISTORY_COLORS.length];
 }
 
+const PROJECT_SHORTCUT_TAB_BY_KEY: Record<string, ProjectViewTab> = {
+  Digit1: 'explorer',
+  Digit2: 'tasks',
+  Digit3: 'sessions',
+  Digit4: 'meetings',
+  Digit5: 'changes',
+  Digit6: 'branch-changes',
+  Digit7: 'history',
+  Digit8: 'settings',
+};
+
+const isEditableShortcutTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
+};
+
 function formatGitHistoryTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -1674,6 +1694,29 @@ function ProjectView() {
     if (!projectId) return;
     navigate(`/projects/${encodeURIComponent(projectId)}/${tab}${location.search}`);
   }, [location.search, navigate, projectId]);
+  useEffect(() => {
+    const handleProjectShortcutKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || isEditableShortcutTarget(event.target)) {
+        return;
+      }
+
+      const nextTab = PROJECT_SHORTCUT_TAB_BY_KEY[event.code];
+      if (!nextTab) {
+        return;
+      }
+      if (nextTab === 'meetings' && project?.id !== SYSTEM_PROJECT_KB_ID) {
+        return;
+      }
+
+      event.preventDefault();
+      setActiveTab(nextTab);
+    };
+
+    window.addEventListener('keydown', handleProjectShortcutKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleProjectShortcutKeyDown);
+    };
+  }, [project?.id, setActiveTab]);
   const [rootFolder, setRootFolder] = useState('');
   const [isGitRepo, setIsGitRepo] = useState(false);
   const [isLoadingGitStatus, setIsLoadingGitStatus] = useState(false);
