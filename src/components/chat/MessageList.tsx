@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-// noop touch to satisfy workflow: ensuring latest edit pass for duration rendering fixes
 import { Link } from 'react-router-dom';
 import { buildImageAssetUrl, buildSpeechClipUrl, type Message, type MessageImage, type Session, type SubAgent, type SystemPromptSnapshot, type ToolCall, type ToolResult, type WorkflowTranscriptEntry } from '../../api';
 import { IntegrationProviderIcon, integrationProviderForToolName, integrationProviderLabel } from '../../lib/integrationMeta';
@@ -922,13 +921,14 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
       .filter((step): step is ParallelStepView => step !== null);
   };
 
-  const renderDurationChip = (durationMs: number | undefined | null, label = 'Duration') => {
+  const renderDurationChip = (durationMs: number | undefined | null, label = 'Duration', className = '') => {
     const formatted = formatDurationMs(durationMs);
     if (!formatted) {
       return null;
     }
+    const title = label.includes(':') || label.includes('\n') ? label : `${label}: ${Math.round(durationMs || 0)} ms`;
     return (
-      <span className="tool-duration" title={`${label}: ${Math.round(durationMs || 0)} ms`}>
+      <span className={`tool-duration${className ? ` ${className}` : ''}`} title={title}>
         {formatted}
       </span>
     );
@@ -938,7 +938,19 @@ const MessageList: React.FC<MessageListProps> = ({ messages, isLoading, sessionI
     if (message.role !== 'assistant') {
       return null;
     }
-    return renderDurationChip(numberMetadata(message, 'llm_duration_ms'), 'LLM response');
+    const durationMs = numberMetadata(message, 'llm_duration_ms');
+    const startedAt = stringMetadata(message, 'llm_started_at');
+    const completedAt = stringMetadata(message, 'llm_completed_at');
+    const provider = stringMetadata(message, 'llm_provider');
+    const model = stringMetadata(message, 'llm_model');
+    const modelLabel = [provider, model].filter(Boolean).join(' / ');
+    const titleParts = [
+      `Model request/response: ${Math.round(durationMs || 0)} ms`,
+      modelLabel ? `Provider/model: ${modelLabel}` : '',
+      startedAt ? `Started: ${new Date(startedAt).toLocaleString()}` : '',
+      completedAt ? `Completed: ${new Date(completedAt).toLocaleString()}` : '',
+    ].filter(Boolean);
+    return renderDurationChip(durationMs, titleParts.join('\n') || 'Model request/response', 'llm-duration');
   };
 
   const renderSubAgentDelegation = (toolCall: ToolCall, result: ToolResult | undefined, timestamp: string, key: string) => {

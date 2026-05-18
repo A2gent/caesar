@@ -2926,6 +2926,16 @@ body.mind-resizing * {
   white-space: nowrap;
 }
 
+.llm-duration::before {
+  content: 'LLM';
+  margin-right: 4px;
+  color: #8fa8dd;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .parallel-tool-tree {
   display: flex;
   flex-direction: column;
