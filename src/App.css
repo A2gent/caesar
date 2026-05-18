@@ -7822,6 +7822,34 @@ input[type="checkbox"]:disabled {
   background: #111;
 }
 
+.mind-image-preview-wrap {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid #3b3b3b;
+  border-radius: 8px;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%),
+    #111;
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+.mind-image-preview {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 220px);
+  object-fit: contain;
+  border-radius: 6px;
+}
+
 .mind-markdown-preview::selection,
 .mind-markdown-preview *::selection {
   background: rgba(255, 193, 7, 0.55);
@@ -9128,6 +9156,31 @@ input[type="checkbox"]:disabled {
   overflow: hidden;
 }
 
+
+.project-image-diff-preview {
+  min-height: 100%;
+  padding: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  box-sizing: border-box;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.04) 75%),
+    #0d1117;
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+.project-image-diff-preview-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 260px);
+  object-fit: contain;
+  border-radius: 6px;
+}
 .project-commit-diff-body {
   margin: 0;
   padding: 0;

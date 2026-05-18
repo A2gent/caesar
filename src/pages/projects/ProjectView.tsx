@@ -685,8 +685,32 @@ function isPDFFilePath(path: string): boolean {
   return path.toLowerCase().endsWith('.pdf');
 }
 
+function isImageFilePath(path: string): boolean {
+  const lowerPath = path.toLowerCase();
+  return (
+    lowerPath.endsWith('.apng') ||
+    lowerPath.endsWith('.avif') ||
+    lowerPath.endsWith('.bmp') ||
+    lowerPath.endsWith('.gif') ||
+    lowerPath.endsWith('.ico') ||
+    lowerPath.endsWith('.jpeg') ||
+    lowerPath.endsWith('.jpg') ||
+    lowerPath.endsWith('.png') ||
+    lowerPath.endsWith('.svg') ||
+    lowerPath.endsWith('.webp')
+  );
+}
+
+function joinProjectRelativePath(basePath: string, childPath: string): string {
+  const base = basePath.trim().replace(/^\/+|\/+$/g, '');
+  const child = childPath.trim().replace(/^\/+/, '');
+  if (base === '') return child;
+  if (child === '') return base;
+  return `${base}/${child}`;
+}
+
 function defaultMarkdownModeForPath(path: string): MarkdownMode {
-  return isMarkdownFilePath(path) ? 'preview' : 'source';
+  return isMarkdownFilePath(path) || isImageFilePath(path) ? 'preview' : 'source';
 }
 
 function parseTodoBoard(content: string): TodoBoard {
@@ -2259,7 +2283,7 @@ function ProjectView() {
     const loadFile = async () => {
       setIsLoadingFile(true);
       try {
-        if (isPDFFilePath(selectedFilePath)) {
+        if (isPDFFilePath(selectedFilePath) || isImageFilePath(selectedFilePath)) {
           setSelectedFileContent('');
           setSavedFileContent('');
           return;
@@ -2843,6 +2867,12 @@ function ProjectView() {
     clearMarkdownPreviewSelectionHighlights();
     setIsLoadingFile(true);
     try {
+      if (isPDFFilePath(path) || isImageFilePath(path)) {
+        setSelectedFileContent('');
+        setSavedFileContent('');
+        return;
+      }
+
       const response = await getProjectFile(projectId, path);
       setSelectedFileContent(response.content || '');
       setSavedFileContent(response.content || '');
@@ -3907,12 +3937,26 @@ function ProjectView() {
   }, [capturePreviewSelectionText]);
   const selectedFileSupportsMarkdownPreview = selectedFilePath !== '' && isMarkdownFilePath(selectedFilePath);
   const selectedFileSupportsPDFPreview = selectedFilePath !== '' && isPDFFilePath(selectedFilePath);
-  const selectedPDFPreviewUrl = selectedFileSupportsPDFPreview && projectId
+  const selectedFileSupportsImagePreview = selectedFilePath !== '' && isImageFilePath(selectedFilePath);
+  const selectedRawPreviewUrl = (selectedFileSupportsPDFPreview || selectedFileSupportsImagePreview) && projectId
     ? buildProjectFileRawUrl(projectId, selectedFilePath)
     : '';
-  const selectedFileShowsSourceEditor = selectedFilePath !== '' && !selectedFileSupportsPDFPreview && (
+  const selectedFileShowsSourceEditor = selectedFilePath !== '' && !selectedFileSupportsPDFPreview && !selectedFileSupportsImagePreview && (
     markdownMode === 'source' || !selectedFileSupportsMarkdownPreview
   );
+  const selectedBranchDiffFile = useMemo(
+    () => branchChangedFiles.find((file) => file.path === selectedBranchFilePath) || null,
+    [branchChangedFiles, selectedBranchFilePath],
+  );
+  const selectedBranchFileSupportsImagePreview = Boolean(
+    selectedBranchFilePath &&
+    selectedBranchDiffFile &&
+    !selectedBranchDiffFile.status.startsWith('D') &&
+    isImageFilePath(selectedBranchFilePath),
+  );
+  const selectedBranchImagePreviewUrl = selectedBranchFileSupportsImagePreview && projectId
+    ? buildProjectFileRawUrl(projectId, joinProjectRelativePath(commitRepoPath, selectedBranchFilePath))
+    : '';
   const markdownHtml = useMemo(() => renderMarkdownToHtml(selectedFileContent), [selectedFileContent]);
   const todoBoard = useMemo(() => parseTodoBoard(selectedFileContent), [selectedFileContent]);
   const knownTodoFilePaths = useMemo(() => {
@@ -5491,8 +5535,13 @@ function ProjectView() {
                           aria-selected={markdownMode === 'preview'}
                           className={`mind-mode-tab ${markdownMode === 'preview' ? 'active' : ''}`}
                           onClick={() => setMarkdownMode('preview')}
-                          disabled={!selectedFilePath || (!selectedFileSupportsMarkdownPreview && !selectedFileSupportsPDFPreview) || isLoadingFile || isDeletingFile}
-                          title={selectedFileSupportsPDFPreview ? 'PDF preview' : 'Markdown preview'}
+                          disabled={
+                            !selectedFilePath ||
+                            (!selectedFileSupportsMarkdownPreview && !selectedFileSupportsPDFPreview && !selectedFileSupportsImagePreview) ||
+                            isLoadingFile ||
+                            isDeletingFile
+                          }
+                          title={selectedFileSupportsPDFPreview ? 'PDF preview' : selectedFileSupportsImagePreview ? 'Image preview' : 'Markdown preview'}
                         >
                           Preview
                         </button>
@@ -5502,7 +5551,7 @@ function ProjectView() {
                           aria-selected={markdownMode === 'source'}
                           className={`mind-mode-tab ${markdownMode === 'source' ? 'active' : ''}`}
                           onClick={() => setMarkdownMode('source')}
-                          disabled={!selectedFilePath || selectedFileSupportsPDFPreview || isLoadingFile || isDeletingFile}
+                          disabled={!selectedFilePath || selectedFileSupportsPDFPreview || selectedFileSupportsImagePreview || isLoadingFile || isDeletingFile}
                           title="Edit file source"
                         >
                           Edit
@@ -5537,12 +5586,21 @@ function ProjectView() {
                         onSelectionChange={handlePreviewSelectionChange}
                       />
                     ) : null}
-                    {!isLoadingFile && selectedFilePath && selectedFileSupportsPDFPreview && selectedPDFPreviewUrl ? (
+                    {!isLoadingFile && selectedFilePath && selectedFileSupportsPDFPreview && selectedRawPreviewUrl ? (
                       <iframe
                         className="mind-pdf-preview"
-                        src={selectedPDFPreviewUrl}
+                        src={selectedRawPreviewUrl}
                         title={`PDF preview: ${selectedFilePath}`}
                       />
+                    ) : null}
+                    {!isLoadingFile && selectedFilePath && selectedFileSupportsImagePreview && selectedRawPreviewUrl ? (
+                      <div className="mind-image-preview-wrap">
+                        <img
+                          className="mind-image-preview"
+                          src={selectedRawPreviewUrl}
+                          alt={selectedFilePath}
+                        />
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -6081,7 +6139,15 @@ function ProjectView() {
                         onMouseUp={handleBranchDiffSelectionChange}
                         onKeyUp={handleBranchDiffSelectionChange}
                       >
-                        {parsedBranchDiffFile ? (
+                        {selectedBranchImagePreviewUrl ? (
+                          <div className="project-image-diff-preview">
+                            <img
+                              className="project-image-diff-preview-img"
+                              src={selectedBranchImagePreviewUrl}
+                              alt={selectedBranchFilePath}
+                            />
+                          </div>
+                        ) : parsedBranchDiffFile ? (
                           <FileDiff
                             fileDiff={parsedBranchDiffFile}
                             options={commitDiffOptions}
