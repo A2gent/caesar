@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement, PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { invoke } from '@tauri-apps/api/core';
 import mermaid from 'mermaid';
 import { FileDiff, type FileDiffMetadata } from '@pierre/diffs/react';
 import { parsePatchFiles } from '@pierre/diffs';
@@ -1790,6 +1791,7 @@ function ProjectView() {
   const [agentInstructionFilePaths, setAgentInstructionFilePaths] = useState<Set<string>>(new Set());
   const [isAddingAgentInstructionFile, setIsAddingAgentInstructionFile] = useState(false);
   const [isFileActionsMenuOpen, setIsFileActionsMenuOpen] = useState(false);
+  const [treeContextMenu, setTreeContextMenu] = useState<{ path: string; type: MindTreeEntry['type']; x: number; y: number } | null>(null);
   const [draggedFilePath, setDraggedFilePath] = useState<string | null>(null);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
   const [isMovingFile, setIsMovingFile] = useState(false);
@@ -2418,6 +2420,27 @@ function ProjectView() {
     };
   }, [isFileActionsMenuOpen]);
 
+  useEffect(() => {
+    if (!treeContextMenu) return;
+
+    const closeContextMenu = () => setTreeContextMenu(null);
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeContextMenu();
+      }
+    };
+
+    document.addEventListener('pointerdown', closeContextMenu);
+    document.addEventListener('scroll', closeContextMenu, true);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('pointerdown', closeContextMenu);
+      document.removeEventListener('scroll', closeContextMenu, true);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [treeContextMenu]);
+
   // Session handlers
   const selectedWorkflow = useMemo(
     () => workflowOptions.find((workflow) => workflow.id === selectedWorkflowId) || null,
@@ -2868,6 +2891,77 @@ function ProjectView() {
     } finally {
       setIsSavingFile(false);
     }
+  };
+
+  const getAbsoluteProjectPath = (relativePath: string) => {
+    if (!rootFolder) return '';
+    const normalizedRelativePath = normalizeMindPath(relativePath);
+    return normalizedRelativePath === '' ? rootFolder : joinMindAbsolutePath(rootFolder, normalizedRelativePath);
+  };
+
+  const openProjectEntryInSystemExplorer = async (relativePath: string) => {
+    const absolutePath = getAbsoluteProjectPath(relativePath);
+    if (!absolutePath) return;
+    setTreeContextMenu(null);
+    setError(null);
+    try {
+      await invoke('reveal_item_in_dir', { path: absolutePath });
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : String(openError || 'Failed to open item in Explorer'));
+    }
+  };
+
+  const getDroppedLocalPaths = (dataTransfer: DataTransfer): string[] => {
+    const filePaths = dataTransfer.getData('text/uri-list')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#') && line.startsWith('file://'));
+    if (filePaths.length > 0) {
+      return filePaths;
+    }
+
+    return Array.from(dataTransfer.files)
+      .map((file) => {
+        const path = (file as File & { path?: string }).path || '';
+        return path.trim();
+      })
+      .filter((path) => path !== '');
+  };
+
+  const handleExternalFileDrop = async (paths: string[], targetFolderPath: string) => {
+    if (paths.length === 0 || !rootFolder) return;
+    const targetDirectory = getAbsoluteProjectPath(targetFolderPath);
+    if (!targetDirectory) return;
+
+    setError(null);
+    setSuccess(null);
+    setIsMovingFile(true);
+    try {
+      const movedPaths = await invoke<string[]>('move_local_paths_into_directory', {
+        paths,
+        targetDir: targetDirectory,
+      });
+      await loadTree(targetFolderPath);
+      await loadGitStatus();
+      setSuccess(`Moved ${movedPaths.length} item${movedPaths.length === 1 ? '' : 's'} into ${targetFolderPath || 'project root'}.`);
+    } catch (dropError) {
+      setError(dropError instanceof Error ? dropError.message : String(dropError || 'Failed to move dropped item'));
+    } finally {
+      setIsMovingFile(false);
+      setDraggedFilePath(null);
+      setDropTargetPath(null);
+    }
+  };
+
+  const handleTreeContextMenu = (event: ReactMouseEvent, entry: MindTreeEntry) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setTreeContextMenu({
+      path: entry.path,
+      type: entry.type,
+      x: event.clientX,
+      y: event.clientY,
+    });
   };
 
   const deleteCurrentFile = async () => {
@@ -4594,6 +4688,12 @@ function ProjectView() {
                   onDragOver={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    const droppedLocalPaths = getDroppedLocalPaths(e.dataTransfer);
+                    if (droppedLocalPaths.length > 0) {
+                      e.dataTransfer.dropEffect = 'move';
+                      setDropTargetPath(entry.path);
+                      return;
+                    }
                     if (draggedFilePath && draggedFilePath !== entry.path && !isDescendantOfDragged && !entry.path.startsWith(draggedFilePath + '/')) {
                       setDropTargetPath(entry.path);
                     }
@@ -4608,7 +4708,10 @@ function ProjectView() {
                   onDrop={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (draggedFilePath && draggedFilePath !== entry.path && !entry.path.startsWith(draggedFilePath + '/')) {
+                    const droppedLocalPaths = getDroppedLocalPaths(e.dataTransfer);
+                    if (droppedLocalPaths.length > 0) {
+                      void handleExternalFileDrop(droppedLocalPaths, entry.path);
+                    } else if (draggedFilePath && draggedFilePath !== entry.path && !entry.path.startsWith(draggedFilePath + '/')) {
                       void handleFileDrop(draggedFilePath, entry.path);
                     }
                     setDropTargetPath(null);
@@ -4640,6 +4743,7 @@ function ProjectView() {
                       className={`mind-tree-item mind-tree-directory ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${hasFolderGitChanges ? 'mind-tree-directory-has-git-changes' : ''}`}
                       style={{ paddingLeft: `${12 + depth * 18}px` }}
                       onClick={() => void toggleDirectory(entry.path)}
+                      onContextMenu={(e) => handleTreeContextMenu(e, entry)}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
                         startRename(entry.path, entry.name);
@@ -4731,6 +4835,7 @@ function ProjectView() {
                   className={`mind-tree-item mind-tree-file ${isHiddenEntry ? 'mind-tree-hidden' : ''} ${selectedFilePath === entry.path ? 'active' : ''}`}
                   style={{ paddingLeft: `${12 + depth * 18}px` }}
                   onClick={() => void openFile(entry.path)}
+                  onContextMenu={(e) => handleTreeContextMenu(e, entry)}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     startRename(entry.path, entry.name);
@@ -5206,6 +5311,12 @@ function ProjectView() {
                   className={`mind-tree-panel ${dropTargetPath === '' ? 'mind-tree-drop-target' : ''}`}
                   onDragOver={(e) => {
                     e.preventDefault();
+                    const droppedLocalPaths = getDroppedLocalPaths(e.dataTransfer);
+                    if (droppedLocalPaths.length > 0) {
+                      e.dataTransfer.dropEffect = 'move';
+                      setDropTargetPath('');
+                      return;
+                    }
                     if (draggedFilePath) {
                       const targetPath = '';
                       const draggedDir = dirname(draggedFilePath);
@@ -5223,7 +5334,10 @@ function ProjectView() {
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
-                    if (draggedFilePath) {
+                    const droppedLocalPaths = getDroppedLocalPaths(e.dataTransfer);
+                    if (droppedLocalPaths.length > 0) {
+                      void handleExternalFileDrop(droppedLocalPaths, '');
+                    } else if (draggedFilePath) {
                       const draggedDir = dirname(draggedFilePath);
                       if (draggedDir !== '') {
                         void handleFileDrop(draggedFilePath, '');
@@ -5241,6 +5355,23 @@ function ProjectView() {
                     </button>
                   </div>
                   {renderTree('')}
+                  {treeContextMenu ? (
+                    <div
+                      className="mind-tree-context-menu"
+                      role="menu"
+                      style={{ left: treeContextMenu.x, top: treeContextMenu.y }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="mind-file-actions-item"
+                        role="menuitem"
+                        onClick={() => void openProjectEntryInSystemExplorer(treeContextMenu.path)}
+                      >
+                        Open in Explorer
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
                 <div
                   className="mind-tree-resize-handle"

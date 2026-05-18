@@ -7596,6 +7596,20 @@ input[type="checkbox"]:disabled {
   cursor: not-allowed;
 }
 
+.mind-tree-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  background: #1f1f1f;
+  border: 1px solid #3f3f3f;
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+
 .mind-delete-file-btn {
   border: 1px solid #8f3e3e;
   border-radius: 6px;
