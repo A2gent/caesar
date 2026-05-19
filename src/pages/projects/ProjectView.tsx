@@ -2396,6 +2396,9 @@ function ProjectView() {
     if (normalizedPath === '') {
       return;
     }
+    if (handledOpenFileQueryRef.current === normalizedPath) {
+      return;
+    }
 
     handledOpenFileQueryRef.current = normalizedPath;
     setSelectedFilePath(normalizedPath);
@@ -4125,6 +4128,19 @@ function ProjectView() {
     />
   ) : null;
   const stagedCommitFilesCount = commitDialogFiles.filter((file) => file.staged).length;
+  const selectedCommitDiffFile = useMemo(
+    () => commitDialogFiles.find((file) => file.path === selectedCommitFilePath) || null,
+    [commitDialogFiles, selectedCommitFilePath],
+  );
+  const selectedCommitFileSupportsImagePreview = Boolean(
+    selectedCommitFilePath &&
+    selectedCommitDiffFile &&
+    !selectedCommitDiffFile.status.includes('D') &&
+    isImageFilePath(selectedCommitFilePath),
+  );
+  const selectedCommitImagePreviewUrl = selectedCommitFileSupportsImagePreview && projectId
+    ? buildProjectFileRawUrl(projectId, joinProjectRelativePath(commitRepoPath, selectedCommitFilePath))
+    : '';
   const branchChangesTitle = branchChangesAvailable && gitCurrentBranch && branchChangesBaseBranch
     ? `${gitCurrentBranch} compared with ${branchChangesBaseBranch}`
     : gitCurrentBranch
@@ -6203,7 +6219,15 @@ function ProjectView() {
                       <div className="project-commit-diff-empty">Loading diff...</div>
                     ) : (
                       <div className="project-commit-diff-body">
-                        {parsedCommitDiffFile ? (
+                        {selectedCommitImagePreviewUrl ? (
+                          <div className="project-image-diff-preview">
+                            <img
+                              className="project-image-diff-preview-img"
+                              src={selectedCommitImagePreviewUrl}
+                              alt={selectedCommitFilePath}
+                            />
+                          </div>
+                        ) : parsedCommitDiffFile ? (
                           <FileDiff
                             fileDiff={parsedCommitDiffFile}
                             options={commitDiffOptions}
