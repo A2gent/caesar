@@ -35,6 +35,7 @@ import {
 import ChatInput from '../../components/chat/ChatInput';
 import MessageList from '../../components/chat/MessageList';
 import { EmptyState, EmptyStateTitle } from '../../components/common/EmptyState';
+import { confirmAction } from '../../lib/dialogs';
 import {
   AGENT_INSTRUCTION_BLOCKS_SETTING_KEY,
   AGENT_SYSTEM_PROMPT_APPEND_SETTING_KEY,
@@ -854,7 +855,7 @@ function MyMindView() {
     const confirmMessage = hasUnsavedChanges
       ? `Delete "${deletePath}"? Unsaved changes will be lost.`
       : `Delete "${deletePath}"?`;
-    if (!window.confirm(confirmMessage)) {
+    if (!(await confirmAction(confirmMessage, { title: 'Delete file?' }))) {
       return;
     }
 

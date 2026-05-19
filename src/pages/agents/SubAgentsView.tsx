@@ -27,6 +27,7 @@ import {
 } from '../../lib/instructionBlocks';
 import { toolIconForName } from '../../lib/toolIcons';
 import { getAgentEmoji, setAgentEmoji, withAgentEmoji } from '../../lib/agentVisuals';
+import { confirmAction } from '../../lib/dialogs';
 
 const MANAGED_INSTRUCTION_BLOCK_TYPES: InstructionBlockType[] = [
   BUILTIN_TOOLS_BLOCK_TYPE,
@@ -309,7 +310,7 @@ function SubAgentsView() {
   };
 
   const handleDelete = async (sa: SubAgent) => {
-    if (!confirm(`Remove sub-agent "${sa.name}"?`)) return;
+    if (!(await confirmAction(`Remove sub-agent \"${sa.name}\"?`, { title: 'Remove sub-agent?' }))) return;
     setError(null);
     setSuccess(null);
     setSaving(true);

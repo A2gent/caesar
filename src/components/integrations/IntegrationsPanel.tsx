@@ -9,6 +9,7 @@ import type {
 } from '../../api';
 import { listLeonardoModels } from '../../api';
 import { IntegrationProviderIcon } from '../../lib/integrationMeta';
+import { confirmAction } from '../../lib/dialogs';
 
 interface IntegrationsPanelProps {
   integrations: Integration[];
@@ -446,7 +447,7 @@ const IntegrationsPanel: React.FC<IntegrationsPanelProps> = ({ integrations, isS
   };
 
   const handleDelete = async (integration: Integration) => {
-    if (!confirm(`Remove ${integration.name}?`)) {
+    if (!(await confirmAction(`Remove ${integration.name}?`, { title: 'Remove integration?' }))) {
       return;
     }
     setError(null);

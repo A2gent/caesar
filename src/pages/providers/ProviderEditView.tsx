@@ -26,6 +26,7 @@ import {
   type ProviderConfig,
   type RouterRule,
 } from '../../api';
+import { confirmAction } from '../../lib/dialogs';
 
 function isFallbackProvider(type?: string): boolean {
   if (!type) {
@@ -505,7 +506,7 @@ function ProviderEditView() {
     if (!selected || !isFallbackProvider(selected.type)) {
       return;
     }
-    if (!confirm(`Delete fallback aggregate "${selected.display_name}"?`)) {
+    if (!(await confirmAction(`Delete fallback aggregate \"${selected.display_name}\"?`, { title: 'Delete fallback aggregate?' }))) {
       return;
     }
     try {
@@ -565,7 +566,7 @@ function ProviderEditView() {
   };
 
   const handleDisconnectOAuth = async () => {
-    if (!confirm('Disconnect OAuth? You will need to use API key instead.')) {
+    if (!(await confirmAction('Disconnect OAuth? You will need to use API key instead.', { title: 'Disconnect OAuth?' }))) {
       return;
     }
     try {
@@ -600,7 +601,7 @@ function ProviderEditView() {
   };
 
   const handleDisconnectCodexOAuth = async () => {
-    if (!confirm('Disconnect Codex OAuth? You will need to use API key instead.')) {
+    if (!(await confirmAction('Disconnect Codex OAuth? You will need to use API key instead.', { title: 'Disconnect Codex OAuth?' }))) {
       return;
     }
     try {

@@ -68,6 +68,7 @@ import SessionCreationPanel from '../../components/chat/SessionCreationPanel';
 import MeetingsView from './MeetingsView';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from '../../components/common/EmptyState';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
+import { confirmAction } from '../../lib/dialogs';
 import ProjectSourceEditor from '../../components/projects/ProjectSourceEditor';
 import {
   buildSelectedCodeSessionContext,
@@ -2533,7 +2534,7 @@ function ProjectView() {
   };
 
   const handleDeleteSession = async (sessionId: string) => {
-    if (!confirm('Delete this session?')) return;
+    if (!(await confirmAction('Delete this session?', { title: 'Delete session?' }))) return;
     
     try {
       await deleteSession(sessionId);
@@ -3117,7 +3118,7 @@ function ProjectView() {
 
   const deleteCurrentFile = async () => {
     if (!selectedFilePath || !projectId) return;
-    if (!confirm(`Delete "${selectedFilePath}"?`)) return;
+    if (!(await confirmAction(`Delete \"${selectedFilePath}\"?`, { title: 'Delete file?', confirmLabel: 'Delete', destructive: true }))) return;
     
     setIsDeletingFile(true);
     try {
@@ -3418,7 +3419,7 @@ function ProjectView() {
     }
 
     // Confirm deletion
-    if (!confirm(`Are you sure you want to delete "${project.name}"? This will also delete all associated sessions and cannot be undone.`)) {
+    if (!(await confirmAction(`Are you sure you want to delete \"${project.name}\"? This will also delete all associated sessions and cannot be undone.`, { title: 'Delete project?' }))) {
       return;
     }
 
@@ -3482,7 +3483,7 @@ function ProjectView() {
 
   const handleGitBranchChange = async (branchName: string) => {
     if (!projectId || branchName.trim() === '' || branchName === selectedGitBranchName) return;
-    if (hasUnsavedChanges && !window.confirm('Switch branches? Unsaved file edits in the explorer will be discarded.')) {
+    if (hasUnsavedChanges && !(await confirmAction('Switch branches? Unsaved file edits in the explorer will be discarded.', { title: 'Switch branches?' }))) {
       return;
     }
     setIsCheckingOutBranch(true);
@@ -3731,7 +3732,7 @@ function ProjectView() {
 
   const handleDiscardGitFileChanges = async (file: ProjectGitChangedFile) => {
     if (!projectId || isCommitting || isPushing || isPulling || gitDiscardPath === file.path) return;
-    const confirmed = window.confirm(`Discard all changes in "${file.path}"? This cannot be undone.`);
+    const confirmed = await confirmAction(`Discard all changes in \"${file.path}\"? This cannot be undone.`, { title: 'Discard changes?', confirmLabel: 'Discard', destructive: true });
     if (!confirmed) return;
 
     setError(null);

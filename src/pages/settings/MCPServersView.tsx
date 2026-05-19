@@ -10,6 +10,7 @@ import {
   type MCPServerTestResponse,
 } from '../../api';
 import { EmptyState, EmptyStateTitle } from '../../components/common/EmptyState';
+import { confirmAction } from '../../lib/dialogs';
 
 function parseNonEmptyLines(value: string): string[] {
   return value
@@ -192,7 +193,7 @@ function MCPServersView() {
   };
 
   const handleDelete = async (server: MCPServer) => {
-    if (!confirm(`Remove MCP server \"${server.name}\"?`)) {
+    if (!(await confirmAction(`Remove MCP server \"${server.name}\"?`, { title: 'Remove MCP server?' }))) {
       return;
     }
     setError(null);

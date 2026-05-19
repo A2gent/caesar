@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { deleteJob, getSettings, listJobs, runJobNow, type RecurringJob } from '../../api';
 import { THINKING_JOB_ID_SETTING_KEY } from '../../lib/thinking';
+import { confirmAction } from '../../lib/dialogs';
 
 function JobsList() {
   const navigate = useNavigate();
@@ -37,7 +38,7 @@ function JobsList() {
       navigate('/thinking');
       return;
     }
-    if (!confirm(`Delete job "${jobName}"?`)) return;
+    if (!(await confirmAction(`Delete job \"${jobName}\"?`, { title: 'Delete job?' }))) return;
     
     try {
       await deleteJob(jobId);

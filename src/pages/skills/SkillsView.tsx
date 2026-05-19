@@ -20,6 +20,7 @@ import {
   SKILLS_FOLDER_KEY,
 } from '../../lib/skills';
 import { EmptyState, EmptyStateTitle } from '../../components/common/EmptyState';
+import { confirmAction } from '../../lib/dialogs';
 
 function getParentPath(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, '');
@@ -244,7 +245,7 @@ function SkillsView() {
   };
 
   const handleDelete = async (skill: SkillFile) => {
-    if (!confirm(`Are you sure you want to delete "${skill.name}"?`)) {
+    if (!(await confirmAction(`Are you sure you want to delete \"${skill.name}\"?`, { title: 'Delete skill?' }))) {
       return;
     }
 

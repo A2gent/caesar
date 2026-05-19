@@ -4,6 +4,7 @@ import { cancelSessionRun, deleteJob, deleteSession, getJob, getSettings, listJo
 import { THINKING_JOB_ID_SETTING_KEY } from '../../lib/thinking';
 import { buildOpenInMyMindUrl } from '../../lib/myMindNavigation';
 import { SYSTEM_PROJECT_SOUL_ID } from '../../components/layout/Sidebar';
+import { confirmAction } from '../../lib/dialogs';
 
 const SESSION_POLL_INTERVAL_MS = 1500;
 type SessionListRow = {
@@ -123,7 +124,7 @@ function JobDetail() {
       navigate('/thinking');
       return;
     }
-    if (!confirm(`Delete job "${job.name}"?`)) return;
+    if (!(await confirmAction(`Delete job \"${job.name}\"?`, { title: 'Delete job?' }))) return;
     
     try {
       await deleteJob(jobId);
@@ -161,7 +162,7 @@ function JobDetail() {
 
   const handleDeleteSession = async (session: Session) => {
     if (session.id.startsWith('optimistic-run-')) return;
-    if (!confirm('Delete this session?')) return;
+    if (!(await confirmAction('Delete this session?', { title: 'Delete session?' }))) return;
 
     setDeletingSessionId(session.id);
     setError(null);
@@ -179,7 +180,7 @@ function JobDetail() {
 
   const handleDeleteAllSessions = async () => {
     if (!jobId || sessions.length === 0) return;
-    if (!confirm(`Delete all ${sessions.length} session(s) for this recurring job? This cannot be undone.`)) return;
+    if (!(await confirmAction(`Delete all ${sessions.length} session(s) for this recurring job? This cannot be undone.`, { title: 'Delete sessions?' }))) return;
 
     setIsDeletingAllSessions(true);
     setError(null);

@@ -47,6 +47,8 @@ import { webAppNotificationEventName, type WebAppNotificationEventDetail } from 
 import { AvatarAudioProvider } from './components/avatar/AvatarAudioProvider';
 import { useAvatarAudio } from './lib/avatarAudio';
 import GlobalAvatarVoiceSession from './components/avatar/GlobalAvatarVoiceSession';
+import ConfirmDialog from './components/common/ConfirmDialog';
+import { subscribeConfirmDialogs, type AppConfirmOptions } from './lib/dialogs';
 import { START_MEETING_RECORDING_EVENT, START_MEETING_RECORDING_REQUEST_KEY } from './lib/voiceInputEvents';
 import './App.css';
 
@@ -990,11 +992,43 @@ function AppLayout() {
   );
 }
 
+interface PendingConfirmDialog {
+  id: number;
+  message: string;
+  options: AppConfirmOptions;
+  resolve: (confirmed: boolean) => void;
+}
+
 function App() {
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirmDialog | null>(null);
+
+  useEffect(() => {
+    return subscribeConfirmDialogs((request) => {
+      setPendingConfirm(request);
+    });
+  }, []);
+
+  const resolvePendingConfirm = (confirmed: boolean) => {
+    setPendingConfirm((current) => {
+      current?.resolve(confirmed);
+      return null;
+    });
+  };
+
   return (
     <Router>
       <AvatarAudioProvider>
         <AppLayout />
+        <ConfirmDialog
+          open={pendingConfirm !== null}
+          title={pendingConfirm?.options.title || 'Confirm'}
+          message={pendingConfirm?.message || ''}
+          confirmLabel={pendingConfirm?.options.confirmLabel || 'Confirm'}
+          cancelLabel={pendingConfirm?.options.cancelLabel || 'Cancel'}
+          destructive={pendingConfirm?.options.destructive ?? true}
+          onConfirm={() => resolvePendingConfirm(true)}
+          onCancel={() => resolvePendingConfirm(false)}
+        />
       </AvatarAudioProvider>
     </Router>
   );

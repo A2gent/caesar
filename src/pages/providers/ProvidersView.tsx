@@ -9,6 +9,7 @@ import {
   type ProviderConfig,
   type ProviderTestResult,
 } from "../../api";
+import { confirmAction } from "../../lib/dialogs";
 
 function isFallbackProvider(type: LLMProviderType): boolean {
   return type === "fallback_chain" || type.startsWith("fallback_chain:");
@@ -98,7 +99,7 @@ function ProvidersView() {
     if (!isFallbackProvider(provider.type)) {
       return;
     }
-    if (!confirm(`Delete fallback aggregate "${provider.display_name}"?`)) {
+    if (!(await confirmAction(`Delete fallback aggregate \"${provider.display_name}\"?`, { title: 'Delete fallback aggregate?' }))) {
       return;
     }
     try {

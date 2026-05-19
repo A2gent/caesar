@@ -13,6 +13,7 @@ import {
 } from '../../api';
 import { getStoredA2ARegistryOwnerEmail, getStoredA2ARegistryURL } from '../../lib/a2aIdentity';
 import { withAgentEmoji } from '../../lib/agentVisuals';
+import { confirmAction } from '../../lib/dialogs';
 
 function relativeTime(iso?: string): string {
   if (!iso) return 'unknown';
@@ -320,8 +321,8 @@ function A2ALocalAgentsView({ onOpenAgent }: A2ALocalAgentsViewProps) {
                         <button
                           type="button"
                           className="local-agent-icon-btn local-agent-icon-btn-remove"
-                          onClick={() => {
-                            if (!confirm(`Remove container ${agent.name}?`)) return;
+                          onClick={async () => {
+                            if (!(await confirmAction(`Remove container ${agent.name}?`, { title: 'Remove container?' }))) return;
                             void runAction(`remove:${agent.id}`, async () => {
                               await removeLocalDockerAgent(agent.id, true);
                               setSuccess(`Removed ${agent.name}.`);

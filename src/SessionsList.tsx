@@ -17,6 +17,7 @@ import {
 } from './api';
 import { EmptyState, EmptyStateTitle, EmptyStateHint } from './components/common/EmptyState';
 import { TaskProgressModal } from './components/chat/TaskProgressModal';
+import { confirmAction } from './lib/dialogs';
 
 const LAST_PROVIDER_STORAGE_KEY = 'a2gent.sessions.lastProvider';
 
@@ -139,7 +140,7 @@ function SessionsList({ onSelectSession, projectId, title }: SessionsListProps) 
   }, [hasLoadedProviders, selectedProvider]);
 
   const handleDeleteSession = async (sessionId: string) => {
-    if (!confirm('Delete this session?')) return;
+    if (!(await confirmAction('Delete this session?', { title: 'Delete session?' }))) return;
     
     try {
       await deleteSession(sessionId);

@@ -23,6 +23,7 @@ import {
   storeLocalA2AAgentID,
   updateRegistryAgentDiscoverable,
 } from '../../lib/a2aIdentity';
+import { confirmAction } from '../../lib/dialogs';
 
 const DEFAULT_SQUARE_GRPC_ADDR = 'a2gent.net:9001';
 
@@ -343,7 +344,7 @@ function A2AMyAgentView() {
 
   const handleDisconnect = async () => {
     if (!integration) return;
-    if (!confirm('Disconnect this agent from the A2A network? The API key will be removed.')) return;
+    if (!(await confirmAction('Disconnect this agent from the A2A network? The API key will be removed.', { title: 'Disconnect agent?' }))) return;
     setSaving(true);
     setError(null);
     setSuccess(null);

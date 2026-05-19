@@ -14,6 +14,7 @@ import {
   WORKFLOW_CANVAS_WIDTH,
 } from '../../lib/workflowGraph';
 import WorkflowGraphCanvas from '../../components/workflows/WorkflowGraphCanvas';
+import { confirmAction } from '../../lib/dialogs';
 
 function kindLabel(kind: WorkflowNode['kind']): string {
   switch (kind) {
@@ -91,7 +92,7 @@ function WorkflowsView() {
     if (workflow.builtIn) {
       return;
     }
-    if (!confirm(`Delete workflow "${workflow.name}"?`)) {
+    if (!(await confirmAction(`Delete workflow \"${workflow.name}\"?`, { title: 'Delete workflow?' }))) {
       return;
     }
     try {
