@@ -6,6 +6,7 @@ import {
   getStoredAgentEndpoints,
   getSession,
   getProjectGitStatus,
+  listProjectTree,
   listSessions,
   listProjects,
   createProject,
@@ -50,6 +51,7 @@ interface ProjectSubNavItem {
 interface ProjectGitNavStatus {
   hasGit: boolean;
   branchChangesAvailable: boolean;
+  hasTodoFile: boolean;
 }
 
 // System project IDs - must match backend
@@ -99,7 +101,7 @@ const projectSubNavItems: ProjectSubNavItem[] = [
   { id: 'explorer', label: 'Explorer' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'changes', label: 'Changes' },
-  { id: 'branch-changes', label: 'Branch Changes' },
+  { id: 'branch-changes', label: 'Review' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -110,10 +112,16 @@ const knowledgeBaseSubNavItems: ProjectSubNavItem[] = [
   { id: 'tasks', label: 'Tasks' },
   { id: 'meetings', label: 'Meetings' },
   { id: 'changes', label: 'Changes' },
-  { id: 'branch-changes', label: 'Branch Changes' },
+  { id: 'branch-changes', label: 'Review' },
   { id: 'history', label: 'History' },
   { id: 'settings', label: 'Settings' },
 ];
+
+const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);
+
+function isTodoFileName(name: string): boolean {
+  return TODO_FILE_NAMES.has(name.trim().toLowerCase());
+}
 
 function getVisibleNavSections(hideLocalAgents: boolean): NavSection[] {
   if (!hideLocalAgents) {
@@ -190,7 +198,10 @@ function buildChatSessionPath(sessionId: string): string {
 }
 
 function getProjectSubNavItems(projectId: string, gitStatus?: ProjectGitNavStatus): ProjectSubNavItem[] {
-  const items = projectId === SYSTEM_PROJECT_KB_ID ? knowledgeBaseSubNavItems : projectSubNavItems;
+  let items = projectId === SYSTEM_PROJECT_KB_ID ? knowledgeBaseSubNavItems : projectSubNavItems;
+  if (!gitStatus?.hasTodoFile) {
+    items = items.filter((item) => item.id !== 'tasks');
+  }
   if (!gitStatus?.hasGit) {
     return items.filter((item) => item.id !== 'changes' && item.id !== 'branch-changes' && item.id !== 'history');
   }
@@ -339,12 +350,14 @@ function Sidebar({
   }, [loadProjects, refreshKey]);
 
   useEffect(() => {
-    const handleProjectGitStatusChanged = () => {
+    const handleProjectNavStatusChanged = () => {
       setProjectGitStatusRefreshTick((value) => value + 1);
     };
-    window.addEventListener('a2gent:project-git-status-changed', handleProjectGitStatusChanged);
+    window.addEventListener('a2gent:project-git-status-changed', handleProjectNavStatusChanged);
+    window.addEventListener('a2gent:project-files-changed', handleProjectNavStatusChanged);
     return () => {
-      window.removeEventListener('a2gent:project-git-status-changed', handleProjectGitStatusChanged);
+      window.removeEventListener('a2gent:project-git-status-changed', handleProjectNavStatusChanged);
+      window.removeEventListener('a2gent:project-files-changed', handleProjectNavStatusChanged);
     };
   }, []);
 
@@ -434,19 +447,25 @@ function Sidebar({
 
       const entries = await Promise.all(
         folderProjects.map(async (project): Promise<[string, ProjectGitNavStatus]> => {
+          const navStatus: ProjectGitNavStatus = {
+            hasGit: false,
+            branchChangesAvailable: false,
+            hasTodoFile: false,
+          };
+
           try {
-            const status = await getProjectGitStatus(project.id);
-            return [
-              project.id,
-              {
-                hasGit: Boolean(status.has_git),
-                branchChangesAvailable: Boolean(status.branch_changes_available),
-              },
-            ];
+            const [gitStatus, tree] = await Promise.all([
+              getProjectGitStatus(project.id),
+              listProjectTree(project.id, ''),
+            ]);
+            navStatus.hasGit = Boolean(gitStatus.has_git);
+            navStatus.branchChangesAvailable = Boolean(gitStatus.branch_changes_available);
+            navStatus.hasTodoFile = tree.entries.some((entry) => entry.type === 'file' && isTodoFileName(entry.name));
           } catch (err) {
-            console.error(`Failed to load git status for project ${project.id}:`, err);
-            return [project.id, { hasGit: false, branchChangesAvailable: false }];
+            console.error(`Failed to load project nav status for project ${project.id}:`, err);
           }
+
+          return [project.id, navStatus];
         }),
       );
 

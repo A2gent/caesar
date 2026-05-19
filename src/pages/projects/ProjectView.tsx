@@ -108,6 +108,7 @@ function normalizeProjectViewTab(tab: string | undefined): ProjectViewTab {
 }
 
 const TODO_FILE_NAMES = new Set(['todo.md', 'to-do.md']);
+const PROJECT_FILES_CHANGED_EVENT = 'a2gent:project-files-changed';
 const TODO_TASK_LINE_PATTERN = /^(\s*)-\s+\[( |x|X)\]\s+(.*?)(?:\s+<!--\s*task-file:\s*([^\s][^>]*)\s*-->)?\s*$/;
 const TODO_HEADING_PATTERN = /^(#{1,6})\s+(.+?)\s*$/;
 
@@ -704,6 +705,10 @@ function isTodoFilePath(path: string): boolean {
 function isMarkdownFilePath(path: string): boolean {
   const lowerPath = path.toLowerCase();
   return lowerPath.endsWith('.md') || lowerPath.endsWith('.markdown');
+}
+
+function emitProjectFilesChanged(): void {
+  window.dispatchEvent(new Event(PROJECT_FILES_CHANGED_EVENT));
 }
 
 function isPDFFilePath(path: string): boolean {
@@ -3041,6 +3046,9 @@ function ProjectView() {
       setSavedFileContent(selectedFileContent);
       setSuccess('File saved successfully.');
       await loadGitStatus();
+      if (isTodoFilePath(selectedFilePath)) {
+        emitProjectFilesChanged();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save file');
     } finally {
@@ -3132,6 +3140,9 @@ function ProjectView() {
       setSavedFileContent('');
       await loadTree(parentDir || '');
       await loadGitStatus();
+      if (isTodoFilePath(selectedFilePath)) {
+        emitProjectFilesChanged();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete file');
     } finally {
@@ -3167,6 +3178,9 @@ function ProjectView() {
         setSelectedFilePath(newPath);
       }
       await loadGitStatus();
+      if (isTodoFilePath(filePath) || isTodoFilePath(newPath)) {
+        emitProjectFilesChanged();
+      }
       
 
     } catch (moveError) {
@@ -3194,6 +3208,9 @@ function ProjectView() {
       setSavedFileContent('');
       setMarkdownMode('source');
       await loadGitStatus();
+      if (isTodoFilePath(newPath)) {
+        emitProjectFilesChanged();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create file');
     }
@@ -3242,6 +3259,7 @@ function ProjectView() {
       setActiveTab('tasks');
       setSuccess(`Created ${todoPath}.`);
       await loadGitStatus();
+      emitProjectFilesChanged();
     } catch (todoError) {
       setError(todoError instanceof Error ? todoError.message : 'Failed to create todo.md');
     }
@@ -3295,6 +3313,9 @@ function ProjectView() {
       
       setSuccess(`Renamed to: ${newName}`);
       await loadGitStatus();
+      if (isTodoFilePath(renamingPath) || isTodoFilePath(result.new_path)) {
+        emitProjectFilesChanged();
+      }
     } catch (renameError) {
       setError(renameError instanceof Error ? renameError.message : 'Failed to rename');
     } finally {

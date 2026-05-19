@@ -153,7 +153,7 @@ function shortcutBindingsForPath(pathname: string): KeyboardShortcutBinding[] {
       { keys: '3', description: 'Open Sessions tab', scope: 'Project view' },
       { keys: '4', description: 'Open Meetings tab when available', scope: 'Project view' },
       { keys: '5', description: 'Open Changes tab', scope: 'Project view' },
-      { keys: '6', description: 'Open Branch Changes tab', scope: 'Project view' },
+      { keys: '6', description: 'Open Review tab', scope: 'Project view' },
       { keys: '7', description: 'Open History tab', scope: 'Project view' },
       { keys: '8', description: 'Open Settings tab', scope: 'Project view' },
       { keys: '↑ / ↓', description: 'Move through the file tree in Explorer', scope: 'Project explorer' },
